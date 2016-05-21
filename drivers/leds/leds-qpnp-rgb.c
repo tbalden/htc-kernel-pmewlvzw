@@ -313,6 +313,250 @@ static void virtual_key_lut_table_set(int *virtual_key_lut_table, int array_len,
 	}
 }
 
+#if 1
+#define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	160
+
+static int screen_on = 1;
+static int blinking = 0;
+struct qpnp_led_data *buttonled;
+
+
+static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
+{
+	int rc;
+	u8 val;
+	int duty_us, duty_ns, period_us;
+	int virtual_key_lut_table[VIRTUAL_LUT_LEN] = {0};
+	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {0,0,0,0,0,1,2,4,6,10};
+
+	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, blink_brightness, led->status);
+
+	if(virtual_key_led_ignore_flag)
+		return 0;
+
+	if (blink_brightness == led->last_brightness) {
+		LED_INFO("%s, brightness no change, return\n", __func__);
+		return 0;
+	}
+
+	if (blink_brightness) {
+		if (screen_on) return rc;
+		// lights on...
+		blinking = 1;
+		if (led->mpp_cfg->mpp_reg && !led->mpp_cfg->enable) {
+			rc = regulator_set_voltage(led->mpp_cfg->mpp_reg,
+					led->mpp_cfg->min_uV,
+					led->mpp_cfg->max_uV);
+			if (rc) {
+				dev_err(&led->spmi_dev->dev,
+					"Regulator voltage set failed rc=%d\n",
+									rc);
+				return rc;
+			}
+
+			rc = regulator_enable(led->mpp_cfg->mpp_reg);
+			if (rc) {
+				dev_err(&led->spmi_dev->dev,
+					"Regulator enable failed(%d)\n", rc);
+				goto err_reg_enable;
+			}
+		}
+
+		led->mpp_cfg->enable = true;
+
+		if (blink_brightness < led->mpp_cfg->min_brightness) {
+			dev_warn(&led->spmi_dev->dev,
+				"brightness is less than supported..." \
+				"set to minimum supported\n");
+			blink_brightness = led->mpp_cfg->min_brightness;
+		}
+
+		if (led->mpp_cfg->pwm_mode != MANUAL_MODE) {
+			if (!led->mpp_cfg->pwm_cfg->blinking) {
+				led->mpp_cfg->pwm_cfg->mode =
+					led->mpp_cfg->pwm_cfg->default_mode;
+				led->mpp_cfg->pwm_mode =
+					led->mpp_cfg->pwm_cfg->default_mode;
+			}
+		}
+		if (led->mpp_cfg->pwm_mode == PWM_MODE) {
+			period_us = led->mpp_cfg->pwm_cfg->pwm_period_us;
+			if (period_us > INT_MAX / NSEC_PER_USEC) {
+				duty_us = (period_us * blink_brightness) /
+					LED_FULL;
+				rc = pwm_config_us(
+					led->mpp_cfg->pwm_cfg->pwm_dev,
+					duty_us,
+					period_us);
+			} else {
+				duty_ns = ((period_us * NSEC_PER_USEC) /
+					LED_FULL) * blink_brightness;
+				rc = pwm_config(
+					led->mpp_cfg->pwm_cfg->pwm_dev,
+					duty_ns,
+					period_us * NSEC_PER_USEC);
+			}
+			if (rc < 0) {
+				dev_err(&led->spmi_dev->dev, "Failed to " \
+					"configure pwm for new values\n");
+				goto err_mpp_reg_write;
+			}
+		}
+
+		if (led->mpp_cfg->pwm_mode == LPG_MODE) {
+		led->mpp_cfg->pwm_cfg->lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
+		led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
+		led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
+		led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW;
+		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 0;
+		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 0;
+		led->last_brightness = blink_brightness;
+		rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
+					PM_PWM_PERIOD_MIN,
+					virtual_key_lut_table_blink,
+					led->mpp_cfg->pwm_cfg->lut_params);
+		}
+
+		if (led->mpp_cfg->pwm_mode != MANUAL_MODE)
+			pwm_enable(led->mpp_cfg->pwm_cfg->pwm_dev);
+		else {
+			if (blink_brightness < LED_MPP_CURRENT_MIN)
+				blink_brightness = LED_MPP_CURRENT_MIN;
+			else {
+				blink_brightness /= LED_MPP_CURRENT_MIN;
+				blink_brightness *= LED_MPP_CURRENT_MIN;
+			}
+
+			val = (blink_brightness / LED_MPP_CURRENT_MIN) - 1;
+
+			rc = qpnp_led_masked_write(led,
+					LED_MPP_SINK_CTRL(led->base),
+					LED_MPP_SINK_MASK, val);
+			if (rc) {
+				dev_err(&led->spmi_dev->dev,
+					"Failed to write sink control reg\n");
+				goto err_mpp_reg_write;
+			}
+		}
+
+		val = (led->mpp_cfg->source_sel & LED_MPP_SRC_MASK) |
+			(led->mpp_cfg->mode_ctrl & LED_MPP_MODE_CTRL_MASK);
+
+		rc = qpnp_led_masked_write(led,
+			LED_MPP_MODE_CTRL(led->base), LED_MPP_MODE_MASK,
+			val);
+		if (rc) {
+			dev_err(&led->spmi_dev->dev,
+					"Failed to write led mode reg\n");
+			goto err_mpp_reg_write;
+		}
+
+		rc = qpnp_led_masked_write(led,
+				LED_MPP_EN_CTRL(led->base), LED_MPP_EN_MASK,
+				LED_MPP_EN_ENABLE);
+		if (rc) {
+			dev_err(&led->spmi_dev->dev,
+					"Failed to write led enable " \
+					"reg\n");
+			goto err_mpp_reg_write;
+		}
+	} else {
+		// lights down
+		blinking = 0;
+		if (led->mpp_cfg->pwm_mode == LPG_MODE) {
+			led->mpp_cfg->pwm_cfg->lut_params.flags = PM_PWM_LUT_RAMP_UP;
+			led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
+			led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
+			led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME;
+			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 0;
+			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 0;
+			virtual_key_lut_table_set(virtual_key_lut_table, VIRTUAL_LUT_LEN, led->base_pwm, blink_brightness, led->last_brightness);
+			led->last_brightness = blink_brightness;
+			rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
+					PM_PWM_PERIOD_MIN,
+					virtual_key_lut_table,
+					led->mpp_cfg->pwm_cfg->lut_params);
+			pwm_enable(led->mpp_cfg->pwm_cfg->pwm_dev);
+			queue_delayed_work(g_led_work_queue, &led->fade_delayed_work,
+				msecs_to_jiffies(led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms * led->mpp_cfg->pwm_cfg->lut_params.idx_len));
+		} else {
+			if (led->mpp_cfg->pwm_mode != MANUAL_MODE) {
+				led->mpp_cfg->pwm_cfg->mode =
+					led->mpp_cfg->pwm_cfg->default_mode;
+				led->mpp_cfg->pwm_mode =
+					led->mpp_cfg->pwm_cfg->default_mode;
+				pwm_disable(led->mpp_cfg->pwm_cfg->pwm_dev);
+			}
+			rc = qpnp_led_masked_write(led,
+						LED_MPP_MODE_CTRL(led->base),
+						LED_MPP_MODE_MASK,
+						LED_MPP_MODE_DISABLE);
+			if (rc) {
+				dev_err(&led->spmi_dev->dev,
+						"Failed to write led mode reg\n");
+				goto err_mpp_reg_write;
+			}
+
+			rc = qpnp_led_masked_write(led,
+						LED_MPP_EN_CTRL(led->base),
+						LED_MPP_EN_MASK,
+						LED_MPP_EN_DISABLE);
+			if (rc) {
+				dev_err(&led->spmi_dev->dev,
+						"Failed to write led enable reg\n");
+				goto err_mpp_reg_write;
+			}
+
+			if (led->mpp_cfg->mpp_reg && led->mpp_cfg->enable) {
+				rc = regulator_disable(led->mpp_cfg->mpp_reg);
+				if (rc) {
+					dev_err(&led->spmi_dev->dev,
+						"MPP regulator disable failed(%d)\n",
+						rc);
+					return rc;
+				}
+
+				rc = regulator_set_voltage(led->mpp_cfg->mpp_reg,
+							0, led->mpp_cfg->max_uV);
+				if (rc) {
+					dev_err(&led->spmi_dev->dev,
+						"MPP regulator voltage set failed(%d)\n",
+						rc);
+					return rc;
+				}
+			}
+			led->mpp_cfg->enable = false;
+		}
+	}
+
+	if (led->mpp_cfg->pwm_mode != MANUAL_MODE)
+		led->mpp_cfg->pwm_cfg->blinking = false;
+	qpnp_dump_regs(led, mpp_debug_regs, ARRAY_SIZE(mpp_debug_regs));
+
+	return 0;
+
+err_mpp_reg_write:
+	if (led->mpp_cfg->mpp_reg)
+		regulator_disable(led->mpp_cfg->mpp_reg);
+err_reg_enable:
+	if (led->mpp_cfg->mpp_reg)
+		regulator_set_voltage(led->mpp_cfg->mpp_reg, 0,
+							led->mpp_cfg->max_uV);
+	led->mpp_cfg->enable = false;
+
+	return rc;
+
+
+}
+
+static int qpnp_buttonled_blink(int on)
+{
+	LED_INFO("%s, on = %d \n", __func__, on);
+	return qpnp_mpp_blink(buttonled,on>0?10:0);
+}
+
+#endif
+
 static int qpnp_mpp_set(struct qpnp_led_data *led)
 {
 	int rc;
@@ -321,6 +565,10 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 	int virtual_key_lut_table[VIRTUAL_LUT_LEN] = {0};
 
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
+
+#if 1
+	blinking = 0;
+#endif
 
 	if(virtual_key_led_ignore_flag)
 		return 0;
@@ -360,6 +608,7 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 	}
 
 	if (led->cdev.brightness) {
+		// lights on...
 		if (led->mpp_cfg->mpp_reg && !led->mpp_cfg->enable) {
 			rc = regulator_set_voltage(led->mpp_cfg->mpp_reg,
 					led->mpp_cfg->min_uV,
@@ -480,6 +729,7 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 			goto err_mpp_reg_write;
 		}
 	} else {
+		// lights down
 		if (led->mpp_cfg->pwm_mode == LPG_MODE) {
 			led->mpp_cfg->pwm_cfg->lut_params.flags = PM_PWM_LUT_RAMP_UP;
 			led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
@@ -668,6 +918,12 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 {
 	int rc;
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
+
+#if 1
+	if (screen_on && blinking && led!=buttonled) {
+		qpnp_buttonled_blink(0);
+	}
+#endif
 
 	if (led->rgb_cfg->pwm_cfg->mode == RGB_MODE_LPG) {
 		cancel_delayed_work(&led->fade_delayed_work);
@@ -1362,6 +1618,9 @@ static ssize_t blink_store(struct device *dev,
 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
 	led->cdev.brightness = blinking ? led->cdev.max_brightness : 0;
 
+#if 1
+	qpnp_buttonled_blink(blinking);
+#endif
 	switch (led->id) {
 	case QPNP_ID_LED_MPP:
 			mpp_blink(led, led->mpp_cfg->pwm_cfg);
@@ -2093,6 +2352,9 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 	rc = pwm_enable(led->rgb_cfg->pwm_cfg->pwm_dev);
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
+#if 1
+	qpnp_buttonled_blink(1);
+#endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
 }
@@ -2143,6 +2405,9 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 	rc = pwm_enable(led->rgb_cfg->pwm_cfg->pwm_dev);
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
+#if 1
+	qpnp_buttonled_blink(1);
+#endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
 }
@@ -2509,6 +2774,9 @@ static ssize_t pm8xxx_led_blink_store(struct device *dev,
 	led->mode = val;
 	current_blink = val;
 	LED_INFO("%s: blink: %d\n", __func__, val);
+#if 1
+	qpnp_buttonled_blink(val);
+#endif
 	switch(led->id) {
 		case QPNP_ID_LED_MPP:
 			led->mpp_cfg->blink_mode = val;
@@ -2816,7 +3084,9 @@ static int fb_notifier_callback(struct notifier_block *self,
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
-			
+#if 1
+		screen_on = 1;
+#endif
             break;
 
         case FB_BLANK_POWERDOWN:
@@ -2824,6 +3094,9 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_VSYNC_SUSPEND:
         case FB_BLANK_NORMAL:
             
+#if 1
+		screen_on = 0;
+#endif
             if(g_led_virtual->cdev.brightness) {
 				g_led_virtual->cdev.brightness = 0;
                 qpnp_mpp_set(g_led_virtual);
@@ -2902,6 +3175,9 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				LED_INFO("button-backlight not use power source 0x%04x\n", led->base);
 				goto fail_id_check;
 			}
+#if 1
+			buttonled = led;
+#endif
 		}
 #endif
 		if(strcmp(led->cdev.name, "indicator") == 0){
