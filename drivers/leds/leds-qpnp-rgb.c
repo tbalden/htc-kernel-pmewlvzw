@@ -313,7 +313,7 @@ static void virtual_key_lut_table_set(int *virtual_key_lut_table, int array_len,
 	}
 }
 
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 #define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	160
 
 static int screen_on = 1;
@@ -566,7 +566,7 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	blinking = 0;
 #endif
 
@@ -919,7 +919,7 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	int rc;
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	if (screen_on && blinking && led!=buttonled) {
 		qpnp_buttonled_blink(0);
 	}
@@ -1618,7 +1618,7 @@ static ssize_t blink_store(struct device *dev,
 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
 	led->cdev.brightness = blinking ? led->cdev.max_brightness : 0;
 
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	qpnp_buttonled_blink(blinking);
 #endif
 	switch (led->id) {
@@ -2352,7 +2352,7 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 	rc = pwm_enable(led->rgb_cfg->pwm_cfg->pwm_dev);
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	qpnp_buttonled_blink(1);
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
@@ -2405,7 +2405,7 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 	rc = pwm_enable(led->rgb_cfg->pwm_cfg->pwm_dev);
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	qpnp_buttonled_blink(1);
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
@@ -2774,7 +2774,7 @@ static ssize_t pm8xxx_led_blink_store(struct device *dev,
 	led->mode = val;
 	current_blink = val;
 	LED_INFO("%s: blink: %d\n", __func__, val);
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	qpnp_buttonled_blink(val);
 #endif
 	switch(led->id) {
@@ -3084,7 +3084,7 @@ static int fb_notifier_callback(struct notifier_block *self,
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 		screen_on = 1;
 #endif
             break;
@@ -3094,7 +3094,7 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_VSYNC_SUSPEND:
         case FB_BLANK_NORMAL:
             
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 		screen_on = 0;
 #endif
             if(g_led_virtual->cdev.brightness) {
@@ -3175,7 +3175,7 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				LED_INFO("button-backlight not use power source 0x%04x\n", led->base);
 				goto fail_id_check;
 			}
-#if 1
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 			buttonled = led;
 #endif
 		}
