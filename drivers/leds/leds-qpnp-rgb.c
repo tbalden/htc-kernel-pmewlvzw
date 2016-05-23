@@ -304,17 +304,21 @@ static void virtual_key_lut_table_set(int *virtual_key_lut_table, int array_len,
 
 	if (target_pwm > last_pwm) {
 		pwm_diff = target_pwm - last_pwm;
-		for(i = 1;i < array_len - 1;i++)
+		for(i = 1;i < array_len - 1;i++) {
 			virtual_key_lut_table[i] = virtual_key_lut_table[0] + (pwm_diff * (100 - base_pwm) / 255) * i / (array_len - 1);
+			LED_INFO("%s, up - index = %d value: %d\n", __func__, i, virtual_key_lut_table[i]);
+		}
 	} else {
 		pwm_diff = last_pwm - target_pwm;
-		for(i = 1;i < array_len - 1;i++)
+		for(i = 1;i < array_len - 1;i++) {
 			virtual_key_lut_table[i] = virtual_key_lut_table[0] - (pwm_diff * (100 - base_pwm) / 255) * i / (array_len - 1);
+			LED_INFO("%s, down - index = %d value: %d\n", __func__, i, virtual_key_lut_table[i]);
+		}
 	}
 }
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-#define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	160
+#define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	80
 
 static int screen_on = 1;
 static int blinking = 0;
@@ -327,7 +331,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 	u8 val;
 	int duty_us, duty_ns, period_us;
 	int virtual_key_lut_table[VIRTUAL_LUT_LEN] = {0};
-	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {0,0,0,0,0,1,2,4,6,10};
+	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {0,1,2,3,4,5,6,7,8,10};
 
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, blink_brightness, led->status);
 
@@ -408,8 +412,8 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 		led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
 		led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
 		led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW;
-		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 0;
-		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 0;
+		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 300;
+		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 2700;
 		led->last_brightness = blink_brightness;
 		rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
 					PM_PWM_PERIOD_MIN,
