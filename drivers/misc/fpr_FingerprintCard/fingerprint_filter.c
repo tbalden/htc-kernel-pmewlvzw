@@ -11,7 +11,7 @@
 #include <linux/fb.h>
 #endif
 
-#define DRIVER_AUTHOR "illes pal aka tbalden illespal@gmail.com"
+#define DRIVER_AUTHOR "illes pal <illespal@gmail.com>"
 #define DRIVER_DESCRIPTION "fingerprint_filter driver"
 #define DRIVER_VERSION "1.0"
 
@@ -65,50 +65,14 @@ static void fpf_pwrtrigger(int vibration) {
         return;
 }
 
-/* reset on finger release */
-static void fpf_reset(void) {
-}
-
-/* fpf main function */
-//static void detect_fpf()
-//{
-//}
-
 
 static void fpf_input_callback(struct work_struct *unused) {
-
-	if (1==0) {
-		fpf_pwrtrigger(0);
-	}
 
 	return;
 }
 
 static void fpf_input_event(struct input_handle *handle, unsigned int type,
 				unsigned int code, int value) {
-
-
-
-
-	if (code == KEY_WAKEUP) {
-		pr_err("fpf - wakeup event %d %d \n",code,value);
-		return;
-	}
-
-	if (code == ABS_MT_TRACKING_ID && value == -1) {
-		fpf_reset();
-		return;
-	}
-
-	if (code == ABS_MT_POSITION_X) {
-	}
-
-	if (code == ABS_MT_POSITION_Y) {
-	}
-
-	if (1==1) {
-		queue_work_on(0, fpf_input_wq, &fpf_input_work);
-	}
 }
 
 static int input_dev_filter(struct input_dev *dev) {

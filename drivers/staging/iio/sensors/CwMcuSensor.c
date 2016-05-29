@@ -389,7 +389,7 @@ struct cwmcu_data {
 };
 
 static struct cwmcu_data *s_mcu_data = NULL;
-static struct vib_trigger *vib_trigger = NULL;
+struct vib_trigger *vib_trigger = NULL;
 
 BLOCKING_NOTIFIER_HEAD(double_tap_notifier_list);
 
