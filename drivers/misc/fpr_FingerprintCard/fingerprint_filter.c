@@ -38,6 +38,9 @@ static int vib_strength = VIB_STRENGTH;
 	struct notifier_block *fb_notifier;
 #endif
 
+// value used to signal that HOME button release event should be synced as well in home button func work if it was not interrupted.
+static int do_home_button_off_too_in_work_func = 0;
+
 /* PowerKey work func */
 static void fpf_presspwr(struct work_struct * fpf_presspwr_work) {
 
@@ -49,6 +52,9 @@ static void fpf_presspwr(struct work_struct * fpf_presspwr_work) {
 	input_event(fpf_pwrdev, EV_KEY, KEY_POWER, 0);
 	input_event(fpf_pwrdev, EV_SYN, 0, 0);
 	msleep(fpf_PWRKEY_DUR/2);
+	// resetting this do_home_button_off_too_in_work_func when powering down, as it causes the running HOME button func work 
+	//	to trigger a HOME button release sync event to input device, resulting in an unwanted  screen on.
+	do_home_button_off_too_in_work_func = 0;
         mutex_unlock(&pwrkeyworklock);
 	return;
 }
@@ -67,7 +73,6 @@ static void fpf_pwrtrigger(int vibration) {
 
 
 static void fpf_input_callback(struct work_struct *unused) {
-
 	return;
 }
 
@@ -108,68 +113,97 @@ static int fpf_input_connect(struct input_handler *handler,
 }
 
 
-static int break_home_button_func = 1;
-static int do_home_button_off_too = 0;
-static int over_cycles = 0;
-static int job_done = 0;
-static int first_tap_cycle = 1;
+// break home button func -> in the HOME button work func, where we count from a sync-surpressend first press of HOME button, this is used in external sources 
+// 	to break counting of time passing. This way, HOME button press sync can be avoided, and double tap of HOME button can be translated into a POWER OFF even instead.
+//	If this value is set to 1, counting will break, and work func will exit without calling INPUT device HOME sync.
+//	meanwhile the other func_trigger call will still face LOCK locking, and based on the locking=true will start a Power off.
+static int break_home_button_func_work = 1;
 
+// time_count_done_in_home_button_func_work -> represents if the time counting in the HOME button work func is over, meaning that the next HOME button press in func_trigger code
+//	shouldn't be interpreted as a double tap instead 
+// 	just exit the func trigger call without Power off and leaving normal HOME button sync to work in the home_button work func after the time count
+static int time_count_done_in_home_button_func_work = 0;
 
-/* Home button work func */
+// job_done_in_home_button_func_work -> represents if we arrived inside the home button work func at the counting of time, without interruption (break_home_button still 0), thus it can be set to 1,
+//	HOME button 1 sync will be done in work, and it's also signalling that when the FP device sends release event, in the filter code, HOME button 0 sync can be done.
+//	The trigger func will set it to 0 always, so it shows the job was interrupted, which is important when the release of the button is done after
+//		trigger job found that the LOCK is not holding anymore, and does nothing, in which case the filter call should send HOME - 0 sync to input device.
+static int job_done_in_home_button_func_work = 0;
+
+// signals if fingerprint PRESS was registered, so we can track that no multiple releases happen from FP device
+static int fingerprint_pressed = 0;
+
+// signals when the powering down of screen happens while FP is still being pressed, so filter won't turn screen on, when the button is released based on this value.
+static int powering_down_with_fingerprint_still_pressed = 0;
+
+/* Home button work func 
+	will start with trying to lock worklock
+	then use vibrator to signal button press 'imitation'
+	Will set break_home_button_func_work to 0, as we just started, and interruptions are signalled through this integer
+	While break is not done, it will count the maximum time that is acceptable between two BUTTON presses whchi is interpreted as double press
+	- If it's exiting due to Interruption (break_home_button_func_work called from another func_trigger call)
+	    it won't do anything just release lock and return. The trigger call will then power down screen, as this counts as double tap
+	- If it exited with counting done (break == 0) it will sync a HOME = 1 event to itself
+	    - and it will signal job_done_in_home_button_func_work = 1, so when filter func receives Key released, it can Sync a HOME = 0 to input device,
+		or set do_home_buttons_too -> 1, so the hom button func work job will itself send the HOME = 0 synced before exiting
+*/
 static void fpf_home_button_func(struct work_struct * fpf_presspwr_work) {
 	int count_cycles = 0;
 	if (!mutex_trylock(&fpfuncworklock)) {
 		return;
 	}
-	break_home_button_func = 0;
-	over_cycles = 0;
-	while (!break_home_button_func) {
+	break_home_button_func_work = 0;
+	time_count_done_in_home_button_func_work = 0;
+	fpf_vib();
+	while (!break_home_button_func_work) {
 		count_cycles++;
 		if (count_cycles>15) {
 			break;
 		}
 		msleep(FUNC_CYCLE_DUR);
-		pr_err("fpf %s counting in cycle before KEY_HOME 1 synced: %d / 30 cycles \n",__func__, count_cycles);
+		pr_debug("fpf %s counting in cycle before KEY_HOME 1 synced: %d / 30 cycles \n",__func__, count_cycles);
 	}
-	over_cycles = 1;
-	if (break_home_button_func == 0) {
-		job_done = 1;
-		pr_err("fpf %s home 1 \n",__func__);
+	time_count_done_in_home_button_func_work = 1;
+	if (break_home_button_func_work == 0) {
+		job_done_in_home_button_func_work = 1;
+		pr_info("fpf %s home 1 \n",__func__);
 		input_event(fpf_pwrdev, EV_KEY, KEY_HOME, 1);
 		input_event(fpf_pwrdev, EV_SYN, 0, 0);
 		msleep(1);
-		if (do_home_button_off_too) {
-			pr_err("fpf %s home 0 \n",__func__);
+		if (do_home_button_off_too_in_work_func) {
+			pr_info("fpf %s home 0 \n",__func__);
 			input_event(fpf_pwrdev, EV_KEY, KEY_HOME, 0);
 			input_event(fpf_pwrdev, EV_SYN, 0, 0);
-			do_home_button_off_too = 0;
+			do_home_button_off_too_in_work_func = 0;
 			msleep(1);
-			fpf_vib();
+//			fpf_vib();
 		}
-		first_tap_cycle = 1; // waiting was not interrupted by a new button press, back to first tap cycle
-	} else {
-		first_tap_cycle = 0; // waiting was interrupted, so waiting for second tap
-	}
+	} 
 	mutex_unlock(&fpfuncworklock);
-	pr_err("fpf %s mutex unlocked \n",__func__);
+	pr_info("fpf %s mutex unlocked \n",__func__);
 	return;
 }
 static DECLARE_WORK(fpf_home_button_func_work, fpf_home_button_func);
 
-/* PowerKey trigger */
+
+/* fpf home button func trigger */
 static void fpf_home_button_func_trigger(void) {
-	pr_err("fpf %s over_cycles %d job_done %d first_tap_cylce %d \n",__func__, over_cycles, job_done, first_tap_cycle);
-	job_done = 0;
-	break_home_button_func = 1;
+	pr_info("fpf %s time_count_done_in_home_button_func_work %d job_done_in_home_button_func_work %d\n",__func__, time_count_done_in_home_button_func_work, job_done_in_home_button_func_work);
+	job_done_in_home_button_func_work = 0;
+	break_home_button_func_work = 1;
 	if (mutex_is_locked(&fpfuncworklock)) {
 		// mutex in hold, this means the HOME button was pressed again in a short time...
-		pr_err("fpf %s is locked, checkin %d over_cycles...", __func__, over_cycles);
-		if (!over_cycles) { // and we still counting the cycles in the job, so double tap poweroff can be done...
+		pr_info("fpf %s is locked, checkin %d time_count_done_in_home_button_func_work...", __func__, time_count_done_in_home_button_func_work);
+		if (!time_count_done_in_home_button_func_work) { // and we still counting the cycles in the job, so double tap poweroff can be done...
 			// double home:
-			pr_err("fpf double tap home, power off\n");
-			first_tap_cycle = 1;
-			do_home_button_off_too = 0;
+			pr_info("fpf double tap home, power off\n");
+			if (fingerprint_pressed == 1) { // there was no release of the fingerprint button, so go screen off with signalling that here...
+				powering_down_with_fingerprint_still_pressed = 1;
+			} else { 
+				powering_down_with_fingerprint_still_pressed = 0; 
+			}
 			fpf_pwrtrigger(1);
+			do_home_button_off_too_in_work_func = 0;
 		}
                 return;
 	}
@@ -177,48 +211,69 @@ static void fpf_home_button_func_trigger(void) {
         return;
 }
 
-static int started_home_button = 0;
-
+/*
+    filter will work on FP card events.
+    if screen is not on it will work on powering it on when needed (except when Button released start (button press) was started while screen was still on: powering_down_with_fingerprint_still_pressed = 1)
+    Otherwise if
+	- pressed (value > 0)
+		it will call home button trigger job, to handle single fp button presses or double taps.
+	- if released:
+		if home button work job is done already, finish with syncing HOME release to input device
+		if home button work job is still running, set 'do_home_buttons_off_too' to 1, so job will sync HOME release as well
+*/
 static bool fpf_input_filter(struct input_handle *handle,
                                     unsigned int type, unsigned int code,
                                     int value)
 {
+	// if it's not on, don't filter anything...
+	if (fpf_switch == 0) return false;
+
 	if (type != EV_KEY)
 		return false;
+
 	if (code == KEY_WAKEUP) {
-		pr_err("fpf - wakeup %d %d \n",code,value);
+		pr_debug("fpf - wakeup %d %d \n",code,value);
 	}            
 
 	if (value > 0) {
 		if (!screen_on) {
 			fpf_pwrtrigger(0);
 		} else {
-			started_home_button = 1;
-			pr_err("fpf %s starting trigger, first tap cycle: %d \n",__func__, first_tap_cycle);
+			fingerprint_pressed = 1;
+			pr_info("fpf %s starting trigger \n",__func__);
 			fpf_home_button_func_trigger();
 		}
 		return true;
 	} else {
-		if (started_home_button) {
+		if (fingerprint_pressed) {
 			if (!screen_on) {
-				fpf_pwrtrigger(1);
+				if (!powering_down_with_fingerprint_still_pressed) {
+					// fingerprint release happens normally, started (pressed) while screen asleep, and ended while asleep, so let's turn it on....
+					fpf_pwrtrigger(1);
+				} else {
+					// fingerprint release happens after a screen off that started AFTER the fingerprint was pressed. So do not wake the screen
+					powering_down_with_fingerprint_still_pressed = 0;
+				}
 			} else {
-				started_home_button = 0;
-				if (job_done) {
-						pr_err("fpf %s do home 0 as job was done, not first tap ending\n",__func__);
+				// screen is on...
+				// release the fingerprint_pressed variable...
+				fingerprint_pressed = 0;
+				// if job was all finished inside the work func, we need to call the HOME = 0 release event here, as we couldn't signal to the work to do it on it's own
+				if (job_done_in_home_button_func_work) {
+						pr_info("fpf %s do key_home 0 sync as job was done, but without the possible signalling for HOME 0\n",__func__);
 						input_report_key(fpf_pwrdev, KEY_HOME, 0);
 						input_sync(fpf_pwrdev);
 				} else {
-					// only set need fro HOME 0, when screen is not already beings shut down, otherwise a HOME->1 will trigger a HOME->0 too in work, and preventling long home working
-					do_home_button_off_too = 1;
+				// job is not yet finished in home button func work, let's signal it, to do the home button = 0 sync as well
+					if (screen_on) {
+						do_home_button_off_too_in_work_func = 1;
+					}
 				}
 			}
 			return true;
-		} else {
-			// TODO
 		}
 	}
-        return false;
+	return true;
 }
 
 
@@ -310,13 +365,16 @@ static int fb_notifier_callback(struct notifier_block *self,
     struct fb_event *evdata = data;
     int *blank;
 
-    pr_err("%s\n", __func__);
-    if (evdata && evdata->data && event == FB_EVENT_BLANK && fpf_pwrdev) {
+    blank = evdata->data;
+    pr_debug("%s blank data %d\n", __func__, *blank);
+    // catch early events as well, as this helps a lot correct functioning knowing when screen is almost off/on, preventing many problems 
+    // interpreting still screen ON while it's almost off and vica versa
+    if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK && fpf_pwrdev) {
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
 		screen_on = 1;
-		pr_err("fpf screen on\n");
+		pr_info("fpf screen on -early\n");
             break;
 
         case FB_BLANK_POWERDOWN:
@@ -324,7 +382,24 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_VSYNC_SUSPEND:
         case FB_BLANK_NORMAL:
 		screen_on = 0;
-		pr_err("fpf screen off\n");
+		pr_info("fpf screen off -early\n");
+            break;
+        }
+    }
+    if (evdata && evdata->data && event == FB_EVENT_BLANK && fpf_pwrdev) {
+        blank = evdata->data;
+        switch (*blank) {
+        case FB_BLANK_UNBLANK:
+		screen_on = 1;
+		pr_info("fpf screen on\n");
+            break;
+
+        case FB_BLANK_POWERDOWN:
+        case FB_BLANK_HSYNC_SUSPEND:
+        case FB_BLANK_VSYNC_SUSPEND:
+        case FB_BLANK_NORMAL:
+		screen_on = 0;
+		pr_info("fpf screen off\n");
             break;
         }
     }
@@ -335,7 +410,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 static int __init fpf_init(void)
 {
 	int rc = 0;
-	pr_err("fpf - init\n");
+	pr_info("fpf - init\n");
 
 	fpf_pwrdev = input_allocate_device();
 	if (!fpf_pwrdev) {
