@@ -36,7 +36,7 @@ clean:
 .PHONY: modules modules_install clean
 
 else
-    fpc1020-objs := fpc1020_tee.o
+    fpc1020-objs := fpc1020_tee.o fingerprint_filter.o
 
     # called from kernel build system: just declare what our modules are
     obj-$(CONFIG_FPR_FPC)  += fpc1020.o
