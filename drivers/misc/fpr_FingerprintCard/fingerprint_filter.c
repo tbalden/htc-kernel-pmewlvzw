@@ -365,8 +365,6 @@ static int fb_notifier_callback(struct notifier_block *self,
     struct fb_event *evdata = data;
     int *blank;
 
-    blank = evdata->data;
-    pr_debug("%s blank data %d\n", __func__, *blank);
     // catch early events as well, as this helps a lot correct functioning knowing when screen is almost off/on, preventing many problems 
     // interpreting still screen ON while it's almost off and vica versa
     if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK && fpf_pwrdev) {
