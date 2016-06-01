@@ -235,6 +235,8 @@ static bool fpf_input_filter(struct input_handle *handle,
 		pr_debug("fpf - wakeup %d %d \n",code,value);
 	}            
 
+	if (fpf_switch == 2) {
+	//standalone kernel mode. double tap means switch off
 	if (value > 0) {
 		if (!screen_on) {
 			fpf_pwrtrigger(0);
@@ -271,6 +273,22 @@ static bool fpf_input_filter(struct input_handle *handle,
 				}
 			}
 			return true;
+		}
+	}
+	}
+	if (fpf_switch == 1) {
+		// simple home button mode, user space handles behavior
+		if (value > 0) {
+			if (!screen_on) {
+				return false;
+			} else {
+				fpf_vib();
+				input_report_key(fpf_pwrdev, KEY_HOME, 1);
+				input_sync(fpf_pwrdev);
+			}
+		} else {
+			input_report_key(fpf_pwrdev, KEY_HOME, 0);
+			input_sync(fpf_pwrdev);
 		}
 	}
 	return true;
@@ -315,7 +333,7 @@ static ssize_t fpf_dump(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	if (input < 0 || input > 3)
+	if (input < 0 || input > 2)
 		input = 0;				
 
 	fpf_switch = input;			
