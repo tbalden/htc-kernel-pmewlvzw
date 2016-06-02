@@ -320,6 +320,7 @@ static void virtual_key_lut_table_set(int *virtual_key_lut_table, int array_len,
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 #define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	80
 
+static int bln_switch = 1;
 static int screen_on = 1;
 static int blinking = 0;
 struct qpnp_led_data *buttonled;
@@ -1623,7 +1624,9 @@ static ssize_t blink_store(struct device *dev,
 	led->cdev.brightness = blinking ? led->cdev.max_brightness : 0;
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	qpnp_buttonled_blink(blinking);
+	if (bln_switch || blinking==0) {
+		qpnp_buttonled_blink(blinking);
+	}
 #endif
 	switch (led->id) {
 	case QPNP_ID_LED_MPP:
@@ -2357,7 +2360,9 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	qpnp_buttonled_blink(1);
+	if (bln_switch) {
+		qpnp_buttonled_blink(1);
+	}
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
@@ -2410,7 +2415,9 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	qpnp_buttonled_blink(1);
+	if (bln_switch) {
+		qpnp_buttonled_blink(1);
+	}
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
@@ -2751,6 +2758,36 @@ static ssize_t led_off_timer_store(struct device *dev,
 }
 static DEVICE_ATTR(off_timer, 0644, NULL, led_off_timer_store);
 
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+
+static ssize_t bln_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", bln_switch);
+}
+
+static ssize_t bln_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 1)
+            input = 0;
+
+      bln_switch = input;
+      
+      return count;
+}
+
+static DEVICE_ATTR(bln, (S_IWUSR|S_IRUGO),
+      bln_show, bln_dump);
+#endif
+
 
 static ssize_t pm8xxx_led_blink_show(struct device *dev,
                                         struct device_attribute *attr,
@@ -2779,7 +2816,9 @@ static ssize_t pm8xxx_led_blink_store(struct device *dev,
 	current_blink = val;
 	LED_INFO("%s: blink: %d\n", __func__, val);
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	qpnp_buttonled_blink(val);
+	if (val==0 || bln_switch) {
+		qpnp_buttonled_blink(val);
+	}
 #endif
 	switch(led->id) {
 		case QPNP_ID_LED_MPP:
@@ -3389,6 +3428,7 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				rc = device_create_file(led->cdev.dev, &dev_attr_blink);
 				rc = device_create_file(led->cdev.dev, &dev_attr_pwm_coefficient);
 				rc = device_create_file(led->cdev.dev, &dev_attr_current_set);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln);
 				rc = device_create_file(led->cdev.dev, &dev_attr_set_color_ID);
 				if (rc < 0) {
 					LED_ERR("%s: Failed to create %s attr blink\n", __func__,  led->cdev.name);
