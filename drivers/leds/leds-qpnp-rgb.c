@@ -330,8 +330,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 {
 	int rc;
 	u8 val;
-	int duty_us, duty_ns, period_us;
-	int virtual_key_lut_table[VIRTUAL_LUT_LEN] = {0};
+	int virtual_key_lut_table_stop[1] = {0};
 	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {0,1,2,3,4,5,6,7,8,10};
 
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, blink_brightness, led->status);
@@ -344,7 +343,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 		return 0;
 	}
 
-	if (blink_brightness) {
+	if (blink_brightness && blinking == 0) {
 		if (screen_on) return rc;
 		// lights on...
 		blinking = 1;
@@ -384,39 +383,16 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 					led->mpp_cfg->pwm_cfg->default_mode;
 			}
 		}
-		if (led->mpp_cfg->pwm_mode == PWM_MODE) {
-			period_us = led->mpp_cfg->pwm_cfg->pwm_period_us;
-			if (period_us > INT_MAX / NSEC_PER_USEC) {
-				duty_us = (period_us * blink_brightness) /
-					LED_FULL;
-				rc = pwm_config_us(
-					led->mpp_cfg->pwm_cfg->pwm_dev,
-					duty_us,
-					period_us);
-			} else {
-				duty_ns = ((period_us * NSEC_PER_USEC) /
-					LED_FULL) * blink_brightness;
-				rc = pwm_config(
-					led->mpp_cfg->pwm_cfg->pwm_dev,
-					duty_ns,
-					period_us * NSEC_PER_USEC);
-			}
-			if (rc < 0) {
-				dev_err(&led->spmi_dev->dev, "Failed to " \
-					"configure pwm for new values\n");
-				goto err_mpp_reg_write;
-			}
-		}
 
 		if (led->mpp_cfg->pwm_mode == LPG_MODE) {
-		led->mpp_cfg->pwm_cfg->lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
-		led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
-		led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
-		led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW;
-		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 300;
-		led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 2700;
-		led->last_brightness = blink_brightness;
-		rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
+			led->mpp_cfg->pwm_cfg->lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
+			led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
+			led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
+			led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW;
+			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 300;
+			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 2700;
+			led->last_brightness = blink_brightness;
+			rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
 					PM_PWM_PERIOD_MIN,
 					virtual_key_lut_table_blink,
 					led->mpp_cfg->pwm_cfg->lut_params);
@@ -424,25 +400,6 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 
 		if (led->mpp_cfg->pwm_mode != MANUAL_MODE)
 			pwm_enable(led->mpp_cfg->pwm_cfg->pwm_dev);
-		else {
-			if (blink_brightness < LED_MPP_CURRENT_MIN)
-				blink_brightness = LED_MPP_CURRENT_MIN;
-			else {
-				blink_brightness /= LED_MPP_CURRENT_MIN;
-				blink_brightness *= LED_MPP_CURRENT_MIN;
-			}
-
-			val = (blink_brightness / LED_MPP_CURRENT_MIN) - 1;
-
-			rc = qpnp_led_masked_write(led,
-					LED_MPP_SINK_CTRL(led->base),
-					LED_MPP_SINK_MASK, val);
-			if (rc) {
-				dev_err(&led->spmi_dev->dev,
-					"Failed to write sink control reg\n");
-				goto err_mpp_reg_write;
-			}
-		}
 
 		val = (led->mpp_cfg->source_sel & LED_MPP_SRC_MASK) |
 			(led->mpp_cfg->mode_ctrl & LED_MPP_MODE_CTRL_MASK);
@@ -471,66 +428,18 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 		if (led->mpp_cfg->pwm_mode == LPG_MODE) {
 			led->mpp_cfg->pwm_cfg->lut_params.flags = PM_PWM_LUT_RAMP_UP;
 			led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
-			led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
+			led->mpp_cfg->pwm_cfg->lut_params.idx_len = 1;
 			led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME;
 			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 0;
 			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 0;
-			virtual_key_lut_table_set(virtual_key_lut_table, VIRTUAL_LUT_LEN, led->base_pwm, blink_brightness, led->last_brightness);
 			led->last_brightness = blink_brightness;
 			rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
 					PM_PWM_PERIOD_MIN,
-					virtual_key_lut_table,
+					virtual_key_lut_table_stop,
 					led->mpp_cfg->pwm_cfg->lut_params);
 			pwm_enable(led->mpp_cfg->pwm_cfg->pwm_dev);
 			queue_delayed_work(g_led_work_queue, &led->fade_delayed_work,
 				msecs_to_jiffies(led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms * led->mpp_cfg->pwm_cfg->lut_params.idx_len));
-		} else {
-			if (led->mpp_cfg->pwm_mode != MANUAL_MODE) {
-				led->mpp_cfg->pwm_cfg->mode =
-					led->mpp_cfg->pwm_cfg->default_mode;
-				led->mpp_cfg->pwm_mode =
-					led->mpp_cfg->pwm_cfg->default_mode;
-				pwm_disable(led->mpp_cfg->pwm_cfg->pwm_dev);
-			}
-			rc = qpnp_led_masked_write(led,
-						LED_MPP_MODE_CTRL(led->base),
-						LED_MPP_MODE_MASK,
-						LED_MPP_MODE_DISABLE);
-			if (rc) {
-				dev_err(&led->spmi_dev->dev,
-						"Failed to write led mode reg\n");
-				goto err_mpp_reg_write;
-			}
-
-			rc = qpnp_led_masked_write(led,
-						LED_MPP_EN_CTRL(led->base),
-						LED_MPP_EN_MASK,
-						LED_MPP_EN_DISABLE);
-			if (rc) {
-				dev_err(&led->spmi_dev->dev,
-						"Failed to write led enable reg\n");
-				goto err_mpp_reg_write;
-			}
-
-			if (led->mpp_cfg->mpp_reg && led->mpp_cfg->enable) {
-				rc = regulator_disable(led->mpp_cfg->mpp_reg);
-				if (rc) {
-					dev_err(&led->spmi_dev->dev,
-						"MPP regulator disable failed(%d)\n",
-						rc);
-					return rc;
-				}
-
-				rc = regulator_set_voltage(led->mpp_cfg->mpp_reg,
-							0, led->mpp_cfg->max_uV);
-				if (rc) {
-					dev_err(&led->spmi_dev->dev,
-						"MPP regulator voltage set failed(%d)\n",
-						rc);
-					return rc;
-				}
-			}
-			led->mpp_cfg->enable = false;
 		}
 	}
 
