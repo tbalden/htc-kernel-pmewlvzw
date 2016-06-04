@@ -85,6 +85,7 @@ extern void dwc3_otg_set_id_state(int id);
 extern void dwc3_pd_vbus_ctrl(int on);
 extern int dwc3_pd_drswap(int new_role);
 extern int usb_set_dwc_property(int prop_type,unsigned int value);
+extern void usb_downgrade_func(void);
 
 DECLARE_COMPLETION(pr_swap_rsp);
 DECLARE_COMPLETION(dr_swap_rsp);
@@ -1141,6 +1142,7 @@ void pd_vbus_control_default_func(bool on)
 	if (on) {
 		ohio_set_data_value(OHIO_PROLE, PR_SOURCE);
 		ohio_set_data_value(OHIO_PMODE, MODE_DFP);
+		enable_oc_work_func();
 		dwc3_pd_vbus_ctrl(1);
 		mdelay(5);
 		vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
@@ -1181,8 +1183,10 @@ void pd_vconn_control_default_func(bool on)
 		if(((status & 0x0F) == CC1_STATUS_RA) || ((status & 0xF0) == CC2_STATUS_RA)) {
 			ohio_hardware_enable_vconn();
 		}
-		else
+		else {
 			pr_info("no Ra detected, do not enable Vconn\n");
+			ohio_hardware_disable_vconn();
+		}
 	}
 	else { 
 		ohio_hardware_disable_vconn();
@@ -1196,6 +1200,11 @@ void pd_cc_status_default_func(u8 cc_status)
 	pr_info("cc status 0x%x\n", cc_status);
 #endif
 	pr_info("cc status 0x%x\n", cc_status);
+	if ((cc_status == 0x20) || (cc_status == 0x02)) {
+		pr_info("%s: open e-mark cable in\n", __func__);
+		ohio_set_data_value(OHIO_EMARKER, 1);
+	}
+	usb_downgrade_func();
 }
 
 

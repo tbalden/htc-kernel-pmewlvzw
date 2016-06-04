@@ -275,6 +275,7 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo = NULL;
 	int i, rc = 0;
+	bool skip = 0;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -285,9 +286,18 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 				panel_data);
 
 	pinfo = &(ctrl_pdata->panel_data.panel_info);
-	if ((mdss_dsi_is_right_ctrl(ctrl_pdata) &&
-		mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data)) ||
-			pinfo->is_dba_panel) {
+	if (mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data)) {
+		if (mdss_dsi_is_right_ctrl(ctrl_pdata) && enable)
+			skip = true;
+		else if (mdss_dsi_is_left_ctrl(ctrl_pdata) && !enable)
+			skip = true;
+		if (skip) {
+			pr_debug("%s:%d, right ctrl gpio configuration not needed\n",
+				__func__, __LINE__);
+			return rc;
+		}
+	}
+	if (pinfo->is_dba_panel) {
 		pr_debug("%s:%d, right ctrl gpio configuration not needed\n",
 			__func__, __LINE__);
 		return rc;
@@ -2305,6 +2315,14 @@ static int mdss_panel_parse_dt(struct device_node *np,
 		"htc,burst-on-cmds", "qcom,mdss-dsi-default-command-state");
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->burst_off_cmds,
 		"htc,burst-off-cmds", "qcom,mdss-dsi-default-command-state");
+
+	pinfo->power_ctrl = PANEL_POWER_CTRL_DEFAULT;
+	data = of_get_property(np, "htc,dsi_panel_power_control", NULL);
+	if (data) {
+		if (!strcmp(data, "hx8396c2"))
+			pinfo->power_ctrl = PANEL_POWER_CTRL_HX8396C2;
+	}
+	pr_info("%s: Power Control Type=%d\n", __func__, pinfo->power_ctrl);
 
 	return 0;
 

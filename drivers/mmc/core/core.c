@@ -1053,6 +1053,9 @@ EXPORT_SYMBOL(mmc_suspend_clk_scaling);
 int mmc_resume_clk_scaling(struct mmc_host *host)
 {
 	int err = 0;
+	u32 max_clk_idx = 0;
+	u32 devfreq_max_clk = 0;
+	u32 devfreq_min_clk = 0;
 
 	if (!host) {
 		WARN(1, "bad host parameter\n");
@@ -1069,7 +1072,15 @@ int mmc_resume_clk_scaling(struct mmc_host *host)
 	}
 
 	atomic_set(&host->clk_scaling.devfreq_abort, 0);
-	host->clk_scaling.curr_freq = host->ios.clock;
+
+	max_clk_idx = host->clk_scaling.freq_table_sz - 1;
+	devfreq_max_clk = host->clk_scaling.freq_table[max_clk_idx];
+	devfreq_min_clk = host->clk_scaling.freq_table[0];
+
+	host->clk_scaling.curr_freq = devfreq_max_clk;
+	if (host->ios.clock < host->card->clk_scaling_highest)
+		host->clk_scaling.curr_freq = devfreq_min_clk;
+
 	host->clk_scaling.clk_scaling_in_progress = false;
 	host->clk_scaling.need_freq_change = false;
 
@@ -1432,6 +1443,8 @@ int mmc_set_auto_bkops(struct mmc_card *card, bool enable)
 			mmc_update_bkops_auto_off(&card->bkops.stats);
 		}
 		card->ext_csd.bkops_en = bkops_en;
+		pr_info("%s: %s: bkops_en: %d\n",
+			mmc_hostname(card->host), __func__, bkops_en);
 	}
 out:
 	return ret;

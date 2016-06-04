@@ -1415,6 +1415,9 @@ extern void *dhd_pub_shim(dhd_pub_t *dhd_pub);
 void dhd_save_fwdump(dhd_pub_t *dhd_pub, void * buffer, uint32 length);
 #endif 
 
+#ifdef CUSTOMER_HW_ONE
+int dhd_tcpack_suppress_dynamic_enable(struct net_device *net, int enable);
+#endif
 #if defined(SET_RPS_CPUS)
 int dhd_rps_cpus_enable(struct net_device *net, int enable);
 int custom_rps_map_set(struct netdev_rx_queue *queue, char *buf, size_t len);

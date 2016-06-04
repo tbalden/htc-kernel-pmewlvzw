@@ -263,6 +263,8 @@ struct qpnp_wled {
 	bool flash_enabled;
 	u16 fs_curr_ua_flash;
 	struct htc_flashlight_dev flash_dev;
+	
+	u16 hyb_thres_low, hyb_thres_low_wm;
 };
 
 static int qpnp_wled_read_reg(struct qpnp_wled *wled, u8 *data, u16 addr)
@@ -310,9 +312,31 @@ static int qpnp_wled_set_level(struct qpnp_wled *wled, int level)
 {
 	int i, rc;
 	u8 reg;
+	u8 reg0;
 
 	if (wled->flash_enabled)
 		return -EBUSY;
+
+	if (wled->hyb_thres_low_wm) {
+		
+		rc = qpnp_wled_read_reg(wled, &reg0,
+				QPNP_WLED_HYB_THRES_REG(wled->sink_base));
+		if (rc < 0) {
+			pr_err("%s: read HYB_THRES_REG failed, rc=%d\n", __func__, rc);
+		} else {
+			reg = reg0 & QPNP_WLED_HYB_THRES_MASK;
+			if (level >= wled->hyb_thres_low_wm)
+				reg |= fls(wled->hyb_thres / QPNP_WLED_HYB_THRES_MIN) - 1;
+			else
+				reg |= fls(wled->hyb_thres_low / QPNP_WLED_HYB_THRES_MIN) - 1;
+
+			pr_debug("%s: reg=[%u, %u], level=%d\n", __func__, reg0, reg, level);
+			rc = qpnp_wled_write_reg(wled, &reg,
+					QPNP_WLED_HYB_THRES_REG(wled->sink_base));
+			if (rc)
+				pr_err("%s: update HYB_THRES_REG failed: value=%u\n", __func__, reg);
+		}
+	}
 
 	
 	for (i = 0; i < wled->num_strings; i++) {
@@ -1263,6 +1287,11 @@ static int qpnp_wled_config(struct qpnp_wled *wled)
 	else if (wled->hyb_thres > QPNP_WLED_HYB_THRES_MAX)
 		wled->hyb_thres = QPNP_WLED_HYB_THRES_MAX;
 
+	if (wled->hyb_thres_low < QPNP_WLED_HYB_THRES_MIN)
+		wled->hyb_thres_low = QPNP_WLED_HYB_THRES_MIN;
+	else if (wled->hyb_thres_low > QPNP_WLED_HYB_THRES_MAX)
+		wled->hyb_thres_low = QPNP_WLED_HYB_THRES_MAX;
+
 	rc = qpnp_wled_read_reg(wled, &reg,
 			QPNP_WLED_HYB_THRES_REG(wled->sink_base));
 	if (rc < 0)
@@ -1635,6 +1664,17 @@ static int qpnp_wled_parse_dt(struct qpnp_wled *wled)
 			dev_err(&spmi->dev, "Unable to read hyb threshold\n");
 			return rc;
 		}
+
+		rc = of_property_read_u32(spmi->dev.of_node,
+				"htc,hyb-thres-low", &temp_val);
+		if (!rc)
+			wled->hyb_thres_low = temp_val;
+		rc = of_property_read_u32(spmi->dev.of_node,
+				"htc,hyb-thres-low-wm", &temp_val);
+		if (!rc)
+			wled->hyb_thres_low_wm = temp_val;
+		pr_info("%s: low setting=%u, watermark=%u\n",
+			__func__, wled->hyb_thres_low, wled->hyb_thres_low_wm);
 	}
 
 	wled->sync_dly_us = QPNP_WLED_DEF_SYNC_DLY_US;

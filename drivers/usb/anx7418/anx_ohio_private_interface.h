@@ -186,7 +186,6 @@ enum ohio_data_member {
 	OHIO_VCONN,
 	OHIO_START_HOST_FLAG,
 	OHIO_EMARKER,
-	OHIO_NON_STANDARD,
 };
 
 #define MAX_INTERFACE_COUNT 32
@@ -286,10 +285,10 @@ void handle_intr_vector(void);
 struct dual_role_phy_instance *ohio_get_dual_role_instance(void);
 int ohio_get_data_value(int data_member);
 int ohio_set_data_value(int data_member, int val);
-void ohio_hardware_enable_vconn(void);
-void ohio_hardware_disable_vconn(void);
+int ohio_hardware_enable_vconn(void);
+int ohio_hardware_disable_vconn(void);
 void enable_drole_work_func(int on);
-
+void enable_oc_work_func(void);
 u8 interface_send_msg_timeout(u8 type, u8 *pbuf, u8 len, int timeout_ms);
 pd_callback_t get_pd_callback_fnc(PD_MSG_TYPE type);
 void set_pd_callback_fnc(PD_MSG_TYPE type, pd_callback_t fnc);

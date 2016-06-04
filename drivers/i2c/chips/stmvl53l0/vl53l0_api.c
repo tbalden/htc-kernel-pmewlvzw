@@ -4874,20 +4874,22 @@ VL53L0_Error VL53L0_PerformRefSpadManagement(VL53L0_DEV Dev,
     VL53L0_RangingMeasurementData_t rangingMeasurementData;
     uint8_t lastSpadArray[6];
     uint8_t startSelect = 0xB4;
-    uint32_t minimumSpadCount = 5;
+    uint32_t minimumSpadCount = 3; 
     uint32_t maxSpadCount = 44;
     uint32_t currentSpadIndex = 0;
-    uint32_t lastSpadIndex;
-    int32_t nextGoodSpad;
+    uint32_t lastSpadIndex = 0;
+    int32_t nextGoodSpad = 0;
     uint16_t targetRefRate = 0x0A00; 
     uint16_t peakSignalRateRef;
-    uint32_t needAptSpads = -1;
-    uint32_t index;
+    uint32_t needAptSpads = 0;
+    uint32_t index = 0;
     uint32_t spadArraySize = 6;
     uint32_t signalRateDiff = 0;
-    uint32_t lastSignalRateDiff;
+    uint32_t lastSignalRateDiff = 0;
     uint8_t complete;
     uint8_t SequenceConfig = 0;
+    uint32_t refSpadCount_int = 0;
+    uint8_t  isApertureSpads_int = 0;
 
 
 
@@ -4967,12 +4969,8 @@ VL53L0_Error VL53L0_PerformRefSpadManagement(VL53L0_DEV Dev,
     {
         currentSpadIndex = lastSpadIndex;
 
-        if (Status == VL53L0_ERROR_NONE)
-        {
-            Status = perform_ref_signal_measurement(Dev, &peakSignalRateRef);
-            if (Status == VL53L0_ERROR_NONE)
-            {
-                if(peakSignalRateRef > targetRefRate)
+        Status = perform_ref_signal_measurement(Dev, &peakSignalRateRef);
+            if ((Status == VL53L0_ERROR_NONE)&&(peakSignalRateRef > targetRefRate))
                 {
 
                     for(index = 0; index < spadArraySize; index++)
@@ -5009,7 +5007,7 @@ VL53L0_Error VL53L0_PerformRefSpadManagement(VL53L0_DEV Dev,
                             (peakSignalRateRef > targetRefRate))
                         {
                             Status = VL53L0_ERROR_REF_SPAD_INIT;
-                            needAptSpads    = -1;
+                            needAptSpads    = 0;
                         }
                     }
                 }
@@ -5017,17 +5015,15 @@ VL53L0_Error VL53L0_PerformRefSpadManagement(VL53L0_DEV Dev,
                 {
                     needAptSpads = 0;
                 }
-            }
-        }
     }
 
     if (Status == VL53L0_ERROR_NONE)
     {
-        *isApertureSpads = needAptSpads;
-        *refSpadCount    = minimumSpadCount;
-
         if(peakSignalRateRef < targetRefRate)
         {
+             isApertureSpads_int = needAptSpads;
+             refSpadCount_int    = minimumSpadCount;
+
 
             memcpy(lastSpadArray, Dev->Data.SpadData.RefSpadEnables,
             		spadArraySize);
@@ -5044,7 +5040,7 @@ VL53L0_Error VL53L0_PerformRefSpadManagement(VL53L0_DEV Dev,
                     break;
                 }
 
-                (*refSpadCount)++;
+                (refSpadCount_int)++;
 
                 if(is_aperture((uint32_t)startSelect + nextGoodSpad) !=
                 		needAptSpads)
@@ -5062,23 +5058,25 @@ VL53L0_Error VL53L0_PerformRefSpadManagement(VL53L0_DEV Dev,
 							Dev->Data.SpadData.RefSpadEnables);
                 }
 
-                if (Status == VL53L0_ERROR_NONE)
-                {
+                if (Status != VL53L0_ERROR_NONE)
+                      break;
+
                     Status = perform_ref_signal_measurement(Dev,
                     		&peakSignalRateRef);
-                    if (Status == VL53L0_ERROR_NONE)
-                    {
+                if (Status != VL53L0_ERROR_NONE)
+                      break;
+
+                    signalRateDiff = abs(peakSignalRateRef -
+                            		targetRefRate);
                         if(peakSignalRateRef > targetRefRate)
                         {
-                            signalRateDiff = abs(peakSignalRateRef -
-                            		targetRefRate);
                             if(signalRateDiff > lastSignalRateDiff)
                             {
                                 Status = set_ref_spad_map(Dev, lastSpadArray);
                                 memcpy(Dev->Data.SpadData.RefSpadEnables,
                                 		lastSpadArray, spadArraySize);
 
-                                (*refSpadCount)--;
+                                (refSpadCount_int)--;
                             }
                             complete = 1;
                         }
@@ -5091,24 +5089,17 @@ VL53L0_Error VL53L0_PerformRefSpadManagement(VL53L0_DEV Dev,
                             		spadArraySize);
 
                         }
-                    }
-                    else
-                        break;
-
-                }
-                else
-                    break;
             }
         }
     }
 
     if(Status==VL53L0_ERROR_NONE) {
+                *refSpadCount = refSpadCount_int;
+		*isApertureSpads = isApertureSpads_int;
 
-        if (Status == VL53L0_ERROR_NONE) {
             VL53L0_SETDEVICESPECIFICPARAMETER(Dev, RefSpadsInitialised, 1);
-            VL53L0_SETDEVICESPECIFICPARAMETER(Dev, ReferenceSpadCount, *refSpadCount);
+            VL53L0_SETDEVICESPECIFICPARAMETER(Dev, ReferenceSpadCount, (uint8_t)(*refSpadCount));
             VL53L0_SETDEVICESPECIFICPARAMETER(Dev, ReferenceSpadType, *isApertureSpads);
-        }
 
         
         Status = VL53L0_WrByte(Dev, VL53L0_REG_SYSTEM_SEQUENCE_CONFIG,

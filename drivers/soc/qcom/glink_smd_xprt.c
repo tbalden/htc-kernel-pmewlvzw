@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -113,6 +113,7 @@ struct edge_info {
  * @name:		The name of this channel.
  * @lcid:		The local channel id the core uses for this channel.
  * @rcid:		The true remote channel id for this channel.
+ * @ch_probe_lock:	Lock to protect channel probe status.
  * @wait_for_probe:	This channel is waiting for a probe from SMD.
  * @had_probed:		This channel probed in the past and may skip probe.
  * @edge:		Handle to the edge_info this channel is associated with.
@@ -138,6 +139,7 @@ struct channel {
 	char name[GLINK_NAME_SIZE];
 	uint32_t lcid;
 	uint32_t rcid;
+	struct mutex ch_probe_lock;
 	bool wait_for_probe;
 	bool had_probed;
 	struct edge_info *edge;
@@ -153,6 +155,7 @@ struct channel {
 	bool is_closing;
 	bool local_legacy;
 	bool remote_legacy;
+	size_t intent_req_size;
 	spinlock_t rx_data_lock;
 	bool streaming_ch;
 	bool tx_resume_needed;
@@ -320,6 +323,7 @@ static void process_ctl_event(struct work_struct *work)
 				}
 				strlcpy(ch->name, name, GLINK_NAME_SIZE);
 				ch->edge = einfo;
+				mutex_init(&ch->ch_probe_lock);
 				INIT_LIST_HEAD(&ch->intents);
 				INIT_LIST_HEAD(&ch->used_intents);
 				spin_lock_init(&ch->intents_lock);
@@ -730,10 +734,13 @@ static void process_data_event(struct work_struct *work)
 				ch->rcid);
 		if (!ch->cur_intent && !einfo->intentless) {
 			spin_lock_irqsave(&ch->intents_lock, intents_flags);
+			ch->intent_req = true;
+			ch->intent_req_size = pkt_remaining;
 			list_for_each_entry(i, &ch->intents, node) {
 				if (i->size >= pkt_remaining) {
 					list_del(&i->node);
 					ch->cur_intent = i;
+					ch->intent_req = false;
 					break;
 				}
 			}
@@ -746,7 +753,6 @@ static void process_data_event(struct work_struct *work)
 					"%s Reqesting intent '%s' %u:%u\n",
 					__func__, ch->name,
 					ch->lcid, ch->rcid);
-				ch->intent_req = true;
 				mutex_lock(&einfo->rx_cmd_lock);
 				einfo->xprt_if.glink_core_if_ptr->
 						rx_cmd_remote_rx_intent_req(
@@ -882,10 +888,11 @@ static void smd_data_ch_close(struct channel *ch)
 			__func__, ch->lcid);
 
 	ch->is_closing = true;
-	ch->wait_for_probe = false;
 	ch->tx_resume_needed = false;
 	flush_workqueue(ch->wq);
 
+	mutex_lock(&ch->ch_probe_lock);
+	ch->wait_for_probe = false;
 	if (ch->smd_ch) {
 		smd_close(ch->smd_ch);
 		ch->smd_ch = NULL;
@@ -896,6 +903,7 @@ static void smd_data_ch_close(struct channel *ch)
 							ch->lcid);
 		mutex_unlock(&ch->edge->rx_cmd_lock);
 	}
+	mutex_unlock(&ch->ch_probe_lock);
 
 	ch->local_legacy = false;
 
@@ -968,13 +976,17 @@ static int channel_probe(struct platform_device *pdev)
 	if (!found)
 		return -EPROBE_DEFER;
 
-	if (!ch->wait_for_probe)
+	mutex_lock(&ch->ch_probe_lock);
+	if (!ch->wait_for_probe) {
+		mutex_unlock(&ch->ch_probe_lock);
 		return -EPROBE_DEFER;
+	}
 
 	ch->wait_for_probe = false;
 	ch->had_probed = true;
 
 	data_ch_probe_body(ch);
+	mutex_unlock(&ch->ch_probe_lock);
 
 	return 0;
 }
@@ -1015,6 +1027,7 @@ static int add_platform_driver(struct channel *ch)
 	static bool first = true;
 
 	mutex_lock(&pdrv_list_mutex);
+	mutex_lock(&ch->ch_probe_lock);
 	ch->wait_for_probe = true;
 	list_for_each_entry(pdrv, &pdrv_list, node) {
 		if (!strcmp(ch->name, pdrv->pdrv.driver.name)) {
@@ -1024,10 +1037,13 @@ static int add_platform_driver(struct channel *ch)
 	}
 
 	if (!found) {
+		mutex_unlock(&ch->ch_probe_lock);
 		pdrv = kzalloc(sizeof(*pdrv), GFP_KERNEL);
 		if (!pdrv) {
 			ret = -ENOMEM;
+			mutex_lock(&ch->ch_probe_lock);
 			ch->wait_for_probe = false;
+			mutex_unlock(&ch->ch_probe_lock);
 			goto out;
 		}
 		pdrv->pdrv.driver.name = ch->name;
@@ -1038,12 +1054,14 @@ static int add_platform_driver(struct channel *ch)
 		if (ret) {
 			list_del(&pdrv->node);
 			kfree(pdrv);
+			mutex_lock(&ch->ch_probe_lock);
 			ch->wait_for_probe = false;
+			mutex_unlock(&ch->ch_probe_lock);
 		}
 	} else {
 		if (ch->had_probed)
 			data_ch_probe_body(ch);
-
+		mutex_unlock(&ch->ch_probe_lock);
 		/*
 		 * channel_probe might have seen the device we want, but
 		 * returned EPROBE_DEFER so we need to kick the deferred list
@@ -1175,6 +1193,7 @@ static int tx_cmd_ch_open(struct glink_transport_if *if_ptr, uint32_t lcid,
 		}
 		strlcpy(ch->name, name, GLINK_NAME_SIZE);
 		ch->edge = einfo;
+		mutex_init(&ch->ch_probe_lock);
 		INIT_LIST_HEAD(&ch->intents);
 		INIT_LIST_HEAD(&ch->used_intents);
 		spin_lock_init(&ch->intents_lock);
@@ -1450,14 +1469,16 @@ static int ssr(struct glink_transport_if *if_ptr)
 
 	spin_lock_irqsave(&einfo->channels_lock, flags);
 	list_for_each_entry(ch, &einfo->channels, node) {
-		if (!ch->smd_ch)
-			continue;
 		spin_unlock_irqrestore(&einfo->channels_lock, flags);
 		ch->is_closing = true;
-		ch->wait_for_probe = false;
 		flush_workqueue(ch->wq);
-		smd_close(ch->smd_ch);
-		ch->smd_ch = NULL;
+		mutex_lock(&ch->ch_probe_lock);
+		ch->wait_for_probe = false;
+		if (ch->smd_ch) {
+			smd_close(ch->smd_ch);
+			ch->smd_ch = NULL;
+		}
+		mutex_unlock(&ch->ch_probe_lock);
 		ch->local_legacy = false;
 		ch->remote_legacy = false;
 		ch->rcid = 0;
@@ -1542,6 +1563,24 @@ static int deallocate_rx_intent(struct glink_transport_if *if_ptr,
 }
 
 /**
+ * check_and_resume_rx() - Check the RX state and resume it
+ * @ch:		Channel which needs to be checked.
+ * @intent_size:	Intent size being queued.
+ *
+ * This function checks if a receive intent is requested in the
+ * channel and resumes the RX if the queued receive intent satisifes
+ * the requested receive intent. This function must be called with
+ * ch->intents_lock locked.
+ */
+static void check_and_resume_rx(struct channel *ch, size_t intent_size)
+{
+	if (ch->intent_req && ch->intent_req_size <= intent_size) {
+		ch->intent_req = false;
+		queue_work(ch->wq, &ch->work);
+	}
+}
+
+/**
  * tx_cmd_local_rx_intent() - convert an rx intent cmd to wire format and
  *			      transmit
  * @if_ptr:	The transport to transmit on.
@@ -1586,12 +1625,8 @@ static int tx_cmd_local_rx_intent(struct glink_transport_if *if_ptr,
 	intent->size = size;
 	spin_lock_irqsave(&ch->intents_lock, flags);
 	list_add_tail(&intent->node, &ch->intents);
+	check_and_resume_rx(ch, size);
 	spin_unlock_irqrestore(&ch->intents_lock, flags);
-
-	if (ch->intent_req) {
-		ch->intent_req = false;
-		queue_work(ch->wq, &ch->work);
-	}
 
 	srcu_read_unlock(&einfo->ssr_sync, rcu_id);
 	return 0;
@@ -1623,10 +1658,12 @@ static void tx_cmd_local_rx_done(struct glink_transport_if *if_ptr,
 	list_for_each_entry(i, &ch->used_intents, node) {
 		if (i->liid == liid) {
 			list_del(&i->node);
-			if (reuse)
+			if (reuse) {
 				list_add_tail(&i->node, &ch->intents);
-			else
+				check_and_resume_rx(ch, i->size);
+			} else {
 				kfree(i);
+			}
 			break;
 		}
 	}
@@ -1725,6 +1762,12 @@ static int tx(struct glink_transport_if *if_ptr, uint32_t lcid,
 		if (!ch->streaming_ch)
 			smd_write_end(ch->smd_ch);
 		tx_done = kmalloc(sizeof(*tx_done), GFP_ATOMIC);
+		if (!tx_done) {
+			SMDXPRT_ERR(einfo, "%s: failed allocation of tx_done\n",
+					__func__);
+			srcu_read_unlock(&einfo->ssr_sync, rcu_id);
+			return -ENOMEM;
+		}
 		tx_done->ch = ch;
 		tx_done->iid = pctx->riid;
 		INIT_WORK(&tx_done->work, process_tx_done);

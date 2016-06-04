@@ -2506,6 +2506,9 @@ static struct mmc_cmdq_req *mmc_blk_cmdq_rw_prep(
 	if (prio)
 		cmdq_rq->cmdq_req_flags |= PRIO;
 
+	
+	do_rel_wr = false;
+
 	if (do_rel_wr)
 		cmdq_rq->cmdq_req_flags |= REL_WR;
 

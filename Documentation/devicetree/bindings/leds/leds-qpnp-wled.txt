@@ -56,6 +56,9 @@ Optional properties if 'qcom,disp-type-amoled' is mentioned in DT:
 - qcom,sc-deb-cycles	: debounce time for short circuit detection
 - qcom,avdd-trim-steps-from-center : The number of steps to trim the OVP threshold voltage. The possible values can be between -7 to 8.
 
+- htc,hyb-thres-low	: Same as qcom,hyb-thres. Use another setting to PMIC in low brightness.
+- htc,hyb-thres-low-wm	: The brightness value watermark to switch qcom,hyb-thres and htc,hyb-thres-low.
+
 Example:
 	qcom,leds@d800 {
 		compatible = "qcom,qpnp-wled";

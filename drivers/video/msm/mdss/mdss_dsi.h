@@ -259,13 +259,11 @@ struct dsi_shared_data {
 
 	
 	struct mutex phy_reg_lock;
-	struct mutex vddio_lock;
 
 	
 	struct msm_bus_scale_pdata *bus_scale_table;
 	u32 bus_handle;
 	u32 bus_refcount;
-	u32 vddio_refcount;
 };
 
 struct mdss_dsi_data {

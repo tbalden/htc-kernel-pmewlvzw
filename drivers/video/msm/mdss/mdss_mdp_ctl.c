@@ -1861,6 +1861,7 @@ struct mdss_mdp_ctl *mdss_mdp_ctl_alloc(struct mdss_data_type *mdata,
 			mutex_init(&ctl->offlock);
 			mutex_init(&ctl->flush_lock);
 			mutex_init(&ctl->rsrc_lock);
+			mutex_init(&ctl->event_lock);
 			spin_lock_init(&ctl->spin_lock);
 			BLOCKING_INIT_NOTIFIER_HEAD(&ctl->notifier_head);
 			pr_debug("alloc ctl_num=%d\n", ctl->num);
@@ -3186,6 +3187,7 @@ int mdss_mdp_ctl_intf_event(struct mdss_mdp_ctl *ctl, int event, void *arg,
 {
 	struct mdss_panel_data *pdata;
 	int rc = 0;
+	bool need_lock = false;
 
 	if (!ctl || !ctl->panel_data)
 		return -ENODEV;
@@ -3203,12 +3205,25 @@ int mdss_mdp_ctl_intf_event(struct mdss_mdp_ctl *ctl, int event, void *arg,
 
 	pr_debug("sending ctl=%d event=%d flag=0x%x\n", ctl->num, event, flags);
 
+	switch (event) {
+	case MDSS_EVENT_LINK_READY:
+	case MDSS_EVENT_PANEL_OFF:
+	case MDSS_EVENT_PANEL_VDDIO_SWITCH_ON:
+	case MDSS_EVENT_PANEL_VDDIO_SWITCH_OFF:
+		need_lock = true;
+		break;
+	}
+
+	if (need_lock)
+		mutex_lock(&ctl->event_lock);
 	do {
 		if (pdata->event_handler)
 			rc = pdata->event_handler(pdata, event, arg);
 		pdata = pdata->next;
 	} while (rc == 0 && pdata && pdata->active &&
 		!(flags & CTL_INTF_EVENT_FLAG_SKIP_BROADCAST));
+	if (need_lock)
+		mutex_unlock(&ctl->event_lock);
 
 	return rc;
 }

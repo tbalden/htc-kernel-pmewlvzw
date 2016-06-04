@@ -3915,6 +3915,9 @@ void wlan_lock_irq_affinity(struct net_device *dev, int set)
 #ifdef SET_RPS_CPUS
 	dhd_rps_cpus_enable(dev, set);
 #endif
+#ifdef CUSTOMER_HW_ONE
+	dhd_tcpack_suppress_dynamic_enable(dev, set);
+#endif
 }
 
 static int wl_android_set_power_mode(struct net_device *dev, char *command, int total_len)

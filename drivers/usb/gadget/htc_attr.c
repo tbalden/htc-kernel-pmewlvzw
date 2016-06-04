@@ -346,6 +346,18 @@ static ssize_t show_typec_dump_reg(struct device *dev,
 	return dump_all_register(buf);
 }
 
+extern int ohio_get_data_value(int data_member);
+static ssize_t show_pd_cap(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int pd_cap;
+	pd_cap = ohio_get_data_value(8);
+	if (pd_cap < 0)
+		pd_cap = 0;
+	USB_INFO("%s : show pd capability = %d\n", __func__, pd_cap);
+	return snprintf(buf, PAGE_SIZE, "%d\n", pd_cap);
+}
+
 static DEVICE_ATTR(dummy_usb_serial_number, 0664, iSerial_show, store_dummy_usb_serial_number); 
 static DEVICE_ATTR(usb_ac_cable_status, 0444, show_usb_ac_cable_status, NULL); 
 static DEVICE_ATTR(ats, 0664, show_ats, store_ats); 
@@ -357,7 +369,7 @@ static DEVICE_ATTR(speed, 0444, show_speed, NULL);
 static DEVICE_ATTR(lock_speed, 0664, show_lock_speed, store_lock_speed); 
 static DEVICE_ATTR(lock_host_speed, S_IWUSR, NULL, store_lock_host_speed); 
 static DEVICE_ATTR(typec_dump_reg, 0440, show_typec_dump_reg, NULL); 
-
+static DEVICE_ATTR(pd_cap, 0444, show_pd_cap, NULL); 
 
 static __maybe_unused struct attribute *android_htc_usb_attributes[] = {
 	&dev_attr_dummy_usb_serial_number.attr, 
@@ -371,6 +383,7 @@ static __maybe_unused struct attribute *android_htc_usb_attributes[] = {
 	&dev_attr_lock_speed.attr, 
 	&dev_attr_lock_host_speed.attr, 
 	&dev_attr_typec_dump_reg.attr, 
+	&dev_attr_pd_cap.attr, 
 	NULL
 };
 

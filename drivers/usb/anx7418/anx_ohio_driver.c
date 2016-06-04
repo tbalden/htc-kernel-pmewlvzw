@@ -20,7 +20,7 @@
 #include <linux/usb/htc_info.h>
 #include <linux/htc_flags.h> 
 #include <linux/usb/gadget.h>
-
+#include <linux/power/htc_battery.h>
 #define CONFIG_ANX7418_EEPROM
 
 #define DEBUG 0
@@ -35,6 +35,7 @@ extern int usb_get_dwc_property(int prop_type);
 
 extern int usb_lock_host_speed;
 int cable_connected = 0;
+int oc_enable = 0;
 static int create_sysfs_interfaces(struct device *dev);
 static int update_firmware_otp(struct usb_typec_fwu_notifier *notifier, struct firmware *fw);
 static int update_firmware(struct usb_typec_fwu_notifier *notifier, struct firmware *fw);
@@ -73,6 +74,7 @@ struct ohio_data {
 	struct delayed_work debounce_work;
 	struct delayed_work comm_isr_work;
 	struct delayed_work drole_work;
+	struct delayed_work oc_enable_work;
 	struct workqueue_struct *workqueue;
 	struct workqueue_struct *comm_workqueue;
 	struct mutex lock;
@@ -268,6 +270,8 @@ int ohio_get_data_value(int data_member)
 			return ohio->emarker_flag;
 		case 7: 
 			return ohio->non_standard_flag;
+		case 8: 
+			return downstream_pd_cap;
 		default:
 			return -1;
 	}
@@ -560,10 +564,15 @@ void ohio_hardware_powerdown(void)
 		__func__, gpio_get_value(pdata->gpio_p_on), gpio_get_value(pdata->gpio_reset));
 }
 
-void ohio_hardware_enable_vconn(void)
+int ohio_hardware_enable_vconn(void)
 {
-	struct ohio_data *ohio = i2c_get_clientdata(ohio_client);
 	int rc;
+	struct ohio_data *ohio = NULL;
+
+	if(ohio_client)
+		ohio = i2c_get_clientdata(ohio_client);
+	else
+		return -ENODEV;
 
 	if (atomic_read(&ohio_power_status) == 1) {
 		if (!ohio->pdata->boost_5v) {
@@ -573,7 +582,7 @@ void ohio_hardware_enable_vconn(void)
 				rc = PTR_ERR(ohio->pdata->boost_5v);
 				pr_err("%s: still unable to get boost_5v regulator, %d\n", __func__, rc);
 				ohio->pdata->boost_5v = NULL;
-				return;
+				return -1;
 			}
 		}
 
@@ -581,7 +590,7 @@ void ohio_hardware_enable_vconn(void)
 			rc = regulator_enable(ohio->pdata->boost_5v);
 			if (rc) {
 				pr_err("%s: Unable to enable boost_5v regulator\n", __func__);
-				return;
+				return -1;
 			}
 			gpio_direction_output(ohio->pdata->gpio_vconn_boost, 1);
 			ohio->vconn = VCONN_SUPPLY_YES;
@@ -590,26 +599,42 @@ void ohio_hardware_enable_vconn(void)
 		else
 			pr_err("%s: ERR: boost_5v regulator is already enabled\n", __func__);
 	}
-	else
+	else {
 		pr_err("%s: system not ready, abort enabling Vconn\n", __func__);
+		return -1;
+	}
+	return 0;
 }
 
-void ohio_hardware_disable_vconn(void)
+int ohio_hardware_disable_vconn(void)
 {
 	u32 rc;
+	uint8_t reg;
+	struct ohio_data *ohio = NULL;
 
-	struct ohio_data *ohio = i2c_get_clientdata(ohio_client);
+	if(ohio_client)
+		ohio = i2c_get_clientdata(ohio_client);
+	else
+		return -ENODEV;
+
+	ohio_read_reg(OHIO_SLVAVE_I2C_ADDR, INTP_CTRL, (unchar *)(&reg));
+	reg &= 0x0F;
+	ohio_write_reg(OHIO_SLVAVE_I2C_ADDR, INTP_CTRL, reg);
+	pr_debug("%s: INTP_CTRL = 0x%02X\n", __func__, reg);
+
 	gpio_direction_output(ohio->pdata->gpio_vconn_boost, 0);
 	if(ohio->pdata->boost_5v) {
 		if (regulator_is_enabled(ohio->pdata->boost_5v)) {
 			rc = regulator_disable(ohio->pdata->boost_5v);
 			if (rc) {
 				pr_err("%s: Unable to disable boost_5v regulator\n", __func__);
+				return -1;
 			}
 			ohio->vconn = VCONN_SUPPLY_NO;
 			pr_info("Vconn disabled\n");
 		}
 	}
+	return 0;
 }
 
 void ohio_vbus_control(bool value)
@@ -759,6 +784,7 @@ void cable_disconnect(void *data)
 {
 	struct ohio_data *ohio = data;
 	cancel_delayed_work(&ohio->drole_work);
+	oc_enable = 0;
 	ohio->DFP_mode = 0;
 	ohio->pmode = MODE_UNKNOWN;
 	ohio->need_start_host = 0;
@@ -777,7 +803,7 @@ void cable_disconnect(void *data)
 	ohio_hardware_disable_vconn();
 	
 	wake_unlock(&ohio->ohio_lock); 
-	wake_lock_timeout(&ohio->ohio_lock, 2 * HZ); 
+	
 }
 
 void update_pwr_sink_caps(void){
@@ -982,11 +1008,22 @@ void dfp_downgrade_usb20(void)
 }
 
 extern int usb_lock_speed;
+void usb_downgrade_func(void)
+{
+	ohio_debug_dump();
+	
+	if (ohio_get_data_value(OHIO_PMODE) == MODE_DFP && usb_lock_host_speed)
+		dfp_downgrade_usb20();
+	if (ohio_get_data_value(OHIO_PMODE) == MODE_UFP && usb_lock_speed)
+		ufp_switch_usb_speed(0);
+}
+
 void ohio_main_process(void)
 {
 	
 	uint8_t val = 0;
 	int ret = 0;
+	int rc = 0;
 
 	struct ohio_data *ohio = i2c_get_clientdata(ohio_client);
 
@@ -1000,6 +1037,32 @@ void ohio_main_process(void)
 		}
 
 		
+		
+		
+		if (!ohio->pdata->boost_5v) {
+			pr_info("%s: no boost 5v regulator, try to get it again...", __func__);
+			ohio->pdata->boost_5v = devm_regulator_get(&ohio_client->dev, "V_USB_boost");
+			if (IS_ERR(ohio->pdata->boost_5v)) {
+				rc = PTR_ERR(ohio->pdata->boost_5v);
+				pr_err("%s: still unable to get boost_5v regulator, %d\n", __func__, rc);
+				ohio->pdata->boost_5v = NULL;
+			}
+		}
+
+		if (!regulator_is_enabled(ohio->pdata->boost_5v)) {
+			rc = regulator_enable(ohio->pdata->boost_5v);
+			if (rc) {
+				pr_err("%s: Unable to enable boost_5v regulator\n", __func__);
+			}
+			gpio_direction_output(ohio->pdata->gpio_vconn_boost, 1);
+			pr_info("%s: boost_5v enabled\n", __func__);
+		}
+		else {
+			pr_err("%s: ERR: boost_5v regulator is already enabled\n", __func__);
+			gpio_direction_output(ohio->pdata->gpio_vconn_boost, 1);
+		}
+
+		
 		ret = ohio_read_reg(OHIO_SLVAVE_I2C_ADDR, ANALOG_STATUS, &val);
 		if (ret < 0) {
 			pr_err("%s : cannot read DFP or UFP status\n", __func__);
@@ -1010,40 +1073,6 @@ void ohio_main_process(void)
 			pr_info("%s: UFP(%d) FW version 0x%02x\n",
 					__func__, val & DFP_OR_UFP, ohio->fw_version);
 
-			ret = ohio_read_reg(OHIO_SLVAVE_I2C_ADDR, POWER_DOWN_CTRL, &val);
-			if (ret < 0) {
-				pr_err("%s : cannot read POWER_DOWN_CTRL\n", __func__);
-				goto exit;
-			}
-			pr_info("%s(%d): POWER_DOWN_CTRL=0x%02x\n", __func__, __LINE__, val);
-
-			switch (val & 0xfc) {
-				case 0x80:
-				case 0x10:
-					ohio->fake_irq_counter = 0;
-					pr_info("%s: Default USB cable\n", __func__);
-					break;
-				case 0x40:
-				case 0x08:
-					ohio->fake_irq_counter = 0;
-					pr_info("%s: 5V 1.5A cable\n", __func__);
-					break;
-				case 0x20:
-				case 0x04:
-					ohio->fake_irq_counter = 0;
-					pr_info("%s: 5V 3A cable\n", __func__);
-					break;
-				default:
-					pr_info("%s: non standard cable\n", __func__);
-					ohio->non_standard_flag = 1;
-					ohio->fake_irq_counter++;
-					ohio->prole = PR_SINK;
-					ohio->drole = DR_DEVICE;
-					ohio->pmode = MODE_UFP;
-					dual_role_instance_changed(ohio->ohio_dual_role_instance);
-					goto exit;
-			}
-
 			ohio->prole = PR_SINK;
 			ohio->drole = DR_DEVICE;
 			ohio->pmode = MODE_UFP;
@@ -1051,7 +1080,6 @@ void ohio_main_process(void)
 		} else {
 			wake_lock(&ohio->ohio_lock); 
 			
-			ohio->fake_irq_counter = 0;
 			ohio->prole = UNKNOWN_POWER_ROLE;
 			ohio->pmode = MODE_DFP;
 			pr_info("%s: DFP(%d) FW version 0x%02x\n",
@@ -1101,28 +1129,16 @@ void ohio_main_process(void)
 		goto exit;
 	}
 
-	
-	msleep(200);
-	val = OhioReadReg(NEW_CC_STATUS);
-	pr_debug("%s: cc status 0x%x\n", __func__, val);
-	if ((val == 0x20) || (val == 0x02)) {
-		pr_info("%s: open e-mark cable in\n", __func__);
-		ohio->emarker_flag = 1;
-	}
-
-	ohio_debug_dump();
-	
-	if (ohio->pmode == MODE_DFP && usb_lock_host_speed)
-		dfp_downgrade_usb20();
-	if (ohio->pmode == MODE_UFP && usb_lock_speed)
-		ufp_switch_usb_speed(0);
 exit:
 	pr_debug("%s: exit\n", __func__);
 }
 
+extern int qpnp_boost_status(u8 *value);
+extern int qpnp_boost_int_status(u8 *value);
 static irqreturn_t ohio_intr_comm_isr(int irq, void *data)
 {
 	struct ohio_data *ohio = data;
+	u8 value1, value2;
 
 	if (atomic_read(&ohio_power_status) != 1)
 	{
@@ -1132,6 +1148,16 @@ static irqreturn_t ohio_intr_comm_isr(int irq, void *data)
 	if (is_soft_reset_intr()) {
 		queue_delayed_work(ohio->comm_workqueue, &ohio->comm_isr_work, 0);
 	}
+
+	qpnp_boost_status(&value1);
+	pr_debug("%s: qpnp_boost_status = 0x%02x\n", __func__, value1);
+	qpnp_boost_int_status(&value2);
+	pr_debug("%s: qpnp_boost_int_status = 0x%02x\n", __func__, value2);
+	if (!value1 || !value2) {
+		pr_info("%s: over current or no need Vconn, disabling Vconn\n", __func__);
+		ohio_hardware_disable_vconn();
+	}
+
 	return IRQ_HANDLED;
 }
 
@@ -1140,6 +1166,21 @@ void enable_drole_work_func(int on)
 	struct ohio_data *ohio = i2c_get_clientdata(ohio_client);
 	ohio->drole_on = on;
 	queue_delayed_work(ohio->workqueue, &ohio->drole_work, 150);
+}
+
+void enable_oc_work_func(void)
+{
+	struct ohio_data *ohio = i2c_get_clientdata(ohio_client);
+	if (!delayed_work_pending(&ohio->oc_enable_work))
+		queue_delayed_work(ohio->workqueue, &ohio->oc_enable_work, 20);
+	else
+		pr_err("%s: delay_queue pending, oc_enable fails\n", __func__);
+}
+
+static void oc_enable_work_func(struct work_struct *work)
+{
+	pr_info("%s: set oc_enable=1\n", __func__);
+	oc_enable = 1;
 }
 
 static void drole_work_func(struct work_struct *work)
@@ -1152,9 +1193,10 @@ static void drole_work_func(struct work_struct *work)
 		pr_info("data role change %d\n", (int)td->drole_on);
 		
 		
-		if (ohio_get_data_value(OHIO_NON_STANDARD))
+		if (cable_connected == 0) {
+			pr_err("%s: cable out, should not do anything with event irq\n", __func__);
 			return;
-
+		}
 		mutex_lock(&td->drole_lock);
 		if (td->drole_on) {
 			dwc3_pd_drswap(DR_HOST);
@@ -1179,12 +1221,14 @@ static void ohio_work_func(struct work_struct *work)
 	struct ohio_data *td = container_of(work, struct ohio_data,
 					       work.work);
 	uint fake_irq_triggerred = 0;
+	u8 val;
 
 	cable_connected = confirmed_cable_det(td);
 	pr_info("%s : detect cable insertion/remove, cable_connected = %d\n",
 				__func__, cable_connected);
 	if (cable_connected == DONGLE_CABLE_INSERT) {
 		
+		td->fake_irq_counter = 0;
 		mutex_lock(&td->lock);
 		ohio_main_process();
 		mutex_unlock(&td->lock);
@@ -1206,8 +1250,14 @@ static void ohio_work_func(struct work_struct *work)
 		if (atomic_read(&cbl_det_irq_status)) {
 			atomic_set(&cbl_det_irq_status, 0);
 			enable_irq(td->cbl_det_irq);
+			pr_info("%s: Enable cbl_det IRQ\n", __func__);
+			mdelay(1);
+			if ((cable_connected != DONGLE_CABLE_REMOVE) &&
+				((val = gpio_get_value(td->pdata->gpio_cbl_det)) == DONGLE_CABLE_REMOVE)) {
+				pr_info("%s: cable might be removed. do disconnect\n", __func__);
+				cable_disconnect(td);
+			}
 		}
-		pr_info("%s: Enable cbl_det IRQ\n", __func__);
 	}
 }
 
@@ -1236,6 +1286,52 @@ static void ohio_debounce_work_func(struct work_struct *work)
 	}
 	pr_info("%s : Enable cbl_det IRQ due to fake interrupt\n", __func__);
 }
+
+int workable_charging_cable(void)
+{
+	u8 val;
+	int ret;
+	struct ohio_data *ohio = NULL;
+
+	if(ohio_client)
+		ohio = i2c_get_clientdata(ohio_client);
+	else
+		return -ENODEV;
+
+	if (atomic_read(&ohio_power_status) == 1) {
+		ret = ohio_read_reg(OHIO_SLVAVE_I2C_ADDR, NEW_CC_STATUS, &val);
+		if (ret < 0) {
+			pr_err("%s: i2c fail\n", __func__);
+			return 2;
+		}
+		else {
+			pr_info("%s: cc_status = 0x%02X\n", __func__, val);
+			switch (val) {
+				case 0x00:
+					pr_err("%s: cable out\n", __func__);
+					return -1;
+				case 0x04:
+				case 0x40:
+				case 0x08:
+				case 0x80:
+					pr_info("%s: workable cable\n", __func__);
+					return 1;
+				case 0x0c:
+				case 0xc0:
+					pr_err("%s: illegal cable\n", __func__);
+					return 0;
+				default:
+					pr_err("%s: unknown status\n", __func__);
+					return -1;
+			}
+		}
+	}
+	else {
+		pr_info("%s: power not ready\n", __func__);
+		return 2;
+	}
+}
+EXPORT_SYMBOL(workable_charging_cable);
 
 #ifdef CONFIG_OF
 int __maybe_unused ohio_regulator_configure(struct device *dev,
@@ -2187,6 +2283,7 @@ static int ohio_i2c_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&ohio->debounce_work, ohio_debounce_work_func);
 	INIT_DELAYED_WORK(&ohio->comm_isr_work, ohio_comm_isr_work_func);
 	INIT_DELAYED_WORK(&ohio->drole_work, drole_work_func);
+	INIT_DELAYED_WORK(&ohio->oc_enable_work, oc_enable_work_func);
 
 	ohio->non_standard_flag = 0;
 

@@ -494,6 +494,9 @@ Additional properties added to the second level nodes that represent timings pro
 					"dsi_lp_mode" = DSI low power mode (default)
 					"dsi_hs_mode" = DSI high speed mode
 
+- htc,dsi_panel_power_control:		String that specifies customized panel power control.
+					"hx8396c2" => Used for HX8396C workaround
+
 Note, if a given optional qcom,* binding is not present, then the driver will configure
 the default values specified.
 

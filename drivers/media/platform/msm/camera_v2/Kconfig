@@ -253,3 +253,9 @@ config OIS_CALIBRATION
 	    depends on MSMB_CAMERA
         ---help---
 		OIS GYRO offset calibration
+
+config CAM_REG_LASER
+	    bool "Camera register Laser"
+	    depends on MSMB_CAMERA
+        ---help---
+		Camera register Laser

@@ -20,6 +20,9 @@
 #ifdef CONFIG_OIS_CALIBRATION
 #include "lc898123AXD_htc.h"
 #endif
+#ifdef CONFIG_CAM_REG_LASER
+#include <linux/laser.h>
+#endif
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_info("[CAM]"fmt, ##args)
@@ -205,6 +208,10 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	const char *sensor_name;
 	uint32_t retry = 0;
 
+#ifdef CONFIG_CAM_REG_LASER
+	static int first = 1;
+#endif
+
 	if (!s_ctrl) {
 		pr_err("%s:%d failed: %p\n",
 			__func__, __LINE__, s_ctrl);
@@ -226,6 +233,18 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			sensor_i2c_client, slave_info, sensor_name);
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_CAM_REG_LASER
+	if (first)
+	{
+		CDBG("%s: Call Laser_poweron_by_camera()", __func__);
+		Laser_poweron_by_camera();
+		CDBG("%s: Call Laser_poweroff_by_camera()", __func__);
+		Laser_poweroff_by_camera();
+		first = 0;
+		msleep(1);
+	}
+#endif
 
 	if (s_ctrl->set_mclk_23880000)
 		msm_sensor_adjust_mclk(power_info);

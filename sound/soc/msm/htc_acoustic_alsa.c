@@ -200,13 +200,11 @@ int htc_acoustic_query_feature(enum HTC_FEATURE feature)
 
 static int acoustic_open(struct inode *inode, struct file *file)
 {
-	D("open\n");
 	return 0;
 }
 
 static int acoustic_release(struct inode *inode, struct file *file)
 {
-	D("release\n");
 	return 0;
 }
 
@@ -239,7 +237,6 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			rc = -EFAULT;
 		}
 		else {
-			D("%s %d: copy_from_user ok. size=%#x\n", __func__, __LINE__, us32_size);
 		}
 	}
 
@@ -253,7 +250,6 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			}
 			if(sizeof(s32_value) <= us32_size) {
 				memcpy((void*)buf, (void*)&s32_value, sizeof(s32_value));
-				D("%s %d: ACOUSTIC_GET_HW_COMPONENT %#x\n", __func__, __LINE__, s32_value);
 			} else {
 				E("%s %d: ACOUSTIC_GET_HW_COMPONENT error.\n", __func__, __LINE__);
 				rc = -EINVAL;
@@ -263,7 +259,6 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case ACOUSTIC_UPDATE_BEATS_STATUS: {
 			if(sizeof(s32_value) <= us32_size) {
 				memcpy((void*)&s32_value, (void*)buf, sizeof(s32_value));
-				D("%s %d: ACOUSTIC_UPDATE_BEATS_STATUS %#x\n", __func__, __LINE__, s32_value);
 				if (s32_value < -1 || s32_value > 1) {
 					rc = -EINVAL;
 					break;
@@ -299,7 +294,6 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				rc = -EFAULT;
 				break;
 			}
-			D("Update FM SSR Status : %d\n", new_state);
 			if (new_state < -1 || new_state > 1) {
 				E("Invalid FM status update");
 				rc = -EINVAL;
@@ -313,14 +307,12 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case ACOUSTIC_CONTROL_WAKELOCK: {
 			if(sizeof(s32_value) <= us32_size) {
 				memcpy((void*)&s32_value, (void*)buf, sizeof(s32_value));
-				D("%s %d: ACOUSTIC_CONTROL_WAKELOCK %#x\n", __func__, __LINE__, s32_value);
 				if (s32_value < -1 || s32_value > 1) {
 					rc = -EINVAL;
 					break;
 				}
 				if (s32_value == 1) {
 					wake_lock_timeout(&htc_acoustic_wakelock, 60*HZ);
-					D("%s %d: wake_unlock compr_lpa_q6_cb_wakelock\n", __func__, __LINE__);
 					wake_unlock(&compr_lpa_q6_cb_wakelock );
 				} else {
 					wake_lock_timeout(&htc_acoustic_wakelock_timeout, 1*HZ);
@@ -335,16 +327,13 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case ACOUSTIC_TFA_CONTROL_WAKELOCK: {
 			if(sizeof(s32_value) <= us32_size) {
 				memcpy((void*)&s32_value, (void*)buf, sizeof(s32_value));
-				D("%s %d: ACOUSTIC_TFA_CONTROL_WAKELOCK %#x\n", __func__, __LINE__, s32_value);
 				if (s32_value < -1 || s32_value > 1) {
 					rc = -EINVAL;
 					break;
 				}
 				if (s32_value == 1) {
-					D("%s %d: hold wakelock for tfa extra mi2s\n", __func__, __LINE__);
 					wake_lock_timeout(&htc_acoustic_tfa_wakelock, 15*HZ);
 				} else {
-					D("%s %d: release wakelock for tfa extra mi2s\n", __func__, __LINE__);
 					wake_unlock(&htc_acoustic_tfa_wakelock);
 				}
 			} else {

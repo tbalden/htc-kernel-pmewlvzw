@@ -274,6 +274,8 @@
 			qcom,fs-curr-ua = <10000>;      /* HTC: 4ch, 10mA */
 			qcom,led-strings-list = [00 01 02 03];
 			qcom,en-cabc;
+			htc,hyb-thres-low = <10000>;
+			htc,hyb-thres-low-wm = <561>;
 		};
 	};
 };
@@ -328,5 +330,17 @@
 	mpp@a300 { /* MPP 4 */
 		/* MPP4 was WLED FET on QUALCOMM CDP but NC here */
 		status = "disabled";
+	};
+};
+
+&rpm_bus {
+	rpm-regulator-ldoa27 {
+		status = "okay";
+		pm8994_l27: regulator-l27 {
+			regulator-min-microvolt = <1050000>;
+			regulator-max-microvolt = <1050000>;
+			qcom,init-voltage = <1050000>;
+			status = "okay";
+		};
 	};
 };

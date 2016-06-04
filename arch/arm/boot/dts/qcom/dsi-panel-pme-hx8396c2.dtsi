@@ -152,6 +152,7 @@
 		qcom,dcs-cmd-by-left;
 		qcom,panel-supply-entries = <&dsi_panel_pwr_supply_hx8396c>;
 		qcom,mdss-dsi-lp11-init;
+
 		htc,brt-bl-table = <30 66>, <142 1075>, <255 4095>;
 		htc,mdss-camera-blk = <170>;
 		htc,cabc-off-cmds = [
@@ -239,7 +240,7 @@
 			22 1E 07 08 04 03 04 a0
 			22 16 06 07 04 03 04 a0
 		];
-		qcom,mdss-dsi-reset-sequence =  <1 1>, <0 1>, <1 15>;
+		qcom,mdss-dsi-reset-sequence = <1 15>;
 		qcom,mdss-dsi-t-clk-post = <0x0C>;
 		qcom,mdss-dsi-t-clk-pre = <0x29>;
 		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
@@ -350,6 +351,9 @@
 		qcom,mdss-dsi-off-command = [
 			39 01 00 00 23 00 02 28 00
 			39 01 00 00 64 00 02 10 00
+			39 00 00 00 00 00 02 b5 00
+			39 01 00 00 14 00 02 bc 38
+			39 01 00 00 14 00 02 4f 01 // deep standby
 		];
 		qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
 		qcom,cont-splash-enabled;
@@ -360,6 +364,7 @@
 		qcom,mdss-dsi-panel-status-check-mode = "te_signal_check";
 		qcom,config-select = <&dsi_dual_hx8396c2_cmd_config2>;
 
+		htc,dsi_panel_power_control = "hx8396c2";
 		htc,brt-bl-table = <30 66>, <142 1075>, <255 4095>;
 		htc,mdss-camera-blk = <170>;
 		htc,cabc-off-cmds = [
@@ -457,7 +462,7 @@
 			22 1E 07 08 04 03 04 a0
 			22 16 06 07 04 03 04 a0
 		];
-		qcom,mdss-dsi-reset-sequence =  <1 1>, <0 1>, <1 15>;
+		qcom,mdss-dsi-reset-sequence = <1 15>;
 		qcom,mdss-dsi-t-clk-post = <0x0C>;
 		qcom,mdss-dsi-t-clk-pre = <0x29>;
 		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
@@ -502,6 +507,9 @@
 		qcom,mdss-dsi-off-command = [
 			39 01 00 00 23 00 02 28 00
 			39 01 00 00 64 00 02 10 00
+			39 00 00 00 00 00 02 b5 00
+			39 01 00 00 14 00 02 bc 38
+			39 01 00 00 14 00 02 4f 01 // deep standby
 		];
 		qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
 		qcom,cont-splash-enabled;
@@ -512,6 +520,7 @@
 		qcom,mdss-dsi-panel-status-check-mode = "te_signal_check";
 		qcom,config-select = <&dsi_dual_hx8396c2_cmd_config2>;
 
+		htc,dsi_panel_power_control = "hx8396c2";
 		htc,brt-bl-table = <30 77>, <142 1162>, <255 4095>;
 		htc,mdss-camera-blk = <179>;
 		htc,cabc-off-cmds = [
@@ -648,6 +657,7 @@
 		qcom,dcs-cmd-by-left;
 		qcom,panel-supply-entries = <&dsi_panel_pwr_supply_hx8396c>;
 		qcom,mdss-dsi-lp11-init;
+
 		htc,brt-bl-table = <30 77>, <142 1162>, <255 4095>;
 		htc,mdss-camera-blk = <179>;
 		htc,cabc-off-cmds = [

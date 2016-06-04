@@ -321,6 +321,9 @@ struct mdss_mdp_ctl {
 	u64 last_input_time;
 	int pending_mode_switch;
 	u16 frame_rate;
+
+	
+	struct mutex event_lock;
 };
 
 struct mdss_mdp_mixer {
