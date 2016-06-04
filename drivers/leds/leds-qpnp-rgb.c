@@ -834,7 +834,7 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if (screen_on && blinking && led!=buttonled) {
+	if (!screen_on && blinking && led!=buttonled) {
 		qpnp_buttonled_blink(0);
 	}
 #endif
