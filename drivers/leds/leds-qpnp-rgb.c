@@ -320,7 +320,10 @@ static void virtual_key_lut_table_set(int *virtual_key_lut_table, int array_len,
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 #define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	80
 
+#define BUTTON_BLINK_SPEED_MAX	9
+
 static int bln_switch = 1;
+static int bln_speed = 3;
 static int screen_on = 1;
 static int blinking = 0;
 struct qpnp_led_data *buttonled;
@@ -390,7 +393,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness)
 			led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
 			led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW;
 			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = 300;
-			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = 2700;
+			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = (4300 - (450 * bln_speed)) + 200;
 			led->last_brightness = blink_brightness;
 			rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
 					PM_PWM_PERIOD_MIN,
@@ -2340,7 +2343,7 @@ static int lpg_blink(struct led_classdev *led_cdev, int val)
 
 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
 
-	LED_DBG("%s: bank %d blink %d status %d\n", __func__, led->id, val, led->status);
+	LED_INFO("%s: bank %d blink %d status %d coefficient calc %d \n", __func__, led->id, val, led->status, (640 * led->rgb_cfg->pwm_cfg->pwm_coefficient / 255));
 
 	switch (val) {
 	case BLINK_STOP:
@@ -2689,12 +2692,67 @@ static ssize_t bln_dump(struct device *dev,
             input = 0;
 
       bln_switch = input;
-      
+
       return count;
 }
 
 static DEVICE_ATTR(bln, (S_IWUSR|S_IRUGO),
       bln_show, bln_dump);
+
+
+static ssize_t bln_speed_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", bln_speed);
+}
+
+static ssize_t bln_speed_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > BUTTON_BLINK_SPEED_MAX)
+            input = 8;
+
+      bln_speed = input;
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_speed, (S_IWUSR|S_IRUGO),
+      bln_speed_show, bln_speed_dump);
+
+static ssize_t bln_speed_max_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", BUTTON_BLINK_SPEED_MAX);
+}
+
+static ssize_t bln_speed_max_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > BUTTON_BLINK_SPEED_MAX)
+            input = 8;
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_speed_max, (S_IWUSR|S_IRUGO),
+      bln_speed_max_show, bln_speed_max_dump);
+
+
 #endif
 
 
@@ -3338,6 +3396,8 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				rc = device_create_file(led->cdev.dev, &dev_attr_pwm_coefficient);
 				rc = device_create_file(led->cdev.dev, &dev_attr_current_set);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_speed);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_speed_max);
 				rc = device_create_file(led->cdev.dev, &dev_attr_set_color_ID);
 				if (rc < 0) {
 					LED_ERR("%s: Failed to create %s attr blink\n", __func__,  led->cdev.name);
