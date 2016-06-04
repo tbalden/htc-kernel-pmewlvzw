@@ -21,7 +21,7 @@ MODULE_VERSION(DRIVER_VERSION);
 MODULE_LICENSE("GPL");
 
 #define fpf_PWRKEY_DUR          60
-#define FUNC_CYCLE_DUR          10
+#define FUNC_CYCLE_DUR          9
 #define VIB_STRENGTH		20
 
 static int fpf_switch = 2;
@@ -136,6 +136,8 @@ static int fingerprint_pressed = 0;
 // signals when the powering down of screen happens while FP is still being pressed, so filter won't turn screen on, when the button is released based on this value.
 static int powering_down_with_fingerprint_still_pressed = 0;
 
+static int doubletap_wait_period = 1;
+
 /* Home button work func 
 	will start with trying to lock worklock
 	then use vibrator to signal button press 'imitation'
@@ -157,7 +159,7 @@ static void fpf_home_button_func(struct work_struct * fpf_presspwr_work) {
 	fpf_vib();
 	while (!break_home_button_func_work) {
 		count_cycles++;
-		if (count_cycles>15) {
+		if (count_cycles > (9+doubletap_wait_period)) {
 			break;
 		}
 		msleep(FUNC_CYCLE_DUR);
@@ -320,6 +322,54 @@ static struct input_handler fpf_input_handler = {
 	.id_table	= fpf_ids,
 };
 
+static ssize_t fpf_dt_wait_period_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", doubletap_wait_period);
+}
+
+static ssize_t fpf_dt_wait_period_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 5)
+		input = 2;
+
+	doubletap_wait_period = input;
+	return count;
+}
+
+static DEVICE_ATTR(fpf_dt_wait_period, (S_IWUSR|S_IRUGO),
+	fpf_dt_wait_period_show, fpf_dt_wait_period_dump);
+
+
+static ssize_t fpf_dt_wait_period_max_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", 5);
+}
+
+static ssize_t fpf_dt_wait_period_max_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+	return count;
+}
+
+static DEVICE_ATTR(fpf_dt_wait_period_max, (S_IWUSR|S_IRUGO),
+	fpf_dt_wait_period_max_show, fpf_dt_wait_period_max_dump);
+
+
 static ssize_t fpf_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -479,6 +529,14 @@ static int __init fpf_init(void)
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_fpf.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for fpf\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_fpf_dt_wait_period.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for fpf_dt_wait_period\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_fpf_dt_wait_period_max.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for fpf_dt_wait_period_max\n", __func__);
 
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_vib_strength.attr);
 	if (rc)
