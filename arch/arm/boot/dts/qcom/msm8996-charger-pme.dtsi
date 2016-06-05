@@ -13,7 +13,7 @@
 		qcom,vin-sel = <2>;             /* S4 1.8V */
 		qcom,src-sel = <0>;             /* Constant */
 		qcom,master-en = <1>;           /* Enable MPP */
-		qcom,ain-route = <0>;  /* QPNP_PIN_AIN_AMUX_CH5 */
+		qcom,ain-route = <1>;  /* QPNP_PIN_AIN_AMUX_CH6 */
 		status = "okay";
 	};
 
