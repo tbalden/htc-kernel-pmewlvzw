@@ -136,7 +136,12 @@ static int fingerprint_pressed = 0;
 // signals when the powering down of screen happens while FP is still being pressed, so filter won't turn screen on, when the button is released based on this value.
 static int powering_down_with_fingerprint_still_pressed = 0;
 
-static int doubletap_wait_period = 1;
+
+// minimum doubletap wait latency will be: (BASE_VALUE + PERIOD) * FUNC_CYLCE_DUR -> minimum is right now (8+0) * 9 = 72msec
+#define DT_WAIT_PERIOD_MAX 9
+#define DT_WAIT_PERIOD_BASE_VALUE 8
+#define DT_WAIT_PERIOD_DEFAULT 2
+static int doubletap_wait_period = DT_WAIT_PERIOD_DEFAULT;
 
 /* Home button work func 
 	will start with trying to lock worklock
@@ -159,11 +164,11 @@ static void fpf_home_button_func(struct work_struct * fpf_presspwr_work) {
 	fpf_vib();
 	while (!break_home_button_func_work) {
 		count_cycles++;
-		if (count_cycles > (9+doubletap_wait_period)) {
+		if (count_cycles > (DT_WAIT_PERIOD_BASE_VALUE + doubletap_wait_period)) {
 			break;
 		}
 		msleep(FUNC_CYCLE_DUR);
-		pr_debug("fpf %s counting in cycle before KEY_HOME 1 synced: %d / 30 cycles \n",__func__, count_cycles);
+		pr_debug("fpf %s counting in cycle before KEY_HOME 1 synced: %d / %d cycles \n",__func__, count_cycles, DT_WAIT_PERIOD_BASE_VALUE+doubletap_wait_period);
 	}
 	time_count_done_in_home_button_func_work = 1;
 	if (break_home_button_func_work == 0) {
@@ -338,8 +343,8 @@ static ssize_t fpf_dt_wait_period_dump(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	if (input < 0 || input > 5)
-		input = 2;
+	if (input < 0 || input > DT_WAIT_PERIOD_MAX)
+		input = DT_WAIT_PERIOD_DEFAULT;
 
 	doubletap_wait_period = input;
 	return count;
@@ -352,7 +357,7 @@ static DEVICE_ATTR(fpf_dt_wait_period, (S_IWUSR|S_IRUGO),
 static ssize_t fpf_dt_wait_period_max_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d\n", 5);
+	return snprintf(buf, PAGE_SIZE, "%d\n", DT_WAIT_PERIOD_MAX);
 }
 
 static ssize_t fpf_dt_wait_period_max_dump(struct device *dev,
