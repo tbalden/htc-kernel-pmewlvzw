@@ -8,6 +8,7 @@ printk(KERN_INFO "[BATT] " x); \
 } while (0)
 
 #define CONFIG_HTC_BATT_WA_PCN0017 
+#define CONFIG_HTC_BATT_WA_PCN0021 
 
 #define BATT_ERR(x...) do { \
 struct timespec ts; \
@@ -239,6 +240,9 @@ void pmi8994_rerun_apsd(void);
 bool is_otg_enabled(void);
 int pmi8996_get_chgr_sts(void);
 void force_dump_fg_sram(void);
+#ifdef CONFIG_HTC_BATT_WA_PCN0021
+void pmi8996_set_dcp_default(void);
+#endif 
 
 #ifdef CONFIG_HTC_CHARGER
 int pm8996_get_usb_temp(void);
