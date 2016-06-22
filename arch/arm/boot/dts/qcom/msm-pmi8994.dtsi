@@ -210,10 +210,10 @@
 				vk-black-cg-id-sec = "LEB00";
 				vk-white-cg-id-def = "PNK00", "GOD00", "LOW00", "WHT00";
 				vk-white-cg-id-sec = "LEW00";
-				vk-black-pwm-array-def = [00 03 0A 0A 0A 84 84 FF FF FF FF FF];
+				vk-black-pwm-array-def = [00 03 0A 0A 0A 30 30 FF FF FF FF FF];
 				vk-white-pwm-array-def = [00 03 0C 0C 0C 84 84 FF FF FF FF FF];
 				vk-current-array-def =   [14 14 28 28 28 28 28 28 28 28 28 28];
-				vk-black-pwm-array-sec = [00 03 14 14 14 2C 2C 60 60 60 60 60];
+				vk-black-pwm-array-sec = [00 03 0F 0F 0F 10 10 60 60 60 60 60];
 				vk-white-pwm-array-sec = [00 06 18 18 18 84 84 FF FF FF FF FF];
 				vk-current-array-sec =   [0A 0A 14 14 14 28 28 28 28 28 28 28];
 				};

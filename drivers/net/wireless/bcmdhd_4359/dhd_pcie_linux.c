@@ -540,6 +540,11 @@ dhdpcie_pci_remove(struct pci_dev *pdev)
 	bus = pch->bus;
 	osh = pch->osh;
 
+#ifdef CUSTOMER_HW_ONE
+	if (bus->cleanup_wq)
+		destroy_workqueue(bus->cleanup_wq);
+#endif
+
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 #ifdef CONFIG_ARCH_MSM
 	if (bus) {
@@ -706,6 +711,16 @@ void dhdpcie_linkdown_cb(struct msm_pcie_notify *noti)
 #endif 
 #endif 
 
+#ifdef CUSTOMER_HW_ONE
+static void dhd_pcie_cleanup_flow_worker(struct work_struct *worker)
+{
+	dhd_bus_t *bus;
+	DHD_ERROR(("%s: Enter\n", __func__));
+	bus = container_of(worker, dhd_bus_t, cleanup_flow_work);
+	dhd_flow_rings_pending_cleanup(bus->dhd);
+}
+#endif
+
 int dhdpcie_init(struct pci_dev *pdev)
 {
 
@@ -843,6 +858,13 @@ int dhdpcie_init(struct pci_dev *pdev)
 			bus->dhd->mac.octet[2] = 0x4C;
 #endif
 		}
+
+#ifdef CUSTOMER_HW_ONE
+		bus->cleanup_wq = create_singlethread_workqueue("bcmdhd_cleanup_wq");
+		if (bus->cleanup_wq == NULL)
+			break;
+		INIT_WORK(&bus->cleanup_flow_work, dhd_pcie_cleanup_flow_worker);
+#endif
 
 		
 		DHD_TRACE(("%s(): Calling dhd_register_if() \n", __FUNCTION__));
@@ -1397,6 +1419,11 @@ bool dhd_runtimepm_state(dhd_pub_t *dhd)
 	}
 
 	bus->idlecount++;
+
+#ifdef DHD_TRACE_WAKE_LOCK
+	if(dhd_prot_wake_lock_dbg_print(dhd))
+		dhd_wk_lock_stats_dump(dhd, NULL, 0);
+#endif
 
 	DHD_TRACE(("%s : Enter \n", __FUNCTION__));
 	if ((bus->idletime > 0) && (bus->idlecount >= bus->idletime)) {

@@ -14,6 +14,7 @@
  */
 
 static unsigned int usb_project_pid; 
+static bool bundle_headset = false;
 
 #define REQUEST_RESET_DELAYED (HZ / 10)  
 
@@ -47,6 +48,35 @@ int htc_usb_enable_function(char *name, int ebl)
 	return 0;
 
 }
+
+bool is_bundle_headset(void)
+{
+	return bundle_headset;
+}
+EXPORT_SYMBOL_GPL(is_bundle_headset);
+
+bool is_autosuspend(const u16 idVendor, const u16 idProduct, int on)
+{
+	bool match_vpid = false;
+	if (idVendor == 0x170D && idProduct == 0x0523) 
+		match_vpid = true;
+	else if (idVendor == 0x0BDA && idProduct == 0x4805) 
+		match_vpid = true;
+	else if (idVendor == 0x0ECB && idProduct == 0x1ECB) 
+		match_vpid = true;
+	else
+		match_vpid = false;
+	
+	
+	
+	if (match_vpid && on)
+		bundle_headset = true;
+	else
+		bundle_headset = false;
+
+	return match_vpid;
+}
+EXPORT_SYMBOL_GPL(is_autosuspend);
 
 static ssize_t iSerial_show(struct device *dev, struct device_attribute *attr,
 	char *buf);

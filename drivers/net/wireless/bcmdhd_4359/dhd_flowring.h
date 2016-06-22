@@ -203,6 +203,10 @@ extern void dhd_flowid_free(dhd_pub_t *dhdp, uint8 ifindex, uint16 flowid);
 
 extern void dhd_flow_rings_delete(dhd_pub_t *dhdp, uint8 ifindex);
 
+#ifdef CUSTOMER_HW_ONE
+extern void dhd_flow_rings_pending_cleanup(dhd_pub_t *dhdp);
+#endif
+
 extern void dhd_flow_rings_delete_for_peer(dhd_pub_t *dhdp, uint8 ifindex,
                 char *addr);
 

@@ -105,6 +105,7 @@
 #define DATA_ROLE 0x20
 
 #define NEW_CC_STATUS 0x2A
+#define INTP_CTRL 0x33
 
 #define T_TIME_1 0x6C
 #define T_HARDREST_VBUS_OFF_MASK 0x0F
@@ -287,6 +288,7 @@ int ohio_get_data_value(int data_member);
 int ohio_set_data_value(int data_member, int val);
 int ohio_hardware_enable_vconn(void);
 int ohio_hardware_disable_vconn(void);
+int ohio_hardware_disable_boost_5v(void);
 void enable_drole_work_func(int on);
 void enable_oc_work_func(void);
 u8 interface_send_msg_timeout(u8 type, u8 *pbuf, u8 len, int timeout_ms);

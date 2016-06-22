@@ -1134,7 +1134,6 @@ static void batt_worker(struct work_struct *work)
 	int src = 0;
 	int ibat = 0;
 	int ibat_new = 0;
-	int aicl_now;
 	unsigned long time_since_last_update_ms;
 	unsigned long cur_jiffies;
 	int cc_uah_now;
@@ -1218,8 +1217,10 @@ static void batt_worker(struct work_struct *work)
 			
 #endif 
 		} else {
+			if (g_is_pd_charger){
+				
 			
-			if ((htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB)) {
+			}else if ((htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB)) {
 				s_prev_user_set_chg_curr = get_property(htc_batt_info.usb_psy, POWER_SUPPLY_PROP_CURRENT_MAX);
 				if (!get_connect2pc() && !g_rerun_apsd_done && !g_is_unknown_charger) {
 					user_set_chg_curr = 150000;
@@ -1432,14 +1433,8 @@ static void batt_worker(struct work_struct *work)
 		else
 			sprintf(chg_strbuf, "PD%dV_%d.%dA", g_pd_voltage/1000,  g_pd_current/1000, (g_pd_current % 1000)/100);
 
-		if(htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB_DCP){
-			aicl_now = get_property(htc_batt_info.batt_psy,POWER_SUPPLY_PROP_INPUT_CURRENT_MAX)/1000;
-			if(aicl_now != g_pd_current){
-				pr_info("Fix the current max.\n");
-				set_aicl_enable(false);
-				pmi8994_set_iusb_max(g_pd_current * 1000);
-			}
-                }
+		set_aicl_enable(false);
+		pmi8994_set_iusb_max(g_pd_current * 1000);
 	}
 
 	
@@ -1624,7 +1619,7 @@ static void chk_unknown_chg_worker(struct work_struct *work)
 {
 	int current_max_now;
 
-	if (g_latest_chg_src != POWER_SUPPLY_TYPE_USB){
+	if ((g_latest_chg_src != POWER_SUPPLY_TYPE_USB)||(g_is_pd_charger)) {
 		g_rerun_apsd_done = false;
 		return;
 	}

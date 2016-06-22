@@ -1128,9 +1128,13 @@ u8 recv_pd_goto_min_default_callback(void *para, u8 para_len)
 	return 1;
 }
 
+extern int qpnp_boost_status(u8 *value);
+extern int qpnp_boost_int_status(u8 *value);
 void pd_vbus_control_default_func(bool on)
 {
 	int vbus_mv = 0;
+	u8 status, vconn_mask;
+	u8 value1, value2;
 #ifdef OHIO_DEBUG
 	pr_info("vbus control %d\n", (int)on);
 #endif
@@ -1140,16 +1144,45 @@ void pd_vbus_control_default_func(bool on)
 	pr_info("vbus control %d\n", (int)on);
 	
 	if (on) {
+		ohio_hardware_disable_vconn();
+
 		ohio_set_data_value(OHIO_PROLE, PR_SOURCE);
 		ohio_set_data_value(OHIO_PMODE, MODE_DFP);
 		enable_oc_work_func();
 		dwc3_pd_vbus_ctrl(1);
 		mdelay(5);
 		vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
+		pr_debug("%s: vbus voltage (%d mv)\n", __func__, vbus_mv);
 		if (vbus_mv < 3500) {
 			pr_info("%s: Disable boost 5v due to abnormal vbus voltage (%d mv)\n", __func__, vbus_mv);
 			dwc3_pd_vbus_ctrl(0);
 		}
+
+		status = OhioReadReg(NEW_CC_STATUS);
+		if (((status & 0x0F) == CC1_STATUS_RA) || ((status & 0xF0) == CC2_STATUS_RA)) {
+			if ((status & 0x0F) == CC1_STATUS_RA) {
+				pr_info("%s: CC1 Ra\n", __func__);
+				ohio_hardware_enable_vconn();
+				vconn_mask = OhioReadReg(INTP_CTRL);
+				vconn_mask &= 0x0F;
+				OhioWriteReg(INTP_CTRL, (vconn_mask | 0x10));
+			} else if ((status & 0xF0) == CC2_STATUS_RA) {
+				pr_info("%s: CC2 Ra\n", __func__);
+				ohio_hardware_enable_vconn();
+				vconn_mask = OhioReadReg(INTP_CTRL);
+				vconn_mask &= 0x0F;
+				OhioWriteReg(INTP_CTRL, (vconn_mask | 0x20));
+			}
+			qpnp_boost_status(&value1);
+			pr_debug("%s: qpnp_boost_status = 0x%02x\n", __func__, value1);
+			qpnp_boost_int_status(&value2);
+			pr_debug("%s: qpnp_boost_int_status = 0x%02x\n", __func__, value2);
+			if (!value1 || !value2) {
+				pr_info("%s: over current or no need Vconn, disabling Vconn\n", __func__);
+				ohio_hardware_disable_vconn();
+			}
+		}
+
 		if (ohio_get_data_value(OHIO_START_HOST_FLAG)) { 
 			pr_info("for FW1.2 WA, start host\n");
 			

@@ -637,6 +637,44 @@ int ohio_hardware_disable_vconn(void)
 	return 0;
 }
 
+int ohio_hardware_disable_boost_5v(void)
+{
+	u32 rc;
+	struct ohio_data *ohio = NULL;
+
+	if(ohio_client)
+		ohio = i2c_get_clientdata(ohio_client);
+	else
+		return -ENODEV;
+
+	gpio_direction_output(ohio->pdata->gpio_vconn_boost, 0);
+	if(ohio->pdata->boost_5v) {
+		if (regulator_is_enabled(ohio->pdata->boost_5v)) {
+			rc = regulator_disable(ohio->pdata->boost_5v);
+			if (rc) {
+				pr_err("%s: Unable to disable boost_5v regulator\n", __func__);
+				return -1;
+			}
+			pr_info("boost_5v disabled\n");
+		}
+	}
+	return 0;
+}
+
+int ohio_release_wakelock(void)
+{
+	struct ohio_data *ohio = NULL;
+
+	if(ohio_client)
+		ohio = i2c_get_clientdata(ohio_client);
+	else
+		return -ENODEV;
+
+	wake_unlock(&ohio->ohio_lock);
+	return 0;
+}
+EXPORT_SYMBOL(ohio_release_wakelock);
+
 void ohio_vbus_control(bool value)
 {
 #ifdef SUP_VBUS_CTL

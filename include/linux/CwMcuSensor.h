@@ -248,7 +248,7 @@ int touch_status(u8 status);
 #define TOUCH_SOLUTION_MAXIM1187X                  0
 #define TOUCH_SOLUTION_SYNAPTICS3351               1
 
-#define TOUCH_COMBINATION_MAX_NUM                  4
+#define TOUCH_COMBINATION_MAX_NUM                  5
 
 typedef struct {
     uint32_t calculate_done;

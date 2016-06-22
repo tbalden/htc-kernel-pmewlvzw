@@ -9012,6 +9012,14 @@ void pmi8994_rerun_apsd(void)
 	g_rerun_apsd_ignore_uv = true;
 
 	
+	if (workable_charging_cable()) {
+		pr_smb(PR_MISC, "Set ADAPTOR range to 5V to 9V\n");
+		smbchg_sec_masked_write(the_chip,
+				the_chip->usb_chgpth_base + USBIN_CHGR_CFG,
+				ADAPTER_ALLOWANCE_MASK, USBIN_ADAPTER_5V_9V_CONT);
+	}
+
+	
 	pr_smb(PR_MISC, "Faking Removal\n");
 	rc = fake_insertion_removal(the_chip, false);
 	if (rc < 0) {

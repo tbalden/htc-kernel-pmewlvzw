@@ -3503,6 +3503,9 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	u64 wallclock;
 	struct related_thread_group *grp = NULL;
 #endif
+	bool freq_notif_allowed = !(wake_flags & WF_NO_NOTIFIER);
+
+	wake_flags &= ~WF_NO_NOTIFIER;
 
 	smp_mb__before_spinlock();
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
@@ -3573,11 +3576,14 @@ out:
 		atomic_notifier_call_chain(&migration_notifier_head,
 					   0, (void *)&mnd);
 
-	if (!same_freq_domain(src_cpu, cpu)) {
-		check_for_freq_change(cpu_rq(cpu));
-		check_for_freq_change(cpu_rq(src_cpu));
-	} else if (heavy_task)
-		check_for_freq_change(cpu_rq(cpu));
+	if (freq_notif_allowed) {
+		if (!same_freq_domain(src_cpu, cpu)) {
+			check_for_freq_change(cpu_rq(cpu));
+			check_for_freq_change(cpu_rq(src_cpu));
+		} else if (heavy_task) {
+			check_for_freq_change(cpu_rq(cpu));
+		}
+	}
 
 	return success;
 }
@@ -3627,6 +3633,13 @@ int wake_up_process(struct task_struct *p)
 	return try_to_wake_up(p, TASK_NORMAL, 0);
 }
 EXPORT_SYMBOL(wake_up_process);
+
+int wake_up_process_no_notif(struct task_struct *p)
+{
+	WARN_ON(task_is_stopped_or_traced(p));
+	return try_to_wake_up(p, TASK_NORMAL, WF_NO_NOTIFIER);
+}
+EXPORT_SYMBOL(wake_up_process_no_notif);
 
 int wake_up_state(struct task_struct *p, unsigned int state)
 {

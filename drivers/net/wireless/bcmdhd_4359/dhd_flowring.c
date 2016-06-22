@@ -51,6 +51,9 @@
 #include <bcmmsgbuf.h>
 #include <dhd_pcie.h>
 
+#ifdef CUSTOMER_HW_ONE
+extern bool dhd_sta_associated(dhd_pub_t *dhdp, uint32 bssidx, uint8 *mac);
+#endif
 
 static INLINE int dhd_flow_queue_throttle(flow_queue_t *queue);
 
@@ -551,6 +554,9 @@ dhd_flowid_alloc(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *sa, char *da)
 	if (flowid == FLOWID_INVALID) {
 		MFREE(dhdp->osh, fl_hash_node,  sizeof(flow_hash_info_t));
 		DHD_ERROR(("%s: cannot get free flowid \n", __FUNCTION__));
+#ifdef CUSTOMER_HW_ONE
+		queue_work(dhdp->bus->cleanup_wq, &dhdp->bus->cleanup_flow_work);
+#endif
 		return FLOWID_INVALID;
 	}
 
@@ -627,6 +633,13 @@ dhd_flowid_lookup(dhd_pub_t *dhdp, uint8 ifindex,
 		if (!if_flow_lkup[ifindex].status)
 			return BCME_ERROR;
 
+#ifdef CUSTOMER_HW_ONE
+		if (!ETHER_ISMULTI(da) &&
+				((if_flow_lkup[ifindex].role == WLC_E_IF_ROLE_AP) ||
+				 (if_flow_lkup[ifindex].role == WLC_E_IF_ROLE_P2P_GO)) &&
+				(!dhd_sta_associated(dhdp, ifindex, da)))
+			return BCME_ERROR;
+#endif
 
 		id = dhd_flowid_alloc(dhdp, ifindex, prio, sa, da);
 		if (id == FLOWID_INVALID) {
@@ -779,6 +792,67 @@ dhd_flow_rings_delete(dhd_pub_t *dhdp, uint8 ifindex)
 		}
 	}
 }
+#ifdef CUSTOMER_HW_ONE
+#define MAX_NUM_OF_ASSOCLIST	64
+#define dtoh32(i) (i)
+void
+dhd_flow_rings_pending_cleanup(dhd_pub_t *dhdp)
+{
+	uint32 id, i;
+	uint match;
+	uint  ret = 0;
+	flow_ring_table_t *flow_ring_table;
+	char mac_buf[MAX_NUM_OF_ASSOCLIST *
+		sizeof(struct ether_addr) + sizeof(uint)] = {0};
+	struct maclist *assoc_maclist = (struct maclist *)mac_buf;
+
+	DHD_ERROR(("%s: Enter\n", __func__));
+
+	if (!dhdp->flow_ring_table)
+		return;
+
+	assoc_maclist->count = MAX_NUM_OF_ASSOCLIST;
+	if ((ret = dhd_wl_ioctl_cmd(dhdp, WLC_GET_ASSOCLIST, assoc_maclist, sizeof(mac_buf), false, 0)) != 0) {
+		DHD_ERROR(("%s: failed to get assoclist error %d\n",
+				__FUNCTION__, ret));
+		return;
+	}
+
+	assoc_maclist->count = dtoh32(assoc_maclist->count);
+	flow_ring_table = (flow_ring_table_t *)dhdp->flow_ring_table;
+	if (assoc_maclist->count) {
+		for (i = 0; i < assoc_maclist->count; i++) {
+			DHD_ERROR(("%s : associated="MACDBG "\n",
+				__FUNCTION__, MAC2STRDBG(assoc_maclist->ea[i].octet)));
+		}
+	}
+	if (assoc_maclist->count) {
+		for (id = 0; id < dhdp->num_flow_rings; id++) {
+			match = 0;
+			for (i = 0; i < assoc_maclist->count; i++) {
+				if (memcmp(flow_ring_table[id].flow_info.da, assoc_maclist->ea[i].octet, ETHER_ADDR_LEN) == 0) {
+					match = 1;
+					break;
+				}
+			}
+			if((!match) && (flow_ring_table[id].active)) {
+					dhd_bus_flow_ring_delete_request(dhdp->bus,
+							(void *) &flow_ring_table[id]);
+			}
+		}
+	}
+	else {
+		for (id = 0; id < dhdp->num_flow_rings; id++) {
+			if((flow_ring_table[id].active))
+				dhd_bus_flow_ring_delete_request(dhdp->bus,
+						(void *) &flow_ring_table[id]);
+		}
+#if defined(CONFIG_DHD_USE_STATIC_BUF)
+		PKTFREE_ALL_STATIC(dhdp->osh);
+#endif 
+	}
+}
+#endif
 
 void
 dhd_flow_rings_delete_for_peer(dhd_pub_t *dhdp, uint8 ifindex, char *addr)

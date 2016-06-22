@@ -215,6 +215,11 @@ typedef struct dhd_bus {
 	uint8 force_suspend;
 	uint32 oob_irq_num;
 	uint32 pci_d3hot_done;
+#ifdef CUSTOMER_HW_ONE
+	struct workqueue_struct *cleanup_wq;
+	struct work_struct cleanup_flow_work;
+#endif
+
 } dhd_bus_t;
 
 

@@ -285,6 +285,9 @@ typedef struct dhd_prot {
 	bcm_workq_t rx_compl_prod, rx_compl_cons;
 #endif 
 #endif 
+#ifdef DHD_TRACE_WAKE_LOCK
+	ulong		wake_lock_dbg_time;
+#endif
 } dhd_prot_t;
 
 static INLINE void dhd_base_addr_htolpa(sh_addr_t *base_addr, dmaaddr_t pa);
@@ -1913,6 +1916,9 @@ dhd_prot_init(dhd_pub_t *dhd)
 	prot->txp_threshold = TXP_FLUSH_MAX_ITEMS_FLUSH_CNT;
 
 	prot->ioctl_trans_id = 0;
+#ifdef DHD_TRACE_WAKE_LOCK
+	prot->wake_lock_dbg_time = 0;
+#endif
 
 	
 	
@@ -2077,6 +2083,9 @@ dhd_prot_reset(dhd_pub_t *dhd)
 	prot->ioctl_state = 0;
 	prot->ioctl_received = IOCTL_WAIT;
 	prot->ioctl_trans_id = 0;
+#ifdef DHD_TRACE_WAKE_LOCK
+	prot->wake_lock_dbg_time = 0;
+#endif
 
 	if (dhd->flow_rings_inited) {
 		dhd_flow_rings_deinit(dhd);
@@ -2099,6 +2108,21 @@ dhd_prot_reset(dhd_pub_t *dhd)
 #endif 
 } 
 
+#ifdef DHD_TRACE_WAKE_LOCK
+int
+dhd_prot_wake_lock_dbg_print(dhd_pub_t *dhd)
+{
+	dhd_prot_t *prot = dhd->prot;
+	if (prot->wake_lock_dbg_time &&
+		(OSL_SYSUPTIME() - prot->wake_lock_dbg_time > TIMEOUT_WAKE_LOCK_DBG_PRINT)) {
+		prot->wake_lock_dbg_time = OSL_SYSUPTIME();
+		return 1;
+	}
+	if(!prot->wake_lock_dbg_time)
+		prot->wake_lock_dbg_time = OSL_SYSUPTIME();
+	return 0;
+}
+#endif 
 
 void
 dhd_prot_rx_dataoffset(dhd_pub_t *dhd, uint32 rx_offset)

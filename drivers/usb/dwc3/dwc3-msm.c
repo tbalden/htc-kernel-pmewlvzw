@@ -2850,8 +2850,12 @@ static int dwc3_msm_remove(struct platform_device *pdev)
 int dwc3_pd_vbus_ctrl(int on)
 {
 	struct dwc3_msm *mdwc = context;
-	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
+	struct dwc3 *dwc = NULL;
 	int ret = 0;
+
+	if (IS_ERR_OR_NULL(mdwc))
+		return -EFAULT;
+	dwc = platform_get_drvdata(mdwc->dwc3);
 
 	pr_debug("%s: on = %d\n", __func__, on);
 	if (on == -1) { 
@@ -2924,6 +2928,8 @@ int dwc3_pd_drswap(int new_role)
 {
 	struct dwc3_msm *mdwc = context;
 	int ret = 0;
+	if (IS_ERR_OR_NULL(mdwc))
+		return -EFAULT;
 
 	pr_info("%s: 0:HOST 1:DEVICE; new_role = %d\n", __func__, new_role);
 

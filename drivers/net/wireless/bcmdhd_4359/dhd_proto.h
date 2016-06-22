@@ -53,6 +53,10 @@
 #define D3_ACK_RESP_TIMEOUT		DEFAULT_D3_ACK_RESP_TIMEOUT
 #endif 
 
+#ifdef DHD_TRACE_WAKE_LOCK
+#define TIMEOUT_WAKE_LOCK_DBG_PRINT 600000
+#endif 
+
 #define DEFAULT_DHD_BUS_BUSY_TIMEOUT	(IOCTL_RESP_TIMEOUT + 1000)
 #ifndef DHD_BUS_BUSY_TIMEOUT
 #define DHD_BUS_BUSY_TIMEOUT	DEFAULT_DHD_BUS_BUSY_TIMEOUT
@@ -64,6 +68,10 @@ extern int dhd_prot_attach(dhd_pub_t *dhdp);
 
 extern int dhd_prot_dma_indx_init(dhd_pub_t *dhdp, uint32 rw_index_sz,
 	uint8 type, uint32 length);
+
+#ifdef DHD_TRACE_WAKE_LOCK
+extern int dhd_prot_wake_lock_dbg_print(dhd_pub_t *dhd);
+#endif
 
 extern void dhd_prot_detach(dhd_pub_t *dhdp);
 

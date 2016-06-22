@@ -13101,7 +13101,7 @@ dhd_wmf_t* dhd_wmf_conf(dhd_pub_t *dhdp, uint32 idx)
 #endif 
 
 
-#if defined(DHD_L2_FILTER)
+#if defined(DHD_L2_FILTER) || defined(CUSTOMER_HW_ONE)
 bool dhd_sta_associated(dhd_pub_t *dhdp, uint32 bssidx, uint8 *mac)
 {
 	return dhd_find_sta(dhdp, bssidx, mac) ? TRUE : FALSE;

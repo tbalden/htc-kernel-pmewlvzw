@@ -89,40 +89,27 @@ enum msm_vfe_frame_skip_pattern {
 	MAX_SKIP,
 };
 
-/*
- * Define an unused period. When this period is set it means that the stream is
- * stopped(i.e the pattern is 0). We don't track the current pattern, just the
- * period defines what the pattern is, if period is this then pattern is 0 else
- * pattern is 1
- */
 #define MSM_VFE_STREAM_STOP_PERIOD 15
 
 enum msm_isp_stats_type {
-	MSM_ISP_STATS_AEC,   /* legacy based AEC */
-	MSM_ISP_STATS_AF,    /* legacy based AF */
-	MSM_ISP_STATS_AWB,   /* legacy based AWB */
-	MSM_ISP_STATS_RS,    /* legacy based RS */
-	MSM_ISP_STATS_CS,    /* legacy based CS */
-	MSM_ISP_STATS_IHIST, /* legacy based HIST */
-	MSM_ISP_STATS_SKIN,  /* legacy based SKIN */
-	MSM_ISP_STATS_BG,    /* Bayer Grids */
-	MSM_ISP_STATS_BF,    /* Bayer Focus */
-	MSM_ISP_STATS_BE,    /* Bayer Exposure*/
-	MSM_ISP_STATS_BHIST, /* Bayer Hist */
-	MSM_ISP_STATS_BF_SCALE,  /* Bayer Focus scale */
-	MSM_ISP_STATS_HDR_BE,    /* HDR Bayer Exposure */
-	MSM_ISP_STATS_HDR_BHIST, /* HDR Bayer Hist */
-	MSM_ISP_STATS_AEC_BG,   /* AEC BG */
-	MSM_ISP_STATS_MAX    /* MAX */
+	MSM_ISP_STATS_AEC,   
+	MSM_ISP_STATS_AF,    
+	MSM_ISP_STATS_AWB,   
+	MSM_ISP_STATS_RS,    
+	MSM_ISP_STATS_CS,    
+	MSM_ISP_STATS_IHIST, 
+	MSM_ISP_STATS_SKIN,  
+	MSM_ISP_STATS_BG,    
+	MSM_ISP_STATS_BF,    
+	MSM_ISP_STATS_BE,    
+	MSM_ISP_STATS_BHIST, 
+	MSM_ISP_STATS_BF_SCALE,  
+	MSM_ISP_STATS_HDR_BE,    
+	MSM_ISP_STATS_HDR_BHIST, 
+	MSM_ISP_STATS_AEC_BG,   
+	MSM_ISP_STATS_MAX    
 };
 
-/*
- * @stats_type_mask: Stats type mask (enum msm_isp_stats_type).
- * @stream_src_mask: Stream src mask (enum msm_vfe_axi_stream_src)
- * @skip_mode: skip pattern, if skip mode is range only then min/max is used
- * @min_frame_id: minimum frame id (valid only if skip_mode = RANGE)
- * @max_frame_id: maximum frame id (valid only if skip_mode = RANGE)
-*/
 struct msm_isp_sw_framskip {
 	uint32_t stats_type_mask;
 	uint32_t stream_src_mask;
@@ -170,9 +157,6 @@ enum msm_vfe_camif_output_format {
 	CAMIF_MAX_FORMAT,
 };
 
-/*
- * Camif output general configuration
- */
 struct msm_vfe_camif_subsample_cfg {
 	uint32_t irq_subsample_period;
 	uint32_t irq_subsample_pattern;
@@ -186,9 +170,6 @@ struct msm_vfe_camif_subsample_cfg {
 	enum msm_vfe_camif_output_format output_format;
 };
 
-/*
- * Camif frame and window configuration
- */
 struct msm_vfe_camif_cfg {
 	uint32_t lines_per_frame;
 	uint32_t pixels_per_line;
@@ -269,14 +250,14 @@ struct msm_vfe_fetch_eng_start {
 };
 
 struct msm_vfe_axi_plane_cfg {
-	uint32_t output_width; /*Include padding*/
+	uint32_t output_width; 
 	uint32_t output_height;
 	uint32_t output_stride;
 	uint32_t output_scan_lines;
-	uint32_t output_plane_format; /*Y/Cb/Cr/CbCr*/
+	uint32_t output_plane_format; 
 	uint32_t plane_addr_offset;
-	uint8_t csid_src; /*RDI 0-2*/
-	uint8_t rdi_cid;/*CID 1-16*/
+	uint8_t csid_src; 
+	uint8_t rdi_cid;
 };
 
 enum msm_stream_memory_input_t {
@@ -288,22 +269,22 @@ struct msm_vfe_axi_stream_request_cmd {
 	uint32_t session_id;
 	uint32_t stream_id;
 	uint32_t vt_enable;
-	uint32_t output_format;/*Planar/RAW/Misc*/
-	enum msm_vfe_axi_stream_src stream_src; /*CAMIF/IDEAL/RDIs*/
+	uint32_t output_format;
+	enum msm_vfe_axi_stream_src stream_src; 
 	struct msm_vfe_axi_plane_cfg plane_cfg[MAX_PLANES_PER_STREAM];
 
 	uint32_t burst_count;
 	uint32_t hfr_mode;
 	uint8_t frame_base;
 
-	uint32_t init_frame_drop; /*MAX 31 Frames*/
+	uint32_t init_frame_drop; 
 	enum msm_vfe_frame_skip_pattern frame_skip_pattern;
-	uint8_t buf_divert; /* if TRUE no vb2 buf done. */
-	/*Return values*/
+	uint8_t buf_divert; 
+	
 	uint32_t axi_stream_handle;
 	uint32_t controllable_output;
 	uint32_t burst_len;
-	/* Flag indicating memory input stream */
+	
 	enum msm_stream_memory_input_t memory_input;
 };
 
@@ -322,6 +303,7 @@ struct msm_vfe_axi_stream_cfg_cmd {
 	uint32_t stream_handle[VFE_AXI_SRC_MAX];
 	enum msm_vfe_axi_stream_cmd cmd;
 	uint8_t sync_frame_id_src;
+	uint32_t reduce_timeout;
 };
 
 enum msm_vfe_axi_stream_update_type {
@@ -390,7 +372,7 @@ struct msm_vfe_stats_stream_request_cmd {
 	enum msm_isp_stats_type stats_type;
 	uint32_t composite_flag;
 	uint32_t framedrop_pattern;
-	uint32_t init_frame_drop; /*MAX 31 Frames*/
+	uint32_t init_frame_drop; 
 	uint32_t irq_subsample_pattern;
 	uint32_t buffer_offset;
 	uint32_t stream_handle;
@@ -452,8 +434,8 @@ struct msm_vfe_reg_mask_info {
 };
 
 struct msm_vfe_reg_dmi_info {
-	uint32_t hi_tbl_offset; /*Optional*/
-	uint32_t lo_tbl_offset; /*Required*/
+	uint32_t hi_tbl_offset; 
+	uint32_t lo_tbl_offset; 
 	uint32_t len;
 };
 
@@ -474,18 +456,14 @@ enum vfe_sd_type {
 	VFE_SD_MAX,
 };
 
-/* When you change the value below, check for the sof event_data size.
- * V4l2 limits payload to 64 bytes */
 #define MS_NUM_SLAVE_MAX 1
 
-/* Usecases when 2 HW need to be related or synced */
 enum msm_vfe_dual_hw_type {
 	DUAL_NONE = 0,
 	DUAL_HW_VFE_SPLIT = 1,
 	DUAL_HW_MASTER_SLAVE = 2,
 };
 
-/* Type for 2 INTF when used in Master-Slave mode */
 enum msm_vfe_dual_hw_ms_type {
 	MS_TYPE_NONE,
 	MS_TYPE_MASTER,
@@ -494,18 +472,11 @@ enum msm_vfe_dual_hw_ms_type {
 
 struct msm_isp_set_dual_hw_ms_cmd {
 	uint8_t num_src;
-	/* Each session can be only one type but multiple intf if YUV cam */
+	
 	enum msm_vfe_dual_hw_ms_type dual_hw_ms_type;
-	/* Primary intf is mostly associated with preview.
-	 * This primary intf SOF frame_id and timestamp is tracked
-	 * and used to calculate delta */
 	enum msm_vfe_input_src primary_intf;
-	/* input_src array indicates other input INTF that may be Master/Slave.
-	 * For these additional intf, frame_id and timestamp are not saved.
-	 * However, if these are slaves then they will still get their
-	 * frame_id from Master */
 	enum msm_vfe_input_src input_src[VFE_SRC_MAX];
-	uint32_t sof_delta_threshold; /* In milliseconds. Sent for Master */
+	uint32_t sof_delta_threshold; 
 };
 
 enum msm_isp_buf_type {
@@ -540,9 +511,9 @@ struct msm_isp_qbuf_buffer {
 struct msm_isp_qbuf_info {
 	uint32_t handle;
 	int32_t buf_idx;
-	/*Only used for prepare buffer*/
+	
 	struct msm_isp_qbuf_buffer buffer;
-	/*Only used for diverted buffer*/
+	
 	uint32_t dirty_buf;
 };
 
@@ -663,9 +634,6 @@ enum msm_isp_event_idx {
 #define ISP_EVENT_BUF_FATAL_ERROR (ISP_EVENT_BASE + ISP_BUF_FATAL_ERROR)
 #define ISP_EVENT_STREAM_UPDATE_DONE   (ISP_STREAM_EVENT_BASE)
 
-/* The msm_v4l2_event_data structure should match the
- * v4l2_event.u.data field.
- * should not exceed 64 bytes */
 
 struct msm_isp_buf_event {
 	uint32_t session_id;
@@ -683,8 +651,8 @@ struct msm_isp_fetch_eng_event {
 	int8_t offline_mode;
 };
 struct msm_isp_stats_event {
-	uint32_t stats_mask;                        /* 4 bytes */
-	uint8_t stats_buf_idxs[MSM_ISP_STATS_MAX];  /* 11 bytes */
+	uint32_t stats_mask;                        
+	uint8_t stats_buf_idxs[MSM_ISP_STATS_MAX];  
 };
 
 struct msm_isp_stream_ack {
@@ -709,62 +677,52 @@ struct msm_isp_error_info {
 	uint32_t stream_id_mask;
 };
 
-/* This structure reports delta between master and slave */
 struct msm_isp_ms_delta_info {
 	uint8_t num_delta_info;
 	uint32_t delta[MS_NUM_SLAVE_MAX];
 };
 
-/* This is sent in EPOCH irq */
 struct msm_isp_output_info {
 	uint8_t regs_not_updated;
-	/* mask with bufq_handle for regs not updated or return empty */
+	
 	uint16_t output_err_mask;
-	/* mask with stream_idx for get_buf failed */
+	
 	uint8_t stream_framedrop_mask;
-	/* mask with stats stream_idx for get_buf failed */
+	
 	uint16_t stats_framedrop_mask;
-	/* delta between master and slave */
+	
 };
 
-/* This structure is piggybacked with SOF event */
 struct msm_isp_sof_info {
 	uint8_t regs_not_updated;
-	/* mask with AXI_SRC for regs not updated */
+	
 	uint16_t reg_update_fail_mask;
-	/* mask with bufq_handle for get_buf failed */
+	
 	uint32_t stream_get_buf_fail_mask;
-	/* mask with stats stream_idx for get_buf failed */
+	
 	uint16_t stats_get_buf_fail_mask;
-	/* delta between master and slave */
+	
 	struct msm_isp_ms_delta_info ms_delta_info;
 };
 
 struct msm_isp_event_data {
-	/*Wall clock except for buffer divert events
-	 *which use monotonic clock
-	 */
 	struct timeval timestamp;
-	/* Monotonic timestamp since bootup */
+	
 	struct timeval mono_timestamp;
 	uint32_t frame_id;
 	union {
-		/* Sent for Stats_Done event */
+		
 		struct msm_isp_stats_event stats;
-		/* Sent for Buf_Divert event */
+		
 		struct msm_isp_buf_event buf_done;
-		/* Sent for offline fetch done event */
+		
 		struct msm_isp_fetch_eng_event fetch_done;
-		/* Sent for Error_Event */
+		
 		struct msm_isp_error_info error_info;
-		/*
-		 * This struct needs to be removed once
-		 * userspace switches to sof_info
-		 */
 		struct msm_isp_output_info output_info;
-		/* Sent for SOF event */
+		
 		struct msm_isp_sof_info sof_info;
-	} u; /* union can have max 52 bytes */
+	} u; 
 };
 
 #ifdef CONFIG_COMPAT
@@ -806,10 +764,10 @@ struct msm_isp_event_data32 {
 #define V4L2_PIX_FMT_NV14 v4l2_fourcc('N', 'V', '1', '4')
 #define V4L2_PIX_FMT_NV41 v4l2_fourcc('N', 'V', '4', '1')
 #define V4L2_PIX_FMT_META v4l2_fourcc('Q', 'M', 'E', 'T')
-#define V4L2_PIX_FMT_SBGGR14 v4l2_fourcc('B', 'G', '1', '4') /* 14 BGBG.GRGR.*/
-#define V4L2_PIX_FMT_SGBRG14 v4l2_fourcc('G', 'B', '1', '4') /* 14 GBGB.RGRG.*/
-#define V4L2_PIX_FMT_SGRBG14 v4l2_fourcc('B', 'A', '1', '4') /* 14 GRGR.BGBG.*/
-#define V4L2_PIX_FMT_SRGGB14 v4l2_fourcc('R', 'G', '1', '4') /* 14 RGRG.GBGB.*/
+#define V4L2_PIX_FMT_SBGGR14 v4l2_fourcc('B', 'G', '1', '4') 
+#define V4L2_PIX_FMT_SGBRG14 v4l2_fourcc('G', 'B', '1', '4') 
+#define V4L2_PIX_FMT_SGRBG14 v4l2_fourcc('B', 'A', '1', '4') 
+#define V4L2_PIX_FMT_SRGGB14 v4l2_fourcc('R', 'G', '1', '4') 
 
 #define VIDIOC_MSM_VFE_REG_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE, struct msm_vfe_cfg_cmd2)
@@ -888,4 +846,4 @@ struct msm_isp_event_data32 {
 #define VIDIOC_MSM_ISP_UNMAP_BUF \
 	_IOWR('V', BASE_VIDIOC_PRIVATE+24, struct msm_isp_unmap_buf_req)
 
-#endif /* __MSMB_ISP__ */
+#endif 
