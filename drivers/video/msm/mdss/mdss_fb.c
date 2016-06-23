@@ -77,7 +77,7 @@ static int fbi_list_index;
 
 bool backlight_dimmer = false;
 module_param(backlight_dimmer, bool, 0755);
-static int backlight_min = 5;
+static int backlight_min = 10;
 
 static u32 mdss_fb_pseudo_palette[16] = {
 	0x00000000, 0xffffffff, 0xffffffff, 0xffffffff,
@@ -319,7 +319,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	}
 
 	if (backlight_dimmer) {
-		bl_lvl = MAX(backlight_min, mdss_backlight_trans(value, mfd->panel_info, true) - 120);
+		bl_lvl = MAX(backlight_min, mdss_backlight_trans(value, mfd->panel_info, true) - 100);
  	} else {
 		bl_lvl = MAX(backlight_min, mdss_backlight_trans(value, mfd->panel_info, true));
  	}
