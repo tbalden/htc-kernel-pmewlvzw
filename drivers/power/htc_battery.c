@@ -946,10 +946,11 @@ int htc_batt_schedule_batt_info_update(void)
 #define USB_OVERHEAT_CHECK_PERIOD_MS 30000
 static void is_usb_overheat_worker(struct work_struct *work)
 {
-        int usb_pwr_temp = pm8996_get_usb_temp();
+        int usb_pwr_temp;
         static int last_usb_pwr_temp = 0;
         if (g_latest_chg_src > POWER_SUPPLY_TYPE_UNKNOWN) {
                 if(!g_usb_overheat){
+                        usb_pwr_temp = pm8996_get_usb_temp();
                         BATT_LOG("USB CONN Temp = %d\n",usb_pwr_temp);
 			g_usb_temp = usb_pwr_temp;
                         if(usb_pwr_temp > 650)
@@ -1117,7 +1118,6 @@ endWorker:
 #define VFLOAT_COMP_NORMAL	0x0		
 #define CHG_UNKNOWN_CHG_PERIOD_MS	9000
 #define VBUS_VALID_THRESHOLD			4250000
-extern bool get_connect2pc(void);
 static void batt_worker(struct work_struct *work)
 {
 	static int s_first = 1;
@@ -1126,25 +1126,20 @@ static void batt_worker(struct work_struct *work)
 	static int s_prev_vfloat_comp = -1;
 	static int s_vbus_valid_no_chger_cnt = 0;
 	static int s_hvdcp_no_chg_cnt = 0;
-	static int s_cc_uah_stored = 0;
-	static int s_prev_level_raw = 0;
 	int pwrsrc_enabled = s_prev_pwrsrc_enabled;
 	int charging_enabled = gs_prev_charging_enabled;
 	int user_set_chg_curr = s_prev_user_set_chg_curr;
 	int src = 0;
 	int ibat = 0;
 	int ibat_new = 0;
+	int aicl_now;
 	unsigned long time_since_last_update_ms;
 	unsigned long cur_jiffies;
-	int cc_uah_now;
 	char chg_strbuf[20];
 	
 	char *chr_src[] = {"NONE", "BATTERY", "UPS", "MAINS", "USB",
 		"AC(USB_DCP)", "USB_CDP", "USB_ACA", "USB_HVDCP","USB_HVDCP_3",
 		"WIRELESS","BMS","USB_PARALLEL","WIPOWER"};
-#ifdef CONFIG_HTC_BATT_WA_PCN0021
-	struct timespec xtime = ktime_to_timespec(ktime_get());
-#endif 
 
 	
 	cur_jiffies = jiffies;
@@ -1217,20 +1212,16 @@ static void batt_worker(struct work_struct *work)
 			
 #endif 
 		} else {
-			if (g_is_pd_charger){
-				
 			
-			}else if ((htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB)) {
+			if ((htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB)) {
 				s_prev_user_set_chg_curr = get_property(htc_batt_info.usb_psy, POWER_SUPPLY_PROP_CURRENT_MAX);
-				if (!get_connect2pc() && !g_rerun_apsd_done && !g_is_unknown_charger) {
+				if (s_prev_user_set_chg_curr == 0) {
 					user_set_chg_curr = 150000;
 					if (delayed_work_pending(&htc_batt_info.chk_unknown_chg_work))
 						cancel_delayed_work(&htc_batt_info.chk_unknown_chg_work);
 					schedule_delayed_work(&htc_batt_info.chk_unknown_chg_work,
 							msecs_to_jiffies(CHG_UNKNOWN_CHG_PERIOD_MS));
 				} else {
-					if (s_prev_user_set_chg_curr < SLOW_CHARGE_CURR)
-						s_prev_user_set_chg_curr = SLOW_CHARGE_CURR;
 					user_set_chg_curr = s_prev_user_set_chg_curr;
 				}
 			} else if (htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB_HVDCP){
@@ -1359,13 +1350,10 @@ static void batt_worker(struct work_struct *work)
 				g_pd_voltage = 0;
 				g_pd_current = 0;
 			}
+			g_rerun_apsd_done = false;
 			power_supply_set_current_limit(htc_batt_info.usb_psy, 0);
-			if ((htc_batt_info.vbus/1000) < 4250){
-				g_is_unknown_charger = false;
-				g_rerun_apsd_done = false;
-				if (delayed_work_pending(&htc_batt_info.chk_unknown_chg_work))
-					cancel_delayed_work(&htc_batt_info.chk_unknown_chg_work);
-			}
+			if (delayed_work_pending(&htc_batt_info.chk_unknown_chg_work))
+				cancel_delayed_work(&htc_batt_info.chk_unknown_chg_work);
 		}
 	}
 
@@ -1433,8 +1421,14 @@ static void batt_worker(struct work_struct *work)
 		else
 			sprintf(chg_strbuf, "PD%dV_%d.%dA", g_pd_voltage/1000,  g_pd_current/1000, (g_pd_current % 1000)/100);
 
-		set_aicl_enable(false);
-		pmi8994_set_iusb_max(g_pd_current * 1000);
+		if(htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB_DCP){
+			aicl_now = get_property(htc_batt_info.batt_psy,POWER_SUPPLY_PROP_INPUT_CURRENT_MAX)/1000;
+			if(aicl_now != g_pd_current){
+				pr_info("Fix the current max.\n");
+				set_aicl_enable(false);
+				pmi8994_set_iusb_max(g_pd_current * 1000);
+			}
+                }
 	}
 
 	
@@ -1509,11 +1503,6 @@ static void batt_worker(struct work_struct *work)
 		}
 	}
 
-#ifdef CONFIG_HTC_BATT_WA_PCN0021
-	if ((xtime.tv_sec > 120) && (htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_USB_DCP))
-		pmi8996_set_dcp_default();
-#endif 
-
 	
 	if ((pmi8996_get_chgr_sts()==0x80) && (g_pwrsrc_dis_reason == 0) &&
 		((htc_batt_info.rep.batt_temp > 0) &&(htc_batt_info.rep.batt_temp < 550))){
@@ -1529,23 +1518,6 @@ static void batt_worker(struct work_struct *work)
 			s_hvdcp_no_chg_cnt = 0;
 	}else{
 		s_hvdcp_no_chg_cnt = 0;
-	}
-
-	
-	cc_uah_now = get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CHARGE_NOW_RAW)/1000;
-	if((s_prev_level_raw == 0) || (s_prev_level_raw != htc_batt_info.rep.level_raw)){
-		s_prev_level_raw = htc_batt_info.rep.level_raw;
-		s_cc_uah_stored = cc_uah_now;
-	} else {
-		
-		
-		if ((htc_batt_info.rep.charging_source == POWER_SUPPLY_TYPE_UNKNOWN) &&
-			(s_prev_level_raw == htc_batt_info.rep.level_raw) &&
-			((s_cc_uah_stored - cc_uah_now) >= 150)){
-				BATT_EMBEDDED("Raw level stuck, dump fg sram\n");
-				force_dump_fg_sram();
-				s_cc_uah_stored = cc_uah_now;
-		}
 	}
 
 	wake_unlock(&htc_batt_timer.battery_lock);
@@ -1614,38 +1586,43 @@ static void chg_full_check_worker(struct work_struct *work)
 
 }
 
+extern bool get_connect2pc(void);
 #define CHK_UNKNOWN_CHG_RERUN_APSD_PERIOD_MS	3000
 static void chk_unknown_chg_worker(struct work_struct *work)
 {
 	int current_max_now;
 
-	if ((g_latest_chg_src != POWER_SUPPLY_TYPE_USB)||(g_is_pd_charger)) {
+	if (g_latest_chg_src != POWER_SUPPLY_TYPE_USB){
 		g_rerun_apsd_done = false;
 		return;
 	}
 
 	current_max_now = get_property(htc_batt_info.usb_psy, POWER_SUPPLY_PROP_CURRENT_MAX);
-	if (!get_connect2pc()) {
+	if (current_max_now < SLOW_CHARGE_CURR) {
 		if (g_rerun_apsd_done) {
-			BATT_EMBEDDED("set charging_current(%d), UNKNOWN CHARGER", SLOW_CHARGE_CURR);
-			g_is_unknown_charger = true;
+			if (get_connect2pc())
+				BATT_EMBEDDED("set charging_current(%d), PC connected", SLOW_CHARGE_CURR);
+			else {
+				BATT_EMBEDDED("set charging_current(%d), UNKNOWN CHARGER", SLOW_CHARGE_CURR);
+				g_is_unknown_charger = true;
+			}
 			power_supply_set_current_limit(htc_batt_info.usb_psy, SLOW_CHARGE_CURR);
 			g_rerun_apsd_done = false;
 			update_htc_chg_src();
 			update_htc_extension_state();
 			return;
 		}
+		if (get_connect2pc()){
+			power_supply_set_current_limit(htc_batt_info.usb_psy, SLOW_CHARGE_CURR);
+			BATT_EMBEDDED("set charging_current(%d), PC connected", SLOW_CHARGE_CURR);
+			return;
+		}
 		BATT_EMBEDDED("rerun APSD");
 		pmi8994_rerun_apsd();
 		g_rerun_apsd_done = true;
-		if (delayed_work_pending(&htc_batt_info.chk_unknown_chg_work))
-			cancel_delayed_work(&htc_batt_info.chk_unknown_chg_work);
 		schedule_delayed_work(&htc_batt_info.chk_unknown_chg_work,
 							msecs_to_jiffies(CHK_UNKNOWN_CHG_RERUN_APSD_PERIOD_MS));
 	} else {
-		if (current_max_now < SLOW_CHARGE_CURR)
-			current_max_now = SLOW_CHARGE_CURR;
-		BATT_EMBEDDED("set charging_current(%d), PC connected", current_max_now);
 		g_rerun_apsd_done = false;
 		power_supply_set_current_limit(htc_batt_info.usb_psy, current_max_now);
 	}
@@ -1873,10 +1850,8 @@ void htc_battery_info_update(enum power_supply_property prop, int intval)
  					}
 				}
 #ifdef CONFIG_HTC_CHARGER
-				if (!g_flag_keep_charge_on){
-					if(!delayed_work_pending(&htc_batt_info.is_usb_overheat_work)) {
-						schedule_delayed_work(&htc_batt_info.is_usb_overheat_work, 0);
-					}
+				if(!delayed_work_pending(&htc_batt_info.is_usb_overheat_work)) {
+					schedule_delayed_work(&htc_batt_info.is_usb_overheat_work, 0);
 				}
 #endif 
 			}

@@ -46,6 +46,7 @@
 #define DEVICE_VERSION 0x04
 #define RESET_CTRL_0 0x05
 #define POWER_DOWN_CTRL 0x0d
+#define INTP_CTRL 0x33
 #define ANALOG_STATUS 0x40
 #define ANALOG_CTRL_0 0x41
 #define ANALOG_CTRL_1 0x42

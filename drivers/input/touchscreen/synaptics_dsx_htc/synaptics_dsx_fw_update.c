@@ -696,7 +696,7 @@ static uint32_t syn_crc(uint16_t *data, uint32_t len)
 			sum2 = (sum2 & 0xFFFF) + (sum2 >> 16);
 		}
 	} else {
-		pr_err("%s: data incorrect\n", __func__);
+		pr_err("%s: data incorrect", __func__);
 		return (0xFFFF | 0xFFFF << 16);
 	}
 	return sum1 | (sum2 << 16);
@@ -4067,15 +4067,10 @@ int synaptics_config_updater(struct synaptics_dsx_board_data *bdata)
 	pr_info("%s: config_size = %d\n", __func__, config_size);
 	if (config_size > SYN_CONFIG_SIZE)
 		config_size = SYN_CONFIG_SIZE;
-	else if (config_size < 4) {
-		dev_err(rmi4_data->pdev->dev.parent,
-			"%s: incorrect config_size\n", __func__);
-		goto exit;
-	}
 	crc_checksum = syn_crc((uint16_t *)config_data, (config_size)/2-2);
 	if (crc_checksum == 0xFFFFFFFF) {
 		dev_err(rmi4_data->pdev->dev.parent,
-			"%s: crc_checksum Error\n", __func__);
+			"%s: crc_checksum Error", __func__);
 		goto exit;
 	}
 	memcpy(&config_data[(config_size) - 4], &crc_checksum, 4);

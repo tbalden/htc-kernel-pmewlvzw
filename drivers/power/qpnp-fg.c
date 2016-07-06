@@ -581,10 +581,6 @@ static const char *default_batt_type	= "Unknown Battery";
 static const char *loading_batt_type	= "Loading Battery Data";
 static const char *missing_batt_type	= "Disconnected Battery";
 
-#ifdef CONFIG_HTC_BATT
-static struct fg_chip *the_chip;
-#endif 
-
 struct fg_log_buffer {
 	size_t rpos;	
 	size_t wpos;	
@@ -4084,31 +4080,6 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	return 0;
 }
 
-
-#ifdef CONFIG_HTC_BATT
-#define DUMP_FG_REG_START	0x4000
-#define DUMP_FG_REG_SIZE		0x500
-void dump_fg_reg(void)
-{
-	u8	reg;
-	int	reg_offset;
-
-	for (reg_offset = 0;reg_offset < DUMP_FG_REG_SIZE; reg_offset++){
-		fg_read(the_chip, &reg, DUMP_FG_REG_START + reg_offset, 1);
-		pr_info("0x%04x: 0x%02X\n", (DUMP_FG_REG_START + reg_offset), reg);
-	}
-}
-
-void force_dump_fg_sram(void)
-{
-	schedule_work(&the_chip->dump_sram);
-}
-#endif 
-
-#ifdef CONFIG_HTC_BATT
-#define SRAM_DUMP_START_0x0		0x0
-#define SRAM_DUMP_START_0x200	0x200
-#endif 
 #define SRAM_DUMP_START		0x400
 #define SRAM_DUMP_LEN		0x200
 static void dump_sram(struct work_struct *work)
@@ -4146,36 +4117,6 @@ static void dump_sram(struct work_struct *work)
 				INT_RT_STS(chip->mem_base), rc);
 	else
 		pr_info("memif rt_sts: 0x%x\n", rt_sts);
-
-#ifdef CONFIG_HTC_BATT
-	
-	dump_fg_reg();
-
-	
-	rc = fg_mem_read(chip, buffer, SRAM_DUMP_START_0x0, SRAM_DUMP_LEN, 0, 0);
-	if (rc) {
-		pr_err("dump failed: rc = %d\n", rc);
-		return;
-	}
-
-	for (i = 0; i < SRAM_DUMP_LEN; i += 4) {
-		str[0] = '\0';
-		fill_string(str, DEBUG_PRINT_BUFFER_SIZE, buffer + i, 4);
-		pr_info("%03X %s\n", SRAM_DUMP_START_0x0 + i, str);
-	}
-
-	rc = fg_mem_read(chip, buffer, SRAM_DUMP_START_0x200, SRAM_DUMP_LEN, 0, 0);
-	if (rc) {
-		pr_err("dump failed: rc = %d\n", rc);
-		return;
-	}
-
-	for (i = 0; i < SRAM_DUMP_LEN; i += 4) {
-		str[0] = '\0';
-		fill_string(str, DEBUG_PRINT_BUFFER_SIZE, buffer + i, 4);
-		pr_info("%03X %s\n", SRAM_DUMP_START_0x200 + i, str);
-	}
-#endif 
 
 	rc = fg_mem_read(chip, buffer, SRAM_DUMP_START, SRAM_DUMP_LEN, 0, 0);
 	if (rc) {
@@ -6586,23 +6527,6 @@ static int fg_common_hw_init(struct fg_chip *chip)
 		}
 	}
 
-
-	{
-		u8 val;
-		rc = fg_mem_read(chip, &val, RSLOW_CFG_REG, 1, RSLOW_CFG_OFFSET, 0);
-		if (rc) {
-			pr_err("unable to read rslow cfg: %d\n", rc);
-			return rc;
-		}
-
-		if (val & RSLOW_CFG_ON_VAL)
-			chip->rslow_comp.active = true;
-
-		if (fg_debug_mask & FG_STATUS)
-			pr_info("rslow_comp active is %sabled\n",
-				chip->rslow_comp.active ? "en" : "dis");
-	}
-
 	return 0;
 }
 
@@ -7348,10 +7272,6 @@ static int fg_probe(struct spmi_device *spmi)
 		chip->revision[DIG_MAJOR], chip->revision[DIG_MINOR],
 		chip->revision[ANA_MAJOR], chip->revision[ANA_MINOR],
 		chip->pmic_subtype);
-
-#ifdef CONFIG_HTC_BATT
-	the_chip = chip;
-#endif 
 
 	return rc;
 

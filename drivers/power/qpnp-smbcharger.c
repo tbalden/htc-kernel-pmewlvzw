@@ -492,11 +492,7 @@ module_param_named(
 );
 
 #ifdef CONFIG_HTC_BATT
-#ifdef CONFIG_HTC_BATT_WA_PCN0021
-static int smbchg_default_dcp_icl_ma = 1000;
-#else
 static int smbchg_default_dcp_icl_ma = 1500;
-#endif 
 #else
 static int smbchg_default_dcp_icl_ma = 1800;
 #endif 
@@ -4511,18 +4507,9 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 #ifdef CONFIG_HTC_BATT
 	int pd_current;
 #endif 
-#ifdef CONFIG_HTC_BATT_WA_PCN0021
-	struct timespec xtime;
-#endif 
 
 	if (type != POWER_SUPPLY_TYPE_UNKNOWN)
 		chip->usb_supply_type = type;
-
-#ifdef CONFIG_HTC_BATT_WA_PCN0021
-	xtime = ktime_to_timespec(ktime_get());
-	if (xtime.tv_sec > 120)
-		smbchg_default_dcp_icl_ma = 1500;
-#endif 
 
 	if (chip->typec_psy && (type != POWER_SUPPLY_TYPE_USB))
 		current_limit_ma = chip->typec_current_ma;
@@ -4567,50 +4554,6 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 out:
 	return rc;
 }
-
-#ifdef CONFIG_HTC_BATT_WA_PCN0021
-#define MISC_TRIM_OPTIONS_7_0		0xF6
-#define MISC_INPUT_MISSING_POLLER_EN_BIT	BIT(3)
-void pmi8996_set_dcp_default(void)
-{
-	int aicl_result, rc;
-
-	if(!the_chip) {
-		pr_err("called before init\n");
-		return;
-	}
-
-	aicl_result = smbchg_get_aicl_level_ma(the_chip);
-
-	if ((smbchg_default_dcp_icl_ma > 1000) ||
-		(aicl_result < 1000)){
-		smbchg_default_dcp_icl_ma = 1500;
-		return;
-	}
-
-	g_is_charger_ability_detected = false;
-	smbchg_default_dcp_icl_ma = 1500;
-	vote(the_chip->usb_icl_votable, PSY_ICL_VOTER, true,
-				smbchg_default_dcp_icl_ma);
-	pr_smb(PR_STATUS, "set to default dcp current.\n");
-
-	msleep(300);
-	if (g_is_hvdcp_detect_done){
-		
-		set_aicl_enable(false);
-		
-		rc = smbchg_sec_masked_write(the_chip,
-			the_chip->misc_base + MISC_TRIM_OPTIONS_7_0,
-			MISC_INPUT_MISSING_POLLER_EN_BIT, 0);
-		if (rc < 0)
-			pr_err("Couldn't disable input missing poller rc=%d\n", rc);
-		if (delayed_work_pending(&the_chip->iusb_5v_2a_detect_work))
-			cancel_delayed_work(&the_chip->iusb_5v_2a_detect_work);
-		schedule_delayed_work(&the_chip->iusb_5v_2a_detect_work,
-				msecs_to_jiffies(AICL_5V_2A_DETECT_DELAY_MS));
-	}
-}
-#endif 
 
 #define HVDCP_ADAPTER_SEL_MASK	SMB_MASK(5, 4)
 #define HVDCP_5V		0x00
@@ -4732,9 +4675,7 @@ static void smbchg_chk_cable_workable_work(struct work_struct *work)
 	pr_smb(PR_STATUS, "set hvdcp %d\n", hvdcp_en);
 	smbchg_set_hvdcp_enable(the_chip, hvdcp_en);
 	if (hvdcp_en){
-		set_aicl_enable(false);
 		pmi8994_rerun_apsd();
-		set_aicl_enable(true);
 	}
 
 	read_usb_type(the_chip, &usb_type_name, &usb_supply_type);
@@ -5066,22 +5007,20 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 	int vbus_mv;
 #endif 
 
-	if (!strcmp(htc_get_bootmode(),"offmode_charging") ||
-		(chip->usb_supply_type != POWER_SUPPLY_TYPE_USB)){
-		if (g_rerun_apsd_ignore_uv){
+
+	if (g_rerun_apsd_ignore_uv){
 #ifdef CONFIG_HTC_BATT_WA_PCN0017
-			vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
-			pr_smb(PR_STATUS, "vbus = %dmv\n", vbus_mv);
-			if (vbus_mv >= 4250){
-				pr_smb(PR_STATUS, "Ignore removal for rerun APSD!!\n");
-				g_is_charger_ability_detected = false;
-				return;
-			}
+				vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
+				pr_smb(PR_STATUS, "vbus = %dmv\n", vbus_mv);
+				if (vbus_mv >= 4250){
+					pr_smb(PR_STATUS, "Ignore removal for rerun APSD!!\n");
+					g_is_charger_ability_detected = false;
+					return;
+				}
 #else
-			pr_smb(PR_STATUS, "Ignore removal for rerun APSD!!\n");
-			return;
+		pr_smb(PR_STATUS, "Ignore removal for rerun APSD!!\n");
+		return;
 #endif 
-		}
 	}
 
 	pr_smb(PR_STATUS, "triggered\n");
@@ -5153,11 +5092,9 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 #endif 
 
 #ifdef CONFIG_HTC_BATT_WA_PCN0017
-	if (!g_rerun_apsd_ignore_uv){
-		smbchg_set_hvdcp_enable(chip, false);
-		g_is_cable_workable_detect = false;
-		g_is_limit_IUSB = false;
-	}
+	smbchg_set_hvdcp_enable(chip, false);
+	g_is_cable_workable_detect = false;
+	g_is_limit_IUSB = false;
 #endif 
 
 #ifdef CONFIG_HTC_CHARGER
@@ -5307,7 +5244,6 @@ unlock:
 	mutex_unlock(&chip->usb_status_lock);
 }
 
-extern int oc_enable;
 static int otg_oc_reset(struct smbchg_chip *chip)
 {
 	int rc;
@@ -5316,8 +5252,8 @@ static int otg_oc_reset(struct smbchg_chip *chip)
 	int vbus_mv = 0;
 
 	vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
-	if (vbus_mv < 3500 && !oc_enable) {
-		pr_info("%s: Skip oc_reset due to abnormal vbus voltage (%d mv, oc %s)\n", __func__, vbus_mv, oc_enable?"enable":"disable");
+	if (vbus_mv < 3500) {
+		pr_info("%s: Skip oc_reset due to abnormal vbus voltage (%d mv)\n", __func__, vbus_mv);
 		return 0;
 	}
 #endif 
@@ -7290,7 +7226,7 @@ void check_charger_ability(int aicl_level)
 	}
 
 	
-	if (aicl_level <= USB_MA_1400){
+	if (aicl_level < USB_MA_1400){
 		rc = vote(the_chip->usb_icl_votable, PSY_ICL_VOTER,
 			true, USB_MA_1000);
 		if (rc < 0) {
@@ -7303,6 +7239,29 @@ void check_charger_ability(int aicl_level)
 		return;
 	}
 
+	
+	if (g_is_hvdcp_detect_done){
+		if (aicl_level < USB_MA_2000){
+			rc = vote(the_chip->usb_icl_votable, PSY_ICL_VOTER,
+				true, USB_MA_1500);
+			if (rc < 0) {
+				pr_err("Couldn't vote for ICL rc=%d\n", rc);
+				return;
+			}
+			pr_smb(PR_STATUS, "1.5A adaptor detected\n");
+		} else {
+			rc = vote(the_chip->usb_icl_votable, PSY_ICL_VOTER,
+				true, USB_MA_2000);
+			if (rc < 0) {
+				pr_err("Couldn't vote for ICL rc=%d\n", rc);
+				return;
+			}
+			pr_smb(PR_STATUS, "2A adaptor detected\n");
+		}
+		g_is_charger_ability_detected = true;
+		smbchg_rerun_aicl(the_chip);
+		return;
+	}
 	return;
 }
 #endif 
@@ -9002,7 +8961,6 @@ void pmi8994_set_batt_health_good(void)
 void pmi8994_rerun_apsd(void)
 {
 	int rc;
-	int vbus_mv;
 
 	if (!the_chip) {
 		pr_err("called before init\n");
@@ -9010,14 +8968,6 @@ void pmi8994_rerun_apsd(void)
 	}
 
 	g_rerun_apsd_ignore_uv = true;
-
-	
-	if (workable_charging_cable()) {
-		pr_smb(PR_MISC, "Set ADAPTOR range to 5V to 9V\n");
-		smbchg_sec_masked_write(the_chip,
-				the_chip->usb_chgpth_base + USBIN_CHGR_CFG,
-				ADAPTER_ALLOWANCE_MASK, USBIN_ADAPTER_5V_9V_CONT);
-	}
 
 	
 	pr_smb(PR_MISC, "Faking Removal\n");
@@ -9049,13 +8999,6 @@ void pmi8994_rerun_apsd(void)
 
 	g_rerun_apsd_ignore_uv = false;
 
-	vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
-	if (vbus_mv < 4250){
-		pr_smb(PR_STATUS, "Cable out during rerun APSD!!\n");
-		update_usb_status(the_chip, false, true);
-		return;
-	}
-
 #ifdef CONFIG_HTC_BATT_WA_PCN0017
 	g_count_same_dischg = 0;
 #endif 
@@ -9084,7 +9027,6 @@ void pmi8994_boot_update_usb_status(void)
 static void smbchg_force_hvdcp_worker(struct work_struct *work)
 {
 	int rc;
-	int vbus_mv;
 
 	if (!the_chip) {
 		pr_err("called before init\n");
@@ -9101,12 +9043,6 @@ static void smbchg_force_hvdcp_worker(struct work_struct *work)
 	rc = force_9v_hvdcp(the_chip);
 	if (rc) {
 		pr_err("Force 9V failed.\n");
-		return;
-	}
-
-	vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
-	if (vbus_mv < 4250){
-		pr_smb(PR_STATUS, "Cable out during force QC2.0!!\n");
 		return;
 	}
 

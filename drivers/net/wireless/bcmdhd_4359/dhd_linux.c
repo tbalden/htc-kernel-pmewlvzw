@@ -11729,12 +11729,7 @@ user_trigger_write_to_file(dhd_pub_t *dhd, uint8 *buf, int size)
 	}
 	fp_dumpfile = filp_open(filename, O_WRONLY|O_CREAT, 0666);
 	if (!fp_dumpfile) {
-		DHD_ERROR(("%s: open file error, ptr is NULL \n", __FUNCTION__));
-		ret = -1;
-		goto exit;
-	}
-	if (IS_ERR(fp_dumpfile)) {
-		DHD_ERROR(("%s: open file error, err = %ld\n", __FUNCTION__, PTR_ERR(fp_dumpfile)));
+		DHD_ERROR(("%s: open file error\n", __FUNCTION__));
 		ret = -1;
 		goto exit;
 	}
@@ -11756,7 +11751,7 @@ exit:
 	MFREE(dhd->osh, buf, size);
 #endif 
 	
-	if (fp_dumpfile && !IS_ERR(fp_dumpfile))
+	if (fp_dumpfile)
 		filp_close(fp_dumpfile, current->files);
 	
 	set_fs(old_fs);
@@ -13101,7 +13096,7 @@ dhd_wmf_t* dhd_wmf_conf(dhd_pub_t *dhdp, uint32 idx)
 #endif 
 
 
-#if defined(DHD_L2_FILTER) || defined(CUSTOMER_HW_ONE)
+#if defined(DHD_L2_FILTER)
 bool dhd_sta_associated(dhd_pub_t *dhdp, uint32 bssidx, uint8 *mac)
 {
 	return dhd_find_sta(dhdp, bssidx, mac) ? TRUE : FALSE;

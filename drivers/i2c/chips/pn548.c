@@ -1181,7 +1181,7 @@ static int mfg_nfc_test(int code)
 		pn544_hw_reset_control(0);
 		I("Turn off NFC_PVDD");
 #ifdef PME_NFC_POWER_CONTROL
-        mfc_nfc_cmd_result = regulator_force_disable(nfc_vreg_l30);
+        mfc_nfc_cmd_result = regulator_disable(nfc_vreg_l30);
         I("%s : vreg_l30 regulator_disable\n", __func__);
         I("%s : vreg_l30 regulator_is_enabled = %d\n", __func__, regulator_is_enabled(nfc_vreg_l30));
         if (mfc_nfc_cmd_result < 0) {

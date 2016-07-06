@@ -2366,33 +2366,6 @@ need_lock:
 	return ret;
 }
 
-static void __dsi_fifo_error_handler(struct mdss_dsi_ctrl_pdata *ctrl,
-       bool recovery_needed)
-{
-       struct mdss_dsi_ctrl_pdata *sctrl;
-       bool use_pp_split = false;
-
-       use_pp_split = ctrl->panel_data.panel_info.use_pingpong_split;
-
-       mdss_dsi_clk_ctrl(ctrl, ctrl->dsi_clk_handle, MDSS_DSI_ALL_CLKS,
-                 MDSS_DSI_CLK_ON);
-       mdss_dsi_sw_reset(ctrl, true);
-       if (recovery_needed)
-               ctrl->recovery->fxn(ctrl->recovery->data,
-                       MDP_INTF_DSI_CMD_FIFO_UNDERFLOW);
-       mdss_dsi_clk_ctrl(ctrl, ctrl->dsi_clk_handle, MDSS_DSI_ALL_CLKS,
-                 MDSS_DSI_CLK_OFF);
-
-       sctrl = mdss_dsi_get_other_ctrl(ctrl);
-       if (sctrl && use_pp_split) {
-               mdss_dsi_clk_ctrl(sctrl, sctrl->dsi_clk_handle,
-                       MDSS_DSI_ALL_CLKS, MDSS_DSI_CLK_ON);
-               mdss_dsi_sw_reset(sctrl, true);
-               mdss_dsi_clk_ctrl(sctrl, sctrl->dsi_clk_handle,
-                       MDSS_DSI_ALL_CLKS, MDSS_DSI_CLK_OFF);
-       }
-}
-
 static void dsi_send_events(struct mdss_dsi_ctrl_pdata *ctrl,
 					u32 events, u32 arg)
 {
@@ -2458,7 +2431,15 @@ static int dsi_event_thread(void *data)
 			if (ctrl->recovery) {
 				pr_debug("%s: Handling underflow event\n",
 							__func__);
-				__dsi_fifo_error_handler(ctrl, true);
+				mdss_dsi_clk_ctrl(ctrl, ctrl->dsi_clk_handle,
+						  MDSS_DSI_ALL_CLKS,
+						  MDSS_DSI_CLK_ON);
+				mdss_dsi_sw_reset(ctrl, true);
+				ctrl->recovery->fxn(ctrl->recovery->data,
+					MDP_INTF_DSI_CMD_FIFO_UNDERFLOW);
+				mdss_dsi_clk_ctrl(ctrl, ctrl->dsi_clk_handle,
+						  MDSS_DSI_ALL_CLKS,
+						  MDSS_DSI_CLK_OFF);
 			} else {
 				pr_info("%s: No recovery fn for underflow event\n", __func__);
 			}
@@ -2466,7 +2447,13 @@ static int dsi_event_thread(void *data)
 		}
 
 		if (todo & DSI_EV_DSI_FIFO_EMPTY) {
-			__dsi_fifo_error_handler(ctrl, false);
+			mdss_dsi_clk_ctrl(ctrl, ctrl->dsi_clk_handle,
+					  MDSS_DSI_CORE_CLK,
+					  MDSS_DSI_CLK_ON);
+			mdss_dsi_sw_reset(ctrl, true);
+			mdss_dsi_clk_ctrl(ctrl, ctrl->dsi_clk_handle,
+					  MDSS_DSI_CORE_CLK,
+					  MDSS_DSI_CLK_OFF);
 		}
 
 		if (todo & DSI_EV_DLNx_FIFO_OVERFLOW) {

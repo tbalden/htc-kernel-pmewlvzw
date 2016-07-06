@@ -1278,7 +1278,6 @@ static inline void finish_lock_switch(struct rq *rq, struct task_struct *prev)
 #define WF_SYNC		0x01		
 #define WF_FORK		0x02		
 #define WF_MIGRATED	0x4		
-#define WF_NO_NOTIFIER	0x08		
 
 
 #define WEIGHT_IDLEPRIO                3

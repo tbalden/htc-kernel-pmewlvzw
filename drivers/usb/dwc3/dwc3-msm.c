@@ -2029,16 +2029,11 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 								usb_psy);
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	int ret;
-	enum dwc3_id_state id;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_USB_OTG:
-		id = val->intval ? DWC3_ID_GROUND : DWC3_ID_FLOAT;
-		if (mdwc->id_state == id)
-			break;
-
 		
-		mdwc->id_state = id;
+		mdwc->id_state = val->intval ? DWC3_ID_GROUND : DWC3_ID_FLOAT;
 		dbg_event(0xFF, "id_state", mdwc->id_state);
 		if (dwc->is_drd)
 			queue_delayed_work(mdwc->dwc3_wq,
@@ -2850,12 +2845,8 @@ static int dwc3_msm_remove(struct platform_device *pdev)
 int dwc3_pd_vbus_ctrl(int on)
 {
 	struct dwc3_msm *mdwc = context;
-	struct dwc3 *dwc = NULL;
+	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	int ret = 0;
-
-	if (IS_ERR_OR_NULL(mdwc))
-		return -EFAULT;
-	dwc = platform_get_drvdata(mdwc->dwc3);
 
 	pr_debug("%s: on = %d\n", __func__, on);
 	if (on == -1) { 
@@ -2928,8 +2919,6 @@ int dwc3_pd_drswap(int new_role)
 {
 	struct dwc3_msm *mdwc = context;
 	int ret = 0;
-	if (IS_ERR_OR_NULL(mdwc))
-		return -EFAULT;
 
 	pr_info("%s: 0:HOST 1:DEVICE; new_role = %d\n", __func__, new_role);
 
@@ -3128,19 +3117,6 @@ skip_psy_type:
 		return 0;
 
 	dev_info(mdwc->dev, "Avail curr from USB = %u\n", mA);
-
-	if (mdwc->vbus_active && (mA == 2)) {
-		switch (mdwc->chg_type) {
-			case DWC3_CDP_CHARGER:
-				mA = 1500;
-				break;
-			default:
-				mA = 500;
-				break;
-		}
-		pr_info("%s: USB suspends while charger exists, reset to %d mA\n",
-			__func__, mA);
-	}
 
 	if (mdwc->max_power <= 2 && mA > 2) {
 		
