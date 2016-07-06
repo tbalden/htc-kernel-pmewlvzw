@@ -1532,6 +1532,8 @@ static int qpnp_hap_set(struct qpnp_hap *hap, int on)
 	return rc;
 }
 
+extern void register_haptic(int value);
+
 static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 {
 	u8 current_set = LONG_DURATION;
@@ -1554,6 +1556,9 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 		hap->state = 0;
 	} else {
 		VIB_INFO_LOG("enable=%d.\n", value);
+#if 1
+		register_haptic(value);
+#endif
 		value = (value > hap->timeout_ms ?
 				 hap->timeout_ms : value);
 		if(hap->soft_mode_enable) {

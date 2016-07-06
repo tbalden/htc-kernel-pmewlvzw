@@ -323,6 +323,7 @@ static void virtual_key_lut_table_set(int *virtual_key_lut_table, int array_len,
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 static DEFINE_MUTEX(blinkstopworklock);
+static DEFINE_MUTEX(blinkworklock);
 static struct alarm blinkstopfunc_rtc;
 
 #define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	110
@@ -387,9 +388,18 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 		return 0;
 	}
 
+	// lock started...
+	if (!mutex_trylock(&blinkworklock)) {
+		LED_INFO("%s step trylock failed, return \n",__func__);
+		return 0;
+	}
+
 	// if blink brightness > 0 and not already blinking or "restart blink each time" is active then do the stuff...
 	if (blink_brightness && (blinking == 0 || restart_blink)) {
-		if (screen_on) return rc;
+		if (screen_on) {
+			mutex_unlock(&blinkworklock);
+			return rc;
+		}
 		// lights on...
 		blinking = 1;
 		if (led->mpp_cfg->mpp_reg && !led->mpp_cfg->enable) {
@@ -400,6 +410,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 				dev_err(&led->spmi_dev->dev,
 					"Regulator voltage set failed rc=%d\n",
 									rc);
+				mutex_unlock(&blinkworklock);
 				return rc;
 			}
 
@@ -518,6 +529,8 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 		led->mpp_cfg->pwm_cfg->blinking = false;
 	qpnp_dump_regs(led, mpp_debug_regs, ARRAY_SIZE(mpp_debug_regs));
 
+	mutex_unlock(&blinkworklock);
+
 	return 0;
 
 err_mpp_reg_write:
@@ -528,6 +541,8 @@ err_reg_enable:
 		regulator_set_voltage(led->mpp_cfg->mpp_reg, 0,
 							led->mpp_cfg->max_uV);
 	led->mpp_cfg->enable = false;
+
+	mutex_unlock(&blinkworklock);
 
 	return rc;
 
@@ -546,6 +561,41 @@ static int qpnp_buttonled_blink(int on)
 	return qpnp_buttonled_blink_with_alarm(on>0?10:0, 1);
 }
 
+// handling haptic notifications if enabled to register notifications even when RGB led is already blinking, or on charger
+static unsigned long last_haptic_jiffies = 0;
+static unsigned int last_value = 0;
+static unsigned int MAX_DIFF = 200;
+
+#define FINGERPRINT_VIB_TIME_EXCEPTION 40
+
+void register_haptic(int value)
+{
+	unsigned int diff_jiffies = jiffies - last_haptic_jiffies;
+	last_haptic_jiffies = jiffies;
+	LED_INFO("%s %d - jiffies diff %u \n",__func__,value, diff_jiffies);
+
+//	if this exceptional time is used, it means, fingerprint scanner vibrated with proxomity sensor detection on
+//	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
+	if (value == FINGERPRINT_VIB_TIME_EXCEPTION) return;
+
+	if (screen_on) return;
+	if (last_value == value) {
+		if (diff_jiffies < MAX_DIFF) {
+			qpnp_buttonled_blink(1);
+		}
+	}
+	last_value = value;
+}
+
+EXPORT_SYMBOL(register_haptic);
+
+#endif
+#ifndef CONFIG_LEDS_QPNP_BUTTON_BLINK
+void register_haptic(int value)
+{
+	LED_INFO("%s %d\n",__func__,value);
+}
+EXPORT_SYMBOL(register_haptic);
 #endif
 
 static int qpnp_mpp_set(struct qpnp_led_data *led)
