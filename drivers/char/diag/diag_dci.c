@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1260,6 +1260,7 @@ void diag_dci_notify_client(int peripheral_mask, int data, int proc)
 		dci_ops_tbl[proc].peripheral_status &= ~peripheral_mask;
 
 	
+	mutex_lock(&driver->dci_mutex);
 	list_for_each_safe(start, temp, &driver->dci_client_list) {
 		entry = list_entry(start, struct diag_dci_client_tbl, track);
 		if (entry->client_info.token != proc)
@@ -1273,6 +1274,7 @@ void diag_dci_notify_client(int peripheral_mask, int data, int proc)
 							info.si_int, stat);
 		}
 	}
+	mutex_unlock(&driver->dci_mutex);
 }
 
 static int diag_send_dci_pkt(struct diag_cmd_reg_t *entry,
@@ -1720,6 +1722,7 @@ static int diag_process_dci_pkt_rsp(unsigned char *buf, int len)
 	reg_entry.cmd_code_hi = header->subsys_cmd_code;
 	reg_entry.cmd_code_lo = header->subsys_cmd_code;
 
+	mutex_lock(&driver->cmd_reg_mutex);
 	temp_entry = diag_cmd_search(&reg_entry, ALL_PROC);
 	if (temp_entry) {
 		reg_item = container_of(temp_entry, struct diag_cmd_reg_t,
@@ -1731,6 +1734,7 @@ static int diag_process_dci_pkt_rsp(unsigned char *buf, int len)
 				reg_entry.cmd_code, reg_entry.subsys_id,
 				reg_entry.cmd_code_hi);
 	}
+	mutex_unlock(&driver->cmd_reg_mutex);
 
 	return ret;
 }

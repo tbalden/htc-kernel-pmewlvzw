@@ -2185,6 +2185,8 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 	int wy = 0;
 	int temp = 0;
 	int state = 0;
+	int dx = 0, dy = 0, dist = 0;
+	unsigned long speed = 0;
 	struct synaptics_rmi4_f12_extra_data *extra_data;
 	struct synaptics_rmi4_f12_finger_data *data;
 	struct synaptics_rmi4_f12_finger_data *finger_data;
@@ -2378,6 +2380,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			if (rmi4_data->report_points[finger].state != state) {
 				if (debug_mask & BIT(3)) {
 
+					getnstimeofday(&rmi4_data->report_points[finger].time_start);
 					htclog_report_point[finger].finger_ind = finger+1;
 					htclog_report_point[finger].dnup       = 1;
 					htclog_report_point[finger].x          = (rmi4_data->report_points[finger].x*rmi4_data->width_factor)>>SHIFT_BITS;
@@ -2385,6 +2388,8 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 					htclog_report_point[finger].wx         = wx;
 					htclog_report_point[finger].wy         = wy;
 					htclog_report_point[finger].z          = z;
+					rmi4_data->report_points[finger].Dx  = rmi4_data->report_points[finger].x;
+					rmi4_data->report_points[finger].Dy  = rmi4_data->report_points[finger].y;
 				}
 			}
 			rmi4_data->report_points[finger].state = state;
@@ -2419,6 +2424,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 					else
 						finger_status = F12_FINGER_STATUS;
 
+					getnstimeofday(&rmi4_data->report_points[finger].time_end);
 					htclog_report_point[finger].finger_ind = finger+1;
 					htclog_report_point[finger].dnup       = 0;
 					htclog_report_point[finger].x          = (rmi4_data->report_points[finger].x*rmi4_data->width_factor)>>SHIFT_BITS;
@@ -2455,6 +2461,7 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 					else
 						finger_status = F12_FINGER_STATUS;
 
+					getnstimeofday(&rmi4_data->report_points[finger].time_end);
 					htclog_report_point[finger].finger_ind = finger+1;
 					htclog_report_point[finger].dnup       = 0;
 					htclog_report_point[finger].x          = (rmi4_data->report_points[finger].x*rmi4_data->width_factor)>>SHIFT_BITS;
@@ -2480,33 +2487,77 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 	synaptics_rmi4_get_noise_state(rmi4_data);
 	if (debug_mask & BIT(3)) {
 		for (finger = 0; finger < fingers_to_process; finger++) {
+			rmi4_data->report_points[finger].time_delta.tv_nsec = (rmi4_data->report_points[finger].time_end.tv_sec*1000000000+rmi4_data->report_points[finger].time_end.tv_nsec)
+						-(rmi4_data->report_points[finger].time_start.tv_sec*1000000000+rmi4_data->report_points[finger].time_start.tv_nsec);
+			dx = (rmi4_data->report_points[finger].x > rmi4_data->report_points[finger].Dx)?
+						((rmi4_data->report_points[finger].x-rmi4_data->report_points[finger].Dx)*rmi4_data->width_factor)>>SHIFT_BITS:
+						((rmi4_data->report_points[finger].Dx-rmi4_data->report_points[finger].x)*rmi4_data->width_factor)>>SHIFT_BITS;
+			dy = (rmi4_data->report_points[finger].y > rmi4_data->report_points[finger].Dy)?
+						((rmi4_data->report_points[finger].y-rmi4_data->report_points[finger].Dy)*rmi4_data->height_factor)>>SHIFT_BITS:
+						((rmi4_data->report_points[finger].Dy-rmi4_data->report_points[finger].y)*rmi4_data->height_factor)>>SHIFT_BITS;
+			dist = dx*dx + dy*dy;
+			speed = int_sqrt(dist)*1000000000/rmi4_data->report_points[finger].time_delta.tv_nsec;
 			if(htclog_report_point[finger].finger_ind != 0) {
 				if (rmi4_data->width_factor && rmi4_data->height_factor) {
-					pr_info("Screen:%c[%02d]:%s, X=%d, Y=%d, Wx=%d, Wy=%d, Z=%d, IM=%d, CIDIM=%d, Freq=%d, NS=%d\n", state2char(finger_status),
-				htclog_report_point[finger].finger_ind,
-				htclog_report_point[finger].dnup?"Down":"Up",
-				htclog_report_point[finger].x,
-				htclog_report_point[finger].y,
-				htclog_report_point[finger].wx,
-				htclog_report_point[finger].wy,
-				htclog_report_point[finger].z,
-				rmi4_data->noise_state.im,
-				rmi4_data->noise_state.cidim,
-				rmi4_data->noise_state.freq,
-				rmi4_data->noise_state.ns);
+					if(htclog_report_point[finger].dnup)
+						pr_info("Screen:%c[%02d]:%s, X=%d, Y=%d, Wx=%d, Wy=%d, Z=%d, IM=%d, CIDIM=%d, Freq=%d, NS=%d\n", state2char(finger_status),
+							htclog_report_point[finger].finger_ind,
+							"Down",
+							htclog_report_point[finger].x,
+							htclog_report_point[finger].y,
+							htclog_report_point[finger].wx,
+							htclog_report_point[finger].wy,
+							htclog_report_point[finger].z,
+							rmi4_data->noise_state.im,
+							rmi4_data->noise_state.cidim,
+							rmi4_data->noise_state.freq,
+							rmi4_data->noise_state.ns);
+					else
+						pr_info("Screen:%c[%02d]:%s, X=%d, Y=%d, Wx=%d, Wy=%d, Z=%d, IM=%d, CIDIM=%d, Freq=%d, NS=%d, dDS = %d, dT = %ld, SP = %ld\n", state2char(finger_status),
+							htclog_report_point[finger].finger_ind,
+							"Up",
+							htclog_report_point[finger].x,
+							htclog_report_point[finger].y,
+							htclog_report_point[finger].wx,
+							htclog_report_point[finger].wy,
+							htclog_report_point[finger].z,
+							rmi4_data->noise_state.im,
+							rmi4_data->noise_state.cidim,
+							rmi4_data->noise_state.freq,
+							rmi4_data->noise_state.ns,
+							dist,
+							rmi4_data->report_points[finger].time_delta.tv_nsec/1000,
+							speed);
 				} else {
-					pr_info("Raw:%c[%02d]:%s, X=%d, Y=%d, Wx=%d, Wy=%d, Z=%d, IM=%d, CIDIM=%d, Freq=%d, NS=%d\n", state2char(finger_status),
-				htclog_report_point[finger].finger_ind,
-				htclog_report_point[finger].dnup?"Down":"Up",
-				htclog_report_point[finger].x,
-				htclog_report_point[finger].y,
-				htclog_report_point[finger].wx,
-				htclog_report_point[finger].wy,
-				htclog_report_point[finger].z,
-				rmi4_data->noise_state.im,
-				rmi4_data->noise_state.cidim,
-				rmi4_data->noise_state.freq,
-				rmi4_data->noise_state.ns);
+					if(htclog_report_point[finger].dnup)
+						pr_info("Raw:%c[%02d]:%s, X=%d, Y=%d, Wx=%d, Wy=%d, Z=%d, IM=%d, CIDIM=%d, Freq=%d, NS=%d\n", state2char(finger_status),
+							htclog_report_point[finger].finger_ind,
+							"Down",
+							htclog_report_point[finger].x,
+							htclog_report_point[finger].y,
+							htclog_report_point[finger].wx,
+							htclog_report_point[finger].wy,
+							htclog_report_point[finger].z,
+							rmi4_data->noise_state.im,
+							rmi4_data->noise_state.cidim,
+							rmi4_data->noise_state.freq,
+							rmi4_data->noise_state.ns);
+					else
+						pr_info("Raw:%c[%02d]:%s, X=%d, Y=%d, Wx=%d, Wy=%d, Z=%d, IM=%d, CIDIM=%d, Freq=%d, NS=%d, dDS = %d, dT = %ld, SP = %ld\n", state2char(finger_status),
+							htclog_report_point[finger].finger_ind,
+							"Up",
+							htclog_report_point[finger].x,
+							htclog_report_point[finger].y,
+							htclog_report_point[finger].wx,
+							htclog_report_point[finger].wy,
+							htclog_report_point[finger].z,
+							rmi4_data->noise_state.im,
+							rmi4_data->noise_state.cidim,
+							rmi4_data->noise_state.freq,
+							rmi4_data->noise_state.ns,
+							dist,
+							rmi4_data->report_points[finger].time_delta.tv_nsec/1000,
+							speed);
 				}
 			}
 		}
@@ -4387,37 +4438,11 @@ static int synaptics_rmi4_set_gpio(struct synaptics_rmi4_data *rmi4_data)
 		retval = synaptics_rmi4_gpio_setup(
 				bdata->power_gpio,
 				true, 1, bdata->power_on_state);
-		if (retval == -EBUSY)
-		{
-			rmi4_data->hw_if->board_data->power_gpio = -1;
-			dev_info(rmi4_data->pdev->dev.parent,
-					"%s: power GPIO has been requested, by pass.\n",
-					__func__);
-		}
-		else if (retval < 0) {
+		if (retval < 0) {
 			dev_err(rmi4_data->pdev->dev.parent,
 					"%s: Failed to configure power GPIO\n",
 					__func__);
 			goto err_gpio_power;
-		}
-	}
-
-	if (bdata->power_gpio_1v8 >= 0) {
-		retval = synaptics_rmi4_gpio_setup(
-				bdata->power_gpio_1v8,
-				true, 1, bdata->power_on_state);
-		if (retval == -EBUSY)
-		{
-			rmi4_data->hw_if->board_data->power_gpio_1v8 = -1;
-			dev_info(rmi4_data->pdev->dev.parent,
-					"%s: power-1v8 GPIO has been requested, by pass.\n",
-					__func__);
-		}
-		else if (retval < 0) {
-			dev_err(rmi4_data->pdev->dev.parent,
-					"%s: Failed to configure power-1v8 GPIO\n",
-					__func__);
-			goto err_gpio_power_1v8;
 		}
 	}
 
@@ -4450,11 +4475,6 @@ static int synaptics_rmi4_set_gpio(struct synaptics_rmi4_data *rmi4_data)
 		msleep(bdata->power_delay_ms);
 	}
 
-	if (bdata->power_gpio_1v8 >= 0) {
-		gpio_set_value(bdata->power_gpio_1v8, bdata->power_on_state);
-		msleep(bdata->power_delay_ms);
-	}
-
 	if (bdata->reset_gpio >= 0) {
 		gpio_set_value(bdata->reset_gpio, bdata->reset_on_state);
 		msleep(bdata->reset_active_ms);
@@ -4468,9 +4488,6 @@ err_gpio_switch:
 	if (bdata->switch_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->switch_gpio, false, 0, 0);
 err_gpio_reset:
-	if (bdata->power_gpio_1v8 >= 0)
-		synaptics_rmi4_gpio_setup(bdata->power_gpio_1v8, false, 0, 0);
-err_gpio_power_1v8:
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->power_gpio, false, 0, 0);
 
@@ -5306,9 +5323,6 @@ err_set_input_dev:
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->power_gpio, false, 0, 0);
 
-	if (bdata->power_gpio_1v8 >= 0)
-		synaptics_rmi4_gpio_setup(bdata->power_gpio_1v8, false, 0, 0);
-
 	if (bdata->switch_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->switch_gpio, false, 0, 0);
 
@@ -5382,9 +5396,6 @@ static int synaptics_rmi4_remove(struct platform_device *pdev)
 
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->power_gpio, false, 0, 0);
-
-	if (bdata->power_gpio_1v8 >= 0)
-		synaptics_rmi4_gpio_setup(bdata->power_gpio_1v8, false, 0, 0);
 
 	if (bdata->switch_gpio >= 0)
 		synaptics_rmi4_gpio_setup(bdata->switch_gpio, false, 0, 0);

@@ -40,6 +40,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/mmc.h>
+#include <trace/events/mmcio.h>
 
 #include <linux/mmc/ioctl.h>
 #include <linux/mmc/card.h>
@@ -2652,8 +2653,14 @@ static void mmc_blk_cmdq_reset(struct mmc_host *host, bool clear_all)
 		goto reset;
 	}
 
-	if (clear_all)
+	if (clear_all) {
+		pr_warn("%s: %s: reset all request: %d\n",
+				mmc_hostname(host), __func__, clear_all);
+		host->perf.cmdq_read_map = 0;
+		host->perf.cmdq_write_map = 0;
+
 		mmc_cmdq_discard_queue(host, 0);
+	}
 reset:
 	mmc_host_clk_hold(host);
 	host->cmdq_ops->disable(host, true);
@@ -2873,6 +2880,7 @@ void mmc_blk_cmdq_complete_rq(struct request *rq)
 	struct mmc_queue *mq = (struct mmc_queue *)rq->q->queuedata;
 	int err = 0;
 	bool is_dcmd = false;
+	ktime_t now, diff;
 
 	if (mrq->cmd && mrq->cmd->error)
 		err = mrq->cmd->error;
@@ -2905,6 +2913,7 @@ void mmc_blk_cmdq_complete_rq(struct request *rq)
 			cmdq_req->tag, ctx_info->curr_state, err);
 		goto out;
 	}
+
 	BUG_ON(test_bit(CMDQ_STATE_ERR, &ctx_info->curr_state));
 
 	
@@ -2921,6 +2930,53 @@ void mmc_blk_cmdq_complete_rq(struct request *rq)
 		clear_bit(CMDQ_STATE_DCMD_ACTIVE, &ctx_info->curr_state);
 		blk_end_request_all(rq, err);
 		goto out;
+	}
+
+	if (mrq->data) {
+		if (host->perf_enable) {
+			now = ktime_get();
+			
+			diff = ktime_sub(now, (mrq->data->flags == MMC_DATA_READ) ?
+				host->perf.cmdq_read_start : host->perf.cmdq_write_start);
+
+			if (host->card)
+				
+				trace_mmc_request_done(&host->class_dev,
+					(mrq->data->flags == MMC_DATA_READ) ? 46 : 47,
+					cmdq_req->blk_addr, mrq->data->blocks,
+					ktime_to_ms(diff), cmdq_req->tag);
+
+			if (mrq->data->flags == MMC_DATA_READ) {
+				host->perf.rbytes_drv += mrq->data->bytes_xfered;
+				host->perf.rtime_drv = ktime_add(host->perf.rtime_drv, diff);
+				host->perf.rcount++;
+				host->perf.cmdq_read_map &=  ~(1 << cmdq_req->tag);
+				host->perf.cmdq_read_start = now;
+
+				if ((host->debug_mask & MMC_DEBUG_RANDOM_RW) &&
+						(mrq->data->bytes_xfered <= 32*1024)) {
+					host->perf.rbytes_drv_rand += mrq->data->bytes_xfered;
+					host->perf.rtime_drv_rand =
+							ktime_add(host->perf.rtime_drv_rand, diff);
+					host->perf.rcount_rand++;
+				}
+			} else {
+				host->perf.wbytes_drv += mrq->data->bytes_xfered;
+				host->perf.wkbytes_drv += (mrq->data->bytes_xfered / 1024);
+				host->perf.wtime_drv = ktime_add(host->perf.wtime_drv, diff);
+				host->perf.wcount++;
+				host->perf.cmdq_write_map &=  ~(1 << cmdq_req->tag);
+				host->perf.cmdq_write_start = now;
+
+				if ((host->debug_mask & MMC_DEBUG_RANDOM_RW) &&
+						(mrq->data->bytes_xfered <= 32*1024)) {
+					host->perf.wbytes_drv_rand += mrq->data->bytes_xfered;
+					host->perf.wtime_drv_rand =
+							ktime_add(host->perf.wtime_drv_rand, diff);
+					host->perf.wcount_rand++;
+				}
+			}
+		}
 	}
 
 	blk_end_request(rq, err, cmdq_req->data.bytes_xfered);

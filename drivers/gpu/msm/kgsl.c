@@ -180,14 +180,15 @@ static void kgsl_memfree_purge(pid_t ptname, uint64_t gpuaddr,
 		if (gpuaddr > entry->gpuaddr &&
 			gpuaddr < entry->gpuaddr + entry->size) {
 			
-			entry->size = entry->gpuaddr - gpuaddr;
-		} else if (gpuaddr <= entry->gpuaddr &&
-			gpuaddr + size < entry->gpuaddr + entry->size)
-			
-			entry->gpuaddr = gpuaddr + size;
-		else if (gpuaddr + size >= entry->gpuaddr + entry->size) {
-			
-			entry->size = 0;
+			entry->size = gpuaddr - entry->gpuaddr;
+		} else if (gpuaddr <= entry->gpuaddr) {
+			if (gpuaddr + size > entry->gpuaddr &&
+				gpuaddr + size < entry->gpuaddr + entry->size)
+				
+				entry->gpuaddr = gpuaddr + size;
+			else if (gpuaddr + size >= entry->gpuaddr + entry->size)
+				
+				entry->size = 0;
 		}
 	}
 	spin_unlock(&memfree_lock);
@@ -3634,7 +3635,7 @@ void kgsl_device_platform_remove(struct kgsl_device *device)
 
 	idr_destroy(&device->context_idr);
 
-	kgsl_free_global(&device->memstore);
+	kgsl_free_global(device, &device->memstore);
 
 	kgsl_mmu_close(device);
 

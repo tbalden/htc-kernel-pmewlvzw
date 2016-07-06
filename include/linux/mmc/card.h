@@ -381,6 +381,7 @@ struct mmc_card {
 	unsigned int		sd_bus_speed;	
 	unsigned int		mmc_avail_type;	
 	int                     force_remove;   
+	int                     cmdq_mode;      
 
 	struct dentry		*debugfs_root;
 	struct mmc_part	part[MMC_NUM_PHY_PARTITION]; 

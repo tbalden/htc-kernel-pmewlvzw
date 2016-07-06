@@ -385,7 +385,8 @@ struct cwmcu_data {
 
 	bool is_compass_en;
 	bool is_compass_en_new;
-	bool is_pvt;
+	bool need_notify_display;
+	bool need_compass_filter;
 };
 
 static struct cwmcu_data *s_mcu_data = NULL;
@@ -2936,7 +2937,7 @@ static int cwmcu_restore_status(struct cwmcu_data *mcu_data)
 	}
 #endif
 
-	if (!mcu_data->is_pvt) {
+	if (mcu_data->need_compass_filter) {
 		reg_value = 1;
 		rc = CWMCU_i2c_write_power(mcu_data, CW_I2C_REG_COMPASS_FILTER,
 					   &reg_value, 1);
@@ -3711,13 +3712,13 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 		return rc;
 	}
 
-	if (mcu_data->is_pvt) {
+	if (mcu_data->need_notify_display) {
 		mcu_data->is_compass_en_new =
 			(mcu_data->enabled_list & COMPASS_EN_MASK)
 			? true : false;
 
 		if (mcu_data->is_compass_en != mcu_data->is_compass_en_new) {
-			D(
+			I(
 			  "%s: Calling compass_en_notifier_call_chain, "
 			  "is_compass_en_new = %d, COMPASS_EN_MASK = 0x%llx, "
 			  "enabled_list = 0x%llx\n",
@@ -5674,14 +5675,25 @@ static int mcu_parse_dt(struct device *dev, struct cwmcu_data *pdata)
 	}
 
 	
-	prop = of_find_property(dt, "mcu,is_pvt", NULL);
+	prop = of_find_property(dt, "mcu,need_notify_display", NULL);
 	if (prop) {
-		of_property_read_u32(dt, "mcu,is_pvt", &buf);
-		pdata->is_pvt = buf;
-		I("%s: is_pvt = %d\n", __func__, pdata->is_pvt);
+		of_property_read_u32(dt, "mcu,need_notify_display", &buf);
+		pdata->need_notify_display = buf;
+		I("%s: need_notify_display = %d\n", __func__, pdata->need_notify_display);
 	} else {
-		pdata->is_pvt = false;
-		I("%s: is_pvt not found", __func__);
+		pdata->need_notify_display = false;
+		I("%s: need_notify_display not found", __func__);
+	}
+
+	
+	prop = of_find_property(dt, "mcu,need_compass_filter", NULL);
+	if (prop) {
+		of_property_read_u32(dt, "mcu,need_compass_filter", &buf);
+		pdata->need_compass_filter = buf;
+		I("%s: need_compass_filter = %d\n", __func__, pdata->need_compass_filter);
+	} else {
+		pdata->need_compass_filter = false;
+		I("%s: need_compass_filter not found", __func__);
 	}
 
 	return 0;

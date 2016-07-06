@@ -2469,12 +2469,8 @@ static int diag_user_process_dci_apps_data(const char __user *buf, int len,
 		return -EBADMSG;
 	}
 
-	switch (pkt_type) {
-	case DCI_PKT_TYPE:
-	case DATA_TYPE_DCI_LOG:
-	case DATA_TYPE_DCI_EVENT:
-		break;
-	default:
+	pkt_type &= (DCI_PKT_TYPE | DATA_TYPE_DCI_LOG | DATA_TYPE_DCI_EVENT);
+	if (!pkt_type) {
 		pr_err_ratelimited("diag: In %s, invalid pkt_type: %d\n",
 				   __func__, pkt_type);
 		return -EBADMSG;
@@ -3401,6 +3397,7 @@ static int __init diagchar_init(void)
 	mutex_init(&driver->diag_file_mutex);
 	mutex_init(&driver->delayed_rsp_mutex);
 	mutex_init(&apps_data_mutex);
+	mutex_init(&driver->diagfwd_channel_mutex);
 	init_waitqueue_head(&driver->wait_q);
 	INIT_WORK(&(driver->diag_drain_work), diag_drain_work_fn);
 	INIT_WORK(&(driver->update_user_clients),

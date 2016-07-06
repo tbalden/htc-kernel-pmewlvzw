@@ -94,8 +94,8 @@ static TARGET_HW_WORKAROUND hw_workaround_table [] = {
         {"HT62S01",	5,	38	},
         {"HT62T01",	1,	16	},
         {"HT63201",	1,	421	},
-	{"HT63301",	1,	31	},
-	{"HT63401",	1,	111	},
+        {"HT63301",	1,	31	},
+        {"HT63401",	1,	111	},
 };
 #endif
 
@@ -728,13 +728,12 @@ static void report_laser(struct laser_device_data *laser_data)
 static int debounce_counter = 0;
 static int RangeStatus_determination(int RangeStatus) {
 	if(RangeStatus == 3) {
-		debounce_counter++;
 		if(debounce_counter >= 10) {
-			if(debounce_counter % 30 == 0)
-				I("debounce_counter sustained %d\n", debounce_counter);
 			return 3;
-		} else
+		} else {
+			debounce_counter++;
 			return 0;
+		}
 	} else {
 		debounce_counter = 0;
 		return RangeStatus;
@@ -756,6 +755,7 @@ static irqreturn_t laser_irq_handler(int irq, void *handle)
 			data[2] = RangingMeasurementData.SignalRateRtnMegaCps;
 			data[3] = RangingMeasurementData.AmbientRateRtnMegaCps;
 			data[4] = RangeStatus_determination(RangingMeasurementData.RangeStatus);
+
 
 			laser_send_event(laser_data, LASER_RANGE_DATA, data, 0);
 

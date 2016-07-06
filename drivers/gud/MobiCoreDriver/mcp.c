@@ -23,6 +23,7 @@
 #include <linux/interrupt.h>
 #include <linux/debugfs.h>
 #include <linux/of_irq.h>
+#include <linux/freezer.h>
 #include <asm/barrier.h>
 
 #include "public/mc_user.h"
@@ -375,9 +376,13 @@ end:
 	mutex_unlock(&mcp_ctx.notifications_mutex);
 
 	mutex_unlock(&session->notif_wait_lock);
-	if (ret && ((ret != -ETIME) || !silent_expiry))
-		mc_dev_info("session %x ec %d ret %d\n",
-			    session->id, session->exit_code, ret);
+	if (ret && ((ret != -ETIME) || !silent_expiry)) {
+		if (ret == -ERESTARTSYS && system_freezing_cnt.counter == 1)
+			mc_dev_devel("freezing session %x\n", session->id);
+		else
+			mc_dev_info("session %x ec %d ret %d\n",
+				session->id, session->exit_code, ret);
+	}
 
 	return ret;
 }

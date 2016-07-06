@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -150,6 +150,7 @@ struct qusb_phy {
 	int			*emu_dcm_reset_seq;
 	int			emu_dcm_reset_seq_len;
 	spinlock_t		pulse_lock;
+	int			usb_phy_always_on;
 };
 
 static void qusb_phy_enable_clocks(struct qusb_phy *qphy, bool on)
@@ -238,7 +239,15 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on,
 		goto put_vdda18_lpm;
 	}
 
-	if (!L24_keep) {
+	if (qphy->usb_phy_always_on) {
+		if (!L24_keep) {
+			ret = regulator_enable(qphy->vdda18);
+			if (ret) {
+				dev_err(qphy->phy.dev, "Unable to enable vdda18:%d\n", ret);
+				goto unset_vdda18;
+			}
+		}
+	} else { 
 		ret = regulator_enable(qphy->vdda18);
 		if (ret) {
 			dev_err(qphy->phy.dev, "Unable to enable vdda18:%d\n", ret);
@@ -259,7 +268,16 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on,
 				"Unable to set voltage for vdda33:%d\n", ret);
 		goto put_vdda33_lpm;
 	}
-	if (!L24_keep) {
+	if (qphy->usb_phy_always_on) {
+		if (!L24_keep) {
+			ret = regulator_enable(qphy->vdda33);
+			if (ret) {
+				dev_err(qphy->phy.dev, "Unable to enable vdda33:%d\n", ret);
+				goto unset_vdd33;
+			}
+			L24_keep = true;
+		}
+	} else { 
 		ret = regulator_enable(qphy->vdda33);
 		if (ret) {
 			dev_err(qphy->phy.dev, "Unable to enable vdda33:%d\n", ret);
@@ -275,8 +293,19 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on,
 	return ret;
 
 disable_vdda33:
+	if (!qphy->usb_phy_always_on) { 
+		ret = regulator_disable(qphy->vdda33);
+		if (ret)
+			dev_err(qphy->phy.dev, "Unable to disable vdda33:%d\n", ret);
+	}
 
 unset_vdd33:
+	if (!qphy->usb_phy_always_on) { 
+		ret = regulator_set_voltage(qphy->vdda33, 0, QUSB2PHY_3P3_VOL_MAX);
+		if (ret)
+			dev_err(qphy->phy.dev,
+				"Unable to set (0) voltage for vdda33:%d\n", ret);
+	}
 
 put_vdda33_lpm:
 	ret = regulator_set_optimum_mode(qphy->vdda33, 0);
@@ -284,7 +313,18 @@ put_vdda33_lpm:
 		dev_err(qphy->phy.dev, "Unable to set (0) HPM of vdda33\n");
 
 disable_vdda18:
+	if (!qphy->usb_phy_always_on) { 
+		ret = regulator_disable(qphy->vdda18);
+		if (ret)
+			dev_err(qphy->phy.dev, "Unable to disable vdda18:%d\n", ret);
+	}
 unset_vdda18:
+	if (!qphy->usb_phy_always_on) { 
+		ret = regulator_set_voltage(qphy->vdda18, 0, QUSB2PHY_1P8_VOL_MAX);
+		if (ret)
+			dev_err(qphy->phy.dev,
+				"Unable to set (0) voltage for vdda18:%d\n", ret);
+	}
 put_vdda18_lpm:
 	ret = regulator_set_optimum_mode(qphy->vdda18, 0);
 	if (ret < 0)
@@ -753,9 +793,16 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 			writel_relaxed(UTMI_ULPI_SEL | UTMI_TEST_MUX_SEL,
 				qphy->base + QUSB2PHY_PORT_UTMI_CTRL2);
 
+			
+			writel_relaxed(CLAMP_N_EN | FREEZIO_N | POWER_DOWN,
+				qphy->base + QUSB2PHY_PORT_POWERDOWN);
+
+			
+			wmb();
 
 			qusb_phy_enable_clocks(qphy, false);
-			
+			if (!qphy->usb_phy_always_on)
+				qusb_phy_enable_power(qphy, false, true);
 		}
 		qphy->suspended = true;
 	} else {
@@ -845,6 +892,8 @@ static int qusb_phy_probe(struct platform_device *pdev)
 	int ret = 0, size = 0;
 	const char *phy_type;
 	bool hold_phy_reset;
+	struct property *prop = NULL;
+	u32 buf;
 
 	qphy = devm_kzalloc(dev, sizeof(*qphy), GFP_KERNEL);
 	if (!qphy)
@@ -1004,6 +1053,15 @@ static int qusb_phy_probe(struct platform_device *pdev)
 		} else {
 			dev_dbg(dev, "error allocating memory for emu_dcm_reset_seq\n");
 		}
+	}
+
+	prop = of_find_property(dev->of_node, "htc,usb-phy-always-on", NULL);
+	if (prop) {
+		of_property_read_u32(dev->of_node, "htc,usb-phy-always-on", &buf);
+		qphy->usb_phy_always_on = buf;
+		dev_dbg(dev, "usb-phy-always-on = %d\n", qphy->usb_phy_always_on);
+	} else {
+		dev_err(dev, "usb-phy-always-on was not found\n");
 	}
 
 	of_get_property(dev->of_node, "qcom,qusb-phy-init-seq", &size);

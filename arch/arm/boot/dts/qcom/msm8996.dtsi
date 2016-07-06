@@ -2059,7 +2059,7 @@
 		htc,rmnet-transports = "qti,bam2bam_ipa"; /*++ 2015/06/29 USB Team, PCN00005 ++*/
 		htc,android-usb-nluns = <1>; /*++ 2015/10/27 USB Team, PCN00001 ++*/
 		qcom,android-usb-cdrom;	/*++ 2015/10/27 USB Team, PCN00001 ++*/
-		qcom,pm-qos-latency = <301 701 801>;
+		qcom,pm-qos-latency = <41 91 801>;
 	};
 
 	qusb_phy0: qusb@7411000 {
@@ -2089,6 +2089,7 @@
 					0x14 0x9C
 					0x9F 0x1C
 					0x00 0x18>;
+		htc,usb-phy-always-on = <1>;
 		phy_type= "utmi";
 
 		clocks = <&clock_gcc clk_gcc_usb_phy_cfg_ahb2phy_clk>,

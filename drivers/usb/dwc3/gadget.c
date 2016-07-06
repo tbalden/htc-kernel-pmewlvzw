@@ -1826,7 +1826,7 @@ static int __dwc3_gadget_start(struct dwc3 *dwc)
 			reg |= DWC3_DSTS_SUPERSPEED;
 		}
 	}
-	printk("%s(%d): reg=%x", __func__, __LINE__, reg);
+
 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
 
 	if (dwc->revision >= DWC3_REVISION_270A) {

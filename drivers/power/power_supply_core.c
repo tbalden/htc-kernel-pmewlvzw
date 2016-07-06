@@ -20,6 +20,9 @@
 #include <linux/power_supply.h>
 #include <linux/thermal.h>
 #include "power_supply.h"
+#ifdef CONFIG_HTC_BATT
+#include <linux/power/htc_battery.h>
+#endif
 
 struct class *power_supply_class;
 EXPORT_SYMBOL_GPL(power_supply_class);
@@ -237,8 +240,10 @@ static void power_supply_changed_work(struct work_struct *work)
 		spin_unlock_irqrestore(&psy->changed_lock, flags);
 		class_for_each_device(power_supply_class, NULL, psy,
 				      __power_supply_changed_work);
+#ifdef CONFIG_HTC_BATT_PCN0012
          
 		
+#endif 
 		atomic_notifier_call_chain(&power_supply_notifier,
 				PSY_EVENT_PROP_CHANGED, psy);
 		kobject_uevent(&psy->dev->kobj, KOBJ_CHANGE);

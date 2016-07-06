@@ -273,7 +273,7 @@ config HTC_BATT
 	help
 	  Say Y to enable htc battery debug flag series.
 
-config HTC_CHARGER
+config HTC_BATT_PCN0016
 	bool "HTC Charger Feature"
 	help
 	  Say Y to enable htc charger features

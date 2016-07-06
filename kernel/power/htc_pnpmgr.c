@@ -73,7 +73,7 @@ struct pnp_cluster_info {
 static ssize_t _name##_show						\
 (struct kobject *kobj, struct kobj_attribute *attr, char *buf)		\
 {									\
-	return scnprintf(buf, sizeof(str_buf), "%s", str_buf);	\
+	return scnprintf(buf, sizeof(str_buf), "%s\n", str_buf);	\
 }
 
 #define define_string_store(_name, str_buf, store_cb)		\
@@ -92,7 +92,7 @@ static ssize_t _name##_store					\
 static ssize_t _name##_show					\
 (struct kobject *kobj, struct kobj_attribute *attr, char *buf)	\
 {								\
-	return sprintf(buf, "%d", int_val);			\
+	return sprintf(buf, "%d\n", int_val);			\
 }
 
 #define define_int_store(_name, int_val, store_cb)		\
@@ -1034,7 +1034,7 @@ thermal_freq_store(struct kobject *kobj, struct kobj_attribute *attr,
 	
 	if (sscanf(buf, "%d", &val) > 0) {
 		sscanf(kobj->name, "cpu%d", &cpu);
-		if (thermal_min_freq_limit_value  > 0 && val < thermal_min_freq_limit_value ){
+		if (thermal_min_freq_limit_value  > 0 && val < thermal_min_freq_limit_value ) {
 			pr_info("%s: set freq %d lower than min require. Set to %d\n", __func__, val, thermal_min_freq_limit_value);
 			val = thermal_min_freq_limit_value;
 		}

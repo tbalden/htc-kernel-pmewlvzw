@@ -413,6 +413,9 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	init_waitqueue_head(&host->wq);
 	INIT_DELAYED_WORK(&host->detect, mmc_rescan);
 	INIT_DELAYED_WORK(&host->stats_work, mmc_stats);
+
+	host->perf.cmdq_read_map = 0;
+	host->perf.cmdq_write_map = 0;
 #ifdef CONFIG_PM
 	host->pm_notify.notifier_call = mmc_pm_notify;
 #endif

@@ -19,6 +19,9 @@
 #include <linux/types.h>
 #include <linux/batterydata-lib.h>
 #include <linux/power_supply.h>
+#ifdef CONFIG_HTC_BATT
+#include <linux/power/htc_battery.h>
+#endif
 
 static int of_batterydata_read_lut(const struct device_node *np,
 			int max_cols, int max_rows, int *ncols, int *nrows,
@@ -310,7 +313,7 @@ static int64_t of_batterydata_convert_battery_id_kohm(int batt_id_uv,
 	return resistor_value_kohm;
 }
 
-#ifdef CONFIG_HTC_BATT
+#ifdef CONFIG_HTC_BATT_PCN0003
 struct device_node *of_batterydata_get_best_profile(
 		const struct device_node *batterydata_container_node,
 		const char *psy_name,  const char  *batt_type)
@@ -447,7 +450,7 @@ struct device_node *of_batterydata_get_best_profile(
 
 	return best_node;
 }
-#endif
+#endif 
 int of_batterydata_read_data(struct device_node *batterydata_container_node,
 				struct bms_battery_data *batt_data,
 				int batt_id_uv)

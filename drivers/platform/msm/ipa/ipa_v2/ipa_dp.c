@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -732,6 +732,11 @@ fail:
 static void ipa_sps_irq_control(struct ipa_sys_context *sys, bool enable)
 {
 	int ret;
+
+	if (atomic_read(&sys->curr_polling_state)) {
+		IPADBG("in polling mode, do not change config\n");
+		return;
+	}
 
 	if (enable) {
 		ret = sps_get_config(sys->ep->ep_hdl, &sys->ep->connect);

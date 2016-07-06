@@ -481,8 +481,15 @@ struct mmc_host {
 		ktime_t workload_time;
 
 		ktime_t start;
+
+		
+		unsigned long cmdq_read_map;
+		unsigned long cmdq_write_map;
+		ktime_t cmdq_read_start;
+		ktime_t cmdq_write_start;
 	} perf;
 	bool perf_enable;
+
 
 	enum dev_state dev_status;
 	bool			wakeup_on_idle;

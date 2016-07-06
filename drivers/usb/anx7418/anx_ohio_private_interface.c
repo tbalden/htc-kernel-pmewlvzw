@@ -1150,7 +1150,7 @@ void pd_vbus_control_default_func(bool on)
 		ohio_set_data_value(OHIO_PMODE, MODE_DFP);
 		enable_oc_work_func();
 		dwc3_pd_vbus_ctrl(1);
-		mdelay(5);
+		mdelay(2);
 		vbus_mv = pmi8994_get_usbin_voltage_now()/1000;
 		pr_debug("%s: vbus voltage (%d mv)\n", __func__, vbus_mv);
 		if (vbus_mv < 3500) {
@@ -1233,6 +1233,7 @@ void pd_cc_status_default_func(u8 cc_status)
 	pr_info("cc status 0x%x\n", cc_status);
 #endif
 	pr_info("cc status 0x%x\n", cc_status);
+
 	if ((cc_status == 0x20) || (cc_status == 0x02)) {
 		pr_info("%s: open e-mark cable in\n", __func__);
 		ohio_set_data_value(OHIO_EMARKER, 1);

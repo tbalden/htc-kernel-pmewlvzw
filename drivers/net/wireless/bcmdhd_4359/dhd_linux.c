@@ -6555,7 +6555,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	dhd->pub.mimo_mode = CUSTOM_MIMO_MODE;
 	DHD_ERROR(("%s: MIMO MODE %d\n", __FUNCTION__, dhd->pub.mimo_mode));
 #endif 
-#endif
+#endif 
 	
 	if (dhd_dpc_prio >= 0) {
 		
@@ -7640,6 +7640,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 #ifdef CUSTOM_MIMO_MODE
 	int txchain = 1;
 	int rxchain = 1;
+	int btc_mode = WL_BTC_FULLTDM;
 #endif 
 	int scan_parallel = 0;
 #if defined(SUPPORT_2G_HT40)
@@ -7906,8 +7907,10 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	if (dhd->op_mode & DHD_FLAG_STA_MODE) {
 		if (dhd->mimo_mode == 0) {
 			txchain = rxchain = 1;
+			btc_mode = WL_BTC_FULLTDM;
 		} else if (dhd->mimo_mode == 1) {
 			txchain = rxchain = 3;
+			btc_mode = WL_BTC_HYBRID;
 		}
 		DHD_ERROR(("%s: set txchain %d\n", __FUNCTION__, txchain));
 		bcm_mkiovar("txchain", (char *)&txchain, 4, iovbuf, sizeof(iovbuf));
@@ -7920,6 +7923,12 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 		ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 		if (ret < 0) {
 			DHD_ERROR(("%s: set rxchain fail, error=%d\n", __FUNCTION__, ret));
+		}
+		DHD_ERROR(("%s: set btc_mode %d\n", __FUNCTION__, btc_mode));
+		bcm_mkiovar("btc_mode", (char *)&btc_mode, 4, iovbuf, sizeof(iovbuf));
+		ret = dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
+		if (ret < 0) {
+			DHD_ERROR(("%s: set btc_mode fail, error=%d\n", __FUNCTION__, ret));
 		}
 	}
 #endif 

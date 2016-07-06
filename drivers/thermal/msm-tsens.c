@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -926,6 +926,9 @@ static struct of_device_id tsens_match[] = {
 	{	.compatible = "qcom,msmgold-tsens",
 		.data = (void *)TSENS_CALIB_FUSE_MAP_MSMGOLD,
 	},
+	{	.compatible = "qcom,msmcobalt-tsens",
+		.data = (void *)TSENS_CALIB_FUSE_MAP_NONE,
+	},
 	{}
 };
 
@@ -969,7 +972,8 @@ static int32_t get_tsens_sensor_for_client_id(struct tsens_tm_device *tmdev,
 		return -ENODEV;
 	}
 
-	if (!strcmp(id->compatible, "qcom,msm8996-tsens")) {
+	if (!strcmp(id->compatible, "qcom,msm8996-tsens") ||
+		(!strcmp(id->compatible, "qcom,msmcobalt-tsens"))) {
 		while (i < tmdev->tsens_num_sensor && !id_found) {
 			if (tmdev->sensor[i].sensor_client_id ==
 							sensor_client_id) {
@@ -1088,7 +1092,8 @@ int tsens_get_hw_id_mapping(int sensor_sw_id, int *sensor_client_id)
 		return -ENODEV;
 	}
 
-	if (!strcmp(id->compatible, "qcom,msm8996-tsens")) {
+	if (!strcmp(id->compatible, "qcom,msm8996-tsens") ||
+		(!strcmp(id->compatible, "qcom,msmcobalt-tsens"))) {
 		while (i < tmdev->tsens_num_sensor && !id_found) {
 			if (sensor_sw_id == tmdev->sensor[i].sensor_client_id) {
 				*sensor_client_id =
@@ -2716,7 +2721,7 @@ static int tsens_calib_msm8937_msmgold_sensors(struct tsens_tm_device *tmdev)
 
 	int tsens_calibration_mode = 0, temp = 0;
 	uint32_t calib_data[5] = {0, 0, 0, 0, 0};
-	uint32_t calib_tsens_point1_data[11], calib_tsens_point2_data[11];
+	uint32_t calib_tsens_point1_data[11] = {0}, calib_tsens_point2_data[11] = {0};
 
 	if (tmdev->calib_mode == TSENS_CALIB_FUSE_MAP_MSMGOLD)
 		ext_sen = 0;
@@ -5442,7 +5447,8 @@ static int get_device_tree_data(struct platform_device *pdev,
 		tmdev->tsens_type = TSENS_TYPE2;
 	else if (!strcmp(id->compatible, "qcom,msm8996-tsens"))
 		tmdev->tsens_type = TSENS_TYPE3;
-	else if (!strcmp(id->compatible, "qcom,msmtitanium-tsens")) {
+	else if (!strcmp(id->compatible, "qcom,msmtitanium-tsens") ||
+		(!strcmp(id->compatible, "qcom,msmcobalt-tsens"))) {
 		tmdev->tsens_type = TSENS_TYPE3;
 		tsens_poll_check = 0;
 	} else if (!strcmp(id->compatible, "qcom,msm8952-tsens") ||
@@ -5461,7 +5467,8 @@ static int get_device_tree_data(struct platform_device *pdev,
 		(!strcmp(id->compatible, "qcom,msm8996-tsens")) ||
 		(!strcmp(id->compatible, "qcom,msm8952-tsens")) ||
 		(!strcmp(id->compatible, "qcom,msm8937-tsens")) ||
-		(!strcmp(id->compatible, "qcom,msmtitanium-tsens")))
+		(!strcmp(id->compatible, "qcom,msmtitanium-tsens")) ||
+		(!strcmp(id->compatible, "qcom,msmcobalt-tsens")))
 			tmdev->tsens_valid_status_check = true;
 	}
 
@@ -5474,6 +5481,7 @@ static int get_device_tree_data(struct platform_device *pdev,
 	}
 
 	if (!strcmp(id->compatible, "qcom,msm8996-tsens") ||
+		(!strcmp(id->compatible, "qcom,msmcobalt-tsens")) ||
 		(!strcmp(id->compatible, "qcom,msmtitanium-tsens"))) {
 		tmdev->tsens_critical_irq =
 				platform_get_irq_byname(pdev,
