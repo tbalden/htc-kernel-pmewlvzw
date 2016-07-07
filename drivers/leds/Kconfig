@@ -539,6 +539,12 @@ config LEDS_QPNP_WLED
 	  To compile this driver as a module, choose M here: the module will
 	  be called leds-qpnp-wled.
 
+config LEDS_QPNP_BUTTON_BLINK
+	bool "Support for QPNP button backlight LEDs blink with RGB"
+	depends on LEDS_QPNP_RGB
+	help
+	  Support for QPNP button backlight LEDs blink with RGB.
+
 config LEDS_SYSCON
 	bool "LED support for LEDs on system controllers"
 	depends on LEDS_CLASS=y
