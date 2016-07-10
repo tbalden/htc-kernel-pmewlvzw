@@ -327,14 +327,16 @@ static DEFINE_MUTEX(blinkworklock);
 static struct alarm blinkstopfunc_rtc;
 
 #define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	110
+#define VIRTUAL_RAMP_SETP_TIME_DOUBLE_BLINK_SLOW	90
 
 #define BUTTON_BLINK_SPEED_MAX	9
+#define BUTTON_BLINK_SPEED_DEFAULT	5
 
 #define BUTTON_BLINK_NUMBER_MAX	50
-#define BUTTON_BLINK_NUMBER_DEFAULT	15
+#define BUTTON_BLINK_NUMBER_DEFAULT	20
 
 static int bln_switch = 1;
-static int bln_speed = 3;
+static int bln_speed = BUTTON_BLINK_SPEED_DEFAULT;
 static int bln_number = BUTTON_BLINK_NUMBER_DEFAULT; // infinite = 0
 static int bln_notif_once = 0; // determines if while blinking, restart or not blinking (and blink off callback timer). Useful with non 0 bln_number setup.
 
@@ -342,6 +344,7 @@ static int screen_on = 1;
 static int blinking = 0;
 struct qpnp_led_data *buttonled;
 static int charging = 0;
+static int short_vib_notif = 0;
 
 
 static int qpnp_buttonled_blink_with_alarm(int on,int cancel_alarm);
@@ -376,6 +379,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 	u8 val;
 	int virtual_key_lut_table_stop[1] = {0};
 	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {0,1,2,4,5,6,7,8,9,10};
+	int virtual_key_lut_table_double_blink[VIRTUAL_LUT_LEN] = {0,1,3,6,8,10,8,5,3,1};
 	// if number of blinks is not infinite, and "notify with blink only once" is off (so each blink should restart process), set restart_blink true...
 	int restart_blink = bln_number>0 && bln_notif_once == 0;
 
@@ -448,7 +452,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 
 			if (bln_number > 0 && !charging) { // if blink number is not infinite and is not charging, schedule CANCEL work
 				if (!mutex_is_locked(&blinkstopworklock)) {
-					int sleeptime = ( ((VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW * (VIRTUAL_LUT_LEN)) * 2) + pause_hi + pause_lo) * bln_number;
+					int sleeptime = ( (((short_vib_notif?(VIRTUAL_RAMP_SETP_TIME_DOUBLE_BLINK_SLOW+11):VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW) * (VIRTUAL_LUT_LEN)) * 2) + pause_hi + pause_lo) * bln_number;
 
 					ktime_t wakeup_time;
 					ktime_t curr_time = { .tv64 = 0 };
@@ -467,14 +471,16 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 			led->mpp_cfg->pwm_cfg->lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
 			led->mpp_cfg->pwm_cfg->lut_params.start_idx = VIRTUAL_LUT_START;
 			led->mpp_cfg->pwm_cfg->lut_params.idx_len = VIRTUAL_LUT_LEN;
-			led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW;
+			led->mpp_cfg->pwm_cfg->lut_params.ramp_step_ms = (short_vib_notif?VIRTUAL_RAMP_SETP_TIME_DOUBLE_BLINK_SLOW:VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW);
 			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_hi = pause_hi;
 			led->mpp_cfg->pwm_cfg->lut_params.lut_pause_lo = pause_lo;
 			led->last_brightness = blink_brightness;
 			rc = pwm_lut_config(led->mpp_cfg->pwm_cfg->pwm_dev,
 					PM_PWM_PERIOD_MIN,
-					virtual_key_lut_table_blink,
+					// if short vib notif registered, use double blink! e.g. facebook messages, calendars give short vib notifs
+					short_vib_notif?virtual_key_lut_table_double_blink:virtual_key_lut_table_blink,
 					led->mpp_cfg->pwm_cfg->lut_params);
+			short_vib_notif = 0;
 		}
 
 		if (led->mpp_cfg->pwm_mode != MANUAL_MODE)
@@ -591,6 +597,11 @@ void register_haptic(int value)
 	if (screen_on) return;
 	if (last_value == value) {
 		if (diff_jiffies < MAX_DIFF) {
+			if (value <= 200) {
+				short_vib_notif = 1;
+			} else {
+				short_vib_notif = 0;
+			}
 			qpnp_buttonled_blink(1);
 		}
 	}
@@ -2857,7 +2868,7 @@ static ssize_t bln_speed_dump(struct device *dev,
             return ret;
 
       if (input < 0 || input > BUTTON_BLINK_SPEED_MAX)
-            input = 8;
+            input = BUTTON_BLINK_SPEED_DEFAULT;
 
       bln_speed = input;
 
