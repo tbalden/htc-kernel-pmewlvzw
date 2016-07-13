@@ -984,7 +984,10 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if (!screen_on && blinking && led!=buttonled) {
+	// if charging this should be ignored, and not switch BLN off,
+	// because stock rom calls amber led rgb_set when charging even 
+	// when the notification was not yet canceled by User on screen.
+	if (!screen_on && blinking && led!=buttonled && !charging) {
 		qpnp_buttonled_blink(0);
 	}
 #endif
