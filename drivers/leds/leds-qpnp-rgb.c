@@ -338,7 +338,6 @@ static struct alarm blinkstopfunc_rtc;
 static int bln_switch = 1;
 static int bln_speed = BUTTON_BLINK_SPEED_DEFAULT;
 static int bln_number = BUTTON_BLINK_NUMBER_DEFAULT; // infinite = 0
-static int bln_notif_once = 0; // determines if while blinking, restart or not blinking (and blink off callback timer). Useful with non 0 bln_number setup.
 
 static int screen_on = 1;
 static int blinking = 0;
@@ -380,16 +379,14 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 	int virtual_key_lut_table_stop[1] = {0};
 	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {0,1,2,4,5,6,7,8,9,10};
 	int virtual_key_lut_table_double_blink[VIRTUAL_LUT_LEN] = {0,1,3,6,8,10,8,5,3,1};
-	// if number of blinks is not infinite, and "notify with blink only once" is off (so each blink should restart process), set restart_blink true...
-	int restart_blink = bln_number>0 && bln_notif_once == 0;
 
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, blink_brightness, led->status);
 
 	if(virtual_key_led_ignore_flag)
 		return 0;
 
-	if (blink_brightness == led->last_brightness && restart_blink == 0) {
-		LED_INFO("%s, brightness no change and restart_blink mode false, return\n", __func__);
+	if (blink_brightness == led->last_brightness && blink_brightness == 0) {
+		LED_INFO("%s, brightness 0 and no change, return\n", __func__);
 		return 0;
 	}
 
@@ -399,8 +396,7 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 		return 0;
 	}
 
-	// if blink brightness > 0 and not already blinking or "restart blink each time" is active then do the stuff...
-	if (blink_brightness && (blinking == 0 || restart_blink)) {
+	if (blink_brightness>0) {
 		if (screen_on) {
 			mutex_unlock(&blinkworklock);
 			return rc;
