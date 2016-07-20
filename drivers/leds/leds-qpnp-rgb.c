@@ -590,7 +590,7 @@ void register_haptic(int value)
 //	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
 	if (value == FINGERPRINT_VIB_TIME_EXCEPTION) return;
 
-	if (screen_on) return;
+	if (screen_on || bln_switch == 0) return;
 	if (last_value == value) {
 		if (diff_jiffies < MAX_DIFF) {
 			if (value <= 200) {
