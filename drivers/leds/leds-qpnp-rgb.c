@@ -1,5 +1,7 @@
 
 /* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016. Illes Pal Zoltan "tbalden " (illespal@gmail.com) - BLN and RGB nice blink
+ *                     additions. Charge level colored LED addition.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -102,6 +104,9 @@
 #define BLUE_LONG_LUT_START		GREEN_LONG_LUT_START + LONG_LUT_LEN
 #define LONG_LUT_LEN			2
 
+#define PULSE_LUT_LEN			7
+
+
 #define MAIN_TOUCH_SOLUTION 2
 #define SEC_TOUCH_SOLUTION 1
 
@@ -111,8 +116,8 @@ static int blue_short_lut [2] = {0};
 static int amber_long_lut [2] = {0};
 static int green_long_lut [2] = {0};
 static int blue_long_lut [2] = {0};
-static int lut_on [] = {0, 0, 10, 30, 45, 60, 75, 90, 100};
-static int lut_off [] = {100, 100, 90, 75, 60, 45, 30, 10, 0};
+//static int lut_on [] = {0, 0, 10, 30, 45, 60, 75, 90, 100};
+//static int lut_off [] = {100, 100, 90, 75, 60, 45, 30, 10, 0};
 static uint16_t g_led_touch_solution = MAIN_TOUCH_SOLUTION;
 static u8 color_table[20] = {0};
 static int use_color_table = 0;
@@ -342,9 +347,14 @@ static int bln_number = BUTTON_BLINK_NUMBER_DEFAULT; // infinite = 0
 static int screen_on = 1;
 static int blinking = 0;
 struct qpnp_led_data *buttonled;
-static int charging = 0;
+static int charging = 0; // information from OHIO usb driver
+static int charge_level = 0; // information from HTC battery driver
 static int short_vib_notif = 0;
+static int supposedly_charging = 0; // information from led call (multicolor work)
+static int colored_charge_level = 1; // if set to 1, colored charge level handling is enabled, 0 - not
 
+static int pulse_rgb_blink = 1;  // 0 - normal stock blinking / 1 - pulsating
+static int rgb_coeff_divider = 1; // value between 1 - 2
 
 static int qpnp_buttonled_blink_with_alarm(int on,int cancel_alarm);
 static int qpnp_buttonled_blink(int on);
@@ -573,6 +583,113 @@ void register_charging(int on)
 }
 EXPORT_SYMBOL(register_charging);
 
+
+
+// blink pulse for transition work. use it with two leds, one in reverse == 1
+static int led_multicolor_short_transition(struct qpnp_led_data *led, int inverse){
+	int rc = 0;
+	struct lut_params	lut_params;
+	int *lut_short_blink;
+
+	int lut_fade[] = {0, 10 / rgb_coeff_divider , 30 / rgb_coeff_divider, 60 / rgb_coeff_divider, 110 / rgb_coeff_divider, 170 / rgb_coeff_divider, 255 / rgb_coeff_divider};
+	int lut_fade_inv[] = {255 / rgb_coeff_divider, 170 / rgb_coeff_divider, 110 / rgb_coeff_divider , 60 / rgb_coeff_divider, 30 / rgb_coeff_divider, 10 / rgb_coeff_divider , 0};
+
+	if (!charging || !supposedly_charging) return 0;
+
+	LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, rgb_coeff_divider);
+	lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
+	lut_params.start_idx = GREEN_SHORT_LUT_START;
+	lut_params.idx_len = PULSE_LUT_LEN;
+	lut_params.ramp_step_ms = 128;
+	lut_params.lut_pause_lo = 720;
+	lut_params.lut_pause_hi = 10;
+	lut_short_blink = lut_fade;
+	if (inverse)  lut_short_blink = lut_fade_inv;
+	led->rgb_cfg->pwm_cfg->lut_params = lut_params;
+
+	rc = pwm_lut_config(led->rgb_cfg->pwm_cfg->pwm_dev,
+						PM_PWM_PERIOD_MIN,
+						lut_short_blink,
+						led->rgb_cfg->pwm_cfg->lut_params);
+	rc = qpnp_led_masked_write(led,	RGB_LED_EN_CTL(led->base),
+		led->rgb_cfg->enable, led->rgb_cfg->enable);
+	if (rc) {
+		dev_err(&led->spmi_dev->dev,
+			"Failed to write led enable reg\n");
+		return rc;
+	}
+	rc = pwm_enable(led->rgb_cfg->pwm_cfg->pwm_dev);
+
+	mdelay(10);
+	rc = pwm_enable(led->rgb_cfg->pwm_cfg->pwm_dev);
+	led->status = ON;
+	led->rgb_cfg->pwm_cfg->blinking = true;
+	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
+	return rc;
+}
+
+
+static void led_multi_color_charge_level(int level)
+{
+	uint32_t val = 1;
+
+	int level_div = level / 5;
+	int level_round = level_div * 5; // rounding by 5;
+	int us_level = (level_round * 235)/100;
+	int red_coeff = 255 - (us_level); // red be a bit more always, except on FULL charge ( 255 - 220 -> Min = 25, except on full where it is 1 )
+	int green_coeff = 235 - red_coeff; // green be a bit less always, except on FULL charge ( Green max is 220, min 1 - except on full where its 255)
+
+	if (!(colored_charge_level && supposedly_charging)) return;
+
+	if (green_coeff < 1) green_coeff = 10;
+
+	if (level<5) { // under 5, always full RED but low light for red
+		red_coeff = 80;
+		green_coeff = 1;
+	} else
+	if (level<15) { // under 15, always full RED but lower light for red
+		red_coeff = 160;
+		green_coeff = 3;
+	} else
+	if (level<20) { // under 20, always full RED full light for red
+		red_coeff = 255;
+		green_coeff = 7;
+	}
+
+	if (level == 100) { // at 100, always full GREEN
+		red_coeff = 1;
+		green_coeff = 255;
+		LED_INFO("%s color transition at full strength: red %d green %d \n",__func__, red_coeff, green_coeff);
+	}
+
+	g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient = red_coeff / rgb_coeff_divider;
+	g_led_green->rgb_cfg->pwm_cfg->pwm_coefficient = green_coeff / rgb_coeff_divider;
+	g_led_red->mode = val;
+	g_led_green->mode = val;
+	LED_INFO("%s color mixing charge level: red %d green %d \n",__func__, red_coeff / rgb_coeff_divider, green_coeff / rgb_coeff_divider);
+	queue_work(g_led_on_work_queue, &(g_led_red->led_multicolor_work));
+
+	if (level == 100) { // at 100, start fading work too for fancy noticeable look
+		mdelay(100);
+		led_multicolor_short_transition(g_led_red,0);
+	}
+}
+
+static int first_level_registered = 0;
+
+void register_charge_level(int level)
+{
+	LED_INFO("%s %d\n",__func__,level);
+	if (colored_charge_level && charging && supposedly_charging) {
+		// TRIGGER COLOR CHANGE of led
+		LED_INFO("%s triggering color change to multicolor led %d\n",__func__,level);
+		led_multi_color_charge_level(level);
+	}
+	charge_level = level;
+	first_level_registered = 1;
+}
+EXPORT_SYMBOL(register_charge_level);
+
 // handling haptic notifications if enabled to register notifications even when RGB led is already blinking, or on charger
 static unsigned long last_haptic_jiffies = 0;
 static unsigned int last_value = 0;
@@ -619,6 +736,11 @@ void register_haptic(int value)
 	LED_INFO("%s %d\n",__func__,value);
 }
 EXPORT_SYMBOL(register_haptic);
+void register_charge_level(int level)
+{
+	LED_INFO("%s %d\n",__func__,level);
+}
+EXPORT_SYMBOL(register_charge_level);
 #endif
 
 static int qpnp_mpp_set(struct qpnp_led_data *led)
@@ -981,6 +1103,8 @@ static void led_blink_do_work(struct work_struct *work)
 static int qpnp_rgb_set(struct qpnp_led_data *led)
 {
 	int rc;
+	int lut_on_rgb [1] = {255};
+	int lut_off_rgb [1] = {0};
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
@@ -990,6 +1114,7 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	if (!screen_on && blinking && led!=buttonled && !charging) {
 		qpnp_buttonled_blink(0);
 	}
+
 #endif
 
 	if (led->rgb_cfg->pwm_cfg->mode == RGB_MODE_LPG) {
@@ -1008,7 +1133,7 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 			} else if (led->rgb_cfg->pwm_cfg->mode == RGB_MODE_LPG) {
 							rc = pwm_lut_config(led->rgb_cfg->pwm_cfg->pwm_dev,
 					PM_PWM_PERIOD_MIN,
-									lut_on,
+									lut_on_rgb,
 									led->rgb_cfg->pwm_cfg->lut_params);
 			}
 
@@ -1054,7 +1179,7 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 			wake_lock_timeout(&pmic_led_rgb_wake_lock[led->id], HZ*2);
                         rc = pwm_lut_config(led->rgb_cfg->pwm_cfg->pwm_dev,
 				PM_PWM_PERIOD_MIN,
-				lut_off,
+				lut_off_rgb,
                                 led->rgb_cfg->pwm_cfg->lut_params);
                         if (rc < 0) {
                                 dev_err(&led->spmi_dev->dev, "Failed to " \
@@ -2375,11 +2500,130 @@ void set_led_touch_solution(uint16_t solution)
 EXPORT_SYMBOL(set_led_touch_solution);
 #endif
 
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+
+
+// pulse on/off settings
+static ssize_t bln_pulse_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", pulse_rgb_blink);
+}
+
+static ssize_t bln_pulse_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 1)
+            input = 0;
+
+      pulse_rgb_blink = input;
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_rgb_pulse, (S_IWUSR|S_IRUGO),
+      bln_pulse_show, bln_pulse_dump);
+
+// coeff divider for notification blinking
+static ssize_t bln_coeff_div_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", (rgb_coeff_divider-1));
+}
+
+static ssize_t bln_coeff_div_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 20)
+            input = 0;
+
+      rgb_coeff_divider = input + 1;
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_rgb_blink_light_level, (S_IWUSR|S_IRUGO),
+      bln_coeff_div_show, bln_coeff_div_dump);
+
+
+// charge color combo test sysfs
+// =============================
+static ssize_t bln_battery_test_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", charge_level);
+}
+
+static ssize_t bln_battery_test_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 100)
+            input = 0;
+
+	led_multi_color_charge_level(input);
+      return count;
+}
+
+static DEVICE_ATTR(bln_rgb_batt_test, (S_IWUSR|S_IRUGO),
+      bln_battery_test_show, bln_battery_test_dump);
+
+
+// charge color combination on/off
+static ssize_t bln_rgb_colored_battery_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", colored_charge_level);
+}
+
+static ssize_t bln_rgb_colored_battery_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 1)
+            input = 1;
+
+	colored_charge_level = input;
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_rgb_batt_colored, (S_IWUSR|S_IRUGO),
+      bln_rgb_colored_battery_show, bln_rgb_colored_battery_dump);
+
+
+#endif
+
 static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coefficient){
 	int rc = 0;
 	struct lut_params	lut_params;
 	int *lut_short_blink;
-	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
 	lut_params.flags = QPNP_LED_PWM_FLAGS | PM_PWM_LUT_PAUSE_HI_EN;
 	lut_params.idx_len = SHORT_LUT_LEN;
@@ -2402,6 +2646,26 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 			break;
 	}
 	lut_short_blink[0] = pwm_coefficient;
+
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	if (pulse_rgb_blink == 0) {
+		lut_short_blink[0] = lut_short_blink[0] / rgb_coeff_divider;
+	}
+	if (led->id == QPNP_ID_RGB_GREEN && pulse_rgb_blink == 1) {
+		int lut_fade [] = {0, 0, 10 / rgb_coeff_divider, 60 / rgb_coeff_divider, 110 / rgb_coeff_divider, 170 / rgb_coeff_divider, 255 / rgb_coeff_divider};
+		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
+
+		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
+		lut_params.start_idx = GREEN_SHORT_LUT_START;
+		lut_params.idx_len = PULSE_LUT_LEN;
+		lut_params.ramp_step_ms = 64;
+		lut_params.lut_pause_hi = 0;
+		lut_params.lut_pause_lo = 1500;
+
+		lut_short_blink = lut_fade;
+	}
+#endif
+
 	led->rgb_cfg->pwm_cfg->lut_params = lut_params;
 
 	rc = pwm_lut_config(led->rgb_cfg->pwm_cfg->pwm_dev,
@@ -3052,6 +3316,19 @@ static ssize_t led_multi_color_store(struct device *dev,
 		g_led_blue->rgb_cfg->pwm_cfg->pwm_coefficient = (val & Blue_Mask) * indicator_pwm_ratio / 255;
 	ModeRGB = val;
 	LED_INFO(" %s , ModeRGB = %x\n" , __func__, val);
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	// we suppose charging if it's coloring led in CONSTANT light and RED (mode val = 1 and only red or only full green (100%) is enabled)
+	supposedly_charging = led->mode == 1 && (g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient > 0 || g_led_green->rgb_cfg->pwm_cfg->pwm_coefficient > 0);
+
+	LED_INFO(" %s , RED = %d supposedly charging %d charging %d\n" , __func__, g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient, supposedly_charging, charging);
+
+	if (colored_charge_level && supposedly_charging && first_level_registered) {
+		// if it's supposedly charging and first level registered from HTC battery, we can go and set charge level color mix instead of normal multicolor setting later...
+		led_multi_color_charge_level(charge_level);
+		// and return so color is not overwritten...
+		return count;
+	}
+#endif
 	queue_work(g_led_on_work_queue, &led->led_multicolor_work);
 	return count;
 }
@@ -3284,6 +3561,7 @@ int check_power_source(void)
 #endif
 
 #ifdef CONFIG_FB
+
 static int fb_notifier_callback(struct notifier_block *self,
                                  unsigned long event, void *data)
 {
@@ -3291,12 +3569,14 @@ static int fb_notifier_callback(struct notifier_block *self,
     int *blank;
 
     LED_DBG("%s\n", __func__);
+
     if (evdata && evdata->data && event == FB_EVENT_BLANK && g_led_virtual) {
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 		screen_on = 1;
+		LED_ERR("%s on\n", __func__);
 		alarm_cancel(&blinkstopfunc_rtc);
 #endif
             break;
@@ -3308,6 +3588,7 @@ static int fb_notifier_callback(struct notifier_block *self,
             
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 		screen_on = 0;
+		LED_ERR("%s off\n", __func__);
 #endif
             if(g_led_virtual->cdev.brightness) {
 				g_led_virtual->cdev.brightness = 0;
@@ -3603,6 +3884,10 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_number);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_number_max);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_speed_max);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_pulse);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_blink_light_level);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_batt_colored);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_batt_test);
 #endif
 				rc = device_create_file(led->cdev.dev, &dev_attr_set_color_ID);
 				if (rc < 0) {
