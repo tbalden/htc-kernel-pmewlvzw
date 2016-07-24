@@ -361,6 +361,10 @@ static void adjust_store_level(int *store_level, int drop_raw, int drop_ui, int 
 	*store_level = store;
 }
 
+#if 1
+extern void register_charge_level(int level);
+#endif
+
 #define DISCHG_UPDATE_PERIOD_MS			(1000 * 60)
 #define ONE_PERCENT_LIMIT_PERIOD_MS		(1000 * (60 + 10))
 #define FIVE_PERCENT_LIMIT_PERIOD_MS	(1000 * (300 + 10))
@@ -1430,6 +1434,10 @@ static void batt_worker(struct work_struct *work)
 			}
                 }
 	}
+
+#if 1
+	register_charge_level(htc_batt_info.rep.level);
+#endif
 
 	
 	BATT_EMBEDDED("ID=%d,"
