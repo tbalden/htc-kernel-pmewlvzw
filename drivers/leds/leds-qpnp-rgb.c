@@ -2535,7 +2535,7 @@ static DEVICE_ATTR(bln_rgb_pulse, (S_IWUSR|S_IRUGO),
 static ssize_t bln_coeff_div_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-      return snprintf(buf, PAGE_SIZE, "%d\n", (rgb_coeff_divider-1));
+      return snprintf(buf, PAGE_SIZE, "%d\n", (rgb_coeff_divider<20?(rgb_coeff_divider-1):20));
 }
 
 static ssize_t bln_coeff_div_dump(struct device *dev,
@@ -2551,7 +2551,9 @@ static ssize_t bln_coeff_div_dump(struct device *dev,
       if (input < 0 || input > 20)
             input = 0;
 
-      rgb_coeff_divider = input + 1;
+      if (input < 20) {
+	      rgb_coeff_divider = input + 1;
+      } else rgb_coeff_divider = 255;
 
       return count;
 }
