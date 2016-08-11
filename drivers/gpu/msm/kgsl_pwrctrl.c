@@ -1268,7 +1268,9 @@ static void kgsl_pwrctrl_clk(struct kgsl_device *device, int state,
 
 	if (test_bit(KGSL_PWRFLAGS_CLK_ON, &pwr->ctrl_flags))
 		return;
-
+#if 1
+	printk("%s ADRENO state %d rstate %d \n",__func__,state,requested_state);
+#endif
 	if (state == KGSL_PWRFLAGS_OFF) {
 		if (test_and_clear_bit(KGSL_PWRFLAGS_CLK_ON,
 			&pwr->power_flags)) {
@@ -2082,9 +2084,64 @@ _aware(struct kgsl_device *device)
 	return status;
 }
 
+#if 1
+struct work_struct *ext_wake_work = 0;
+
+struct kgsl_device *ext_device = 0;
+
+static void kgsl_ext_wake_work_func(struct work_struct * workstruct) {
+	int counter = 3;
+	printk("%s kgsl_ext_aware %d\n", __func__, ext_device->state);
+	while (counter-->0) {
+		switch (ext_device->state) {
+			case KGSL_STATE_NAP:
+			case KGSL_STATE_SLUMBER:
+				printk("%s waking kgsl_ext %d\n", __func__, ext_device->state);
+				if (mutex_trylock(&ext_device->mutex)) {
+					_wake(ext_device);
+					mutex_unlock(&ext_device->mutex);
+				}
+			break;
+		}
+		msleep(10);
+	}
+	printk("%s exiting kgsl_ext_aware %d\n", __func__, ext_device->state);
+}
+
+DECLARE_WORK(kgsl_wake_work, kgsl_ext_wake_work_func);
+
+static void trigger_wake_work(void) {
+	schedule_work(&kgsl_wake_work);
+}
+
+/** wake device a bit... */
+int kgsl_ext_wake(void) {
+	if (!ext_device) return 0;
+	if (!mutex_trylock(&ext_device->mutex)) return 0;
+	trigger_wake_work();
+	mutex_unlock(&ext_device->mutex);
+	return 0;
+}
+EXPORT_SYMBOL(kgsl_ext_wake);
+#endif
+
+
+#if 1
+extern int devfreq_is_nap_allowed(void);
+#endif
+
 static int
 _nap(struct kgsl_device *device)
 {
+#if 1
+	if (!devfreq_is_nap_allowed()) {
+		printk("%s ADRENO nap blocked \n",__func__);
+		kgsl_pwrctrl_change_state(device, KGSL_STATE_ACTIVE);
+		return 0;
+	}
+	printk("%s ADRENO NAP \n",__func__);
+	
+#endif
 	switch (device->state) {
 	case KGSL_STATE_ACTIVE:
 		if (!device->ftbl->is_hw_collapsible(device)) {
@@ -2116,8 +2173,10 @@ _nap(struct kgsl_device *device)
 		kgsl_pwrctrl_request_state(device, KGSL_STATE_NONE);
 		break;
 	}
+	printk("%s _nap called State: %d", __func__, device->state);
 	return 0;
 }
+
 
 static int
 _deep_nap(struct kgsl_device *device)
@@ -2172,10 +2231,21 @@ _sleep(struct kgsl_device *device)
 	return 0;
 }
 
+
 static int
 _slumber(struct kgsl_device *device)
 {
 	int status = 0;
+
+#if 1
+	if (!devfreq_is_nap_allowed()) {
+		printk("%s ADRENO nap -> slumber blocked \n",__func__);
+		kgsl_pwrctrl_change_state(device, KGSL_STATE_ACTIVE);
+		return 0;
+	}
+	printk("%s ADRENO SLUMBER \n",__func__);
+#endif
+
 	switch (device->state) {
 	case KGSL_STATE_ACTIVE:
 		if (!device->ftbl->is_hw_collapsible(device)) {
@@ -2280,6 +2350,10 @@ int kgsl_pwrctrl_change_state(struct kgsl_device *device, int state)
 	if (device->state == state)
 		return status;
 	kgsl_pwrctrl_request_state(device, state);
+
+	ext_device = device;
+
+	printk("%s ADRENO change state %d\n",__func__,state);
 
 	/* Work through the legal state transitions */
 	switch (state) {

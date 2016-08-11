@@ -305,6 +305,7 @@ static int tz_init(struct devfreq_msm_adreno_tz_data *priv,
 }
 
 #if 1
+#define FLOOR_WAKE		3000
 
 // mapping gpu level calculated linear conservation half curve values into a
 // bell curve of conservation  (lower is higher freq level)
@@ -323,7 +324,24 @@ static int lvl_divider_map_2[] = {10,10,10,1,1,1,1    ,1,1};
 static int lvl_multiplicator_map_3[] = {9,1,1,1,1,10,8    ,1,1};
 static int lvl_divider_map_3[] = {10,1,1,1,1,14,12    ,1,1};
 
+extern int kgsl_ext_wake(void);
+
+
+unsigned long last_wake = 0;
+
+#define MIN_TIME_FOR_NAP 1000
+
+int devfreq_is_nap_allowed(void) {
+	if (jiffies - last_wake < MIN_TIME_FOR_NAP) {
+		return 0;
+	}
+	return 1;
+}
+EXPORT_SYMBOL(devfreq_is_nap_allowed);
+
 #endif
+
+
 
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 				u32 *flag)
@@ -377,6 +395,15 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	if ((stats.total_time == 0) ||
 		(priv->bin.total_time < FLOOR) ||
 		(unsigned int) priv->bin.busy_time < MIN_BUSY) {
+#if 1
+		if (!adrenoboost) {} else if (priv->bin.total_time > FLOOR_WAKE) {
+			printk("ADRENO ext_wake total %d busy %d\n", (int)priv->bin.total_time, (int)priv->bin.busy_time);
+			kgsl_ext_wake(); // something is going on, so if nothing else bump kgsl wakeness for optimal framerate when screen is being actively rerendered. Avoiding nap time.
+			last_wake = jiffies;
+		} else {
+			printk("ADRENO not waking below FLOOR WAKE\n");
+		}
+#endif
 		return 0;
 	}
 
@@ -426,6 +453,9 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 			// going upwards in frequency -- make it harder on the low and high freqs, middle ground - let it move
 			if (val<0 && priv->bin.cycles_keeping_level < conservation_map_up[ last_level ]) {
 				printk("%s ADRENO not jumping UP level = %d last_level = %d total=%d busy=%d original busy_time=%d \n", __func__, level, priv->bin.last_level, (int)priv->bin.total_time, (int)priv->bin.busy_time, (int)stats.busy_time);
+				printk("ADRENO ext_wake total %d busy %d\n", (int)priv->bin.total_time, (int)priv->bin.busy_time);
+				kgsl_ext_wake(); // something is going on, so if nothing else bump kgsl wakeness for optimal framerate when screen is being actively rerendered. Avoiding nap time.
+				last_wake = jiffies;
 			} else
 			// going downwards in frequency let it happen hard in the middle freqs
 			if (val>0 && priv->bin.cycles_keeping_level < conservation_map_down[ last_level ])  {
