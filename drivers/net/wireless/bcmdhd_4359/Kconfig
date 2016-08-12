@@ -27,6 +27,10 @@ config BCM4359
 	tristate "BCM4359 support"
 	depends on BCMDHD
 
+config BCM4359_WAKELOCK_DIVISION
+	tristate "BCM4359 wakelock division for proper sleep"
+	depends on BCM4359
+
 config BCMDHD_FW_PATH
 	depends on BCMDHD
 	string "Firmware path"
@@ -66,3 +70,4 @@ config DHD_USE_SCHED_SCAN
 	default n
 	---help---
 	  Use CFG80211 sched scan
+
