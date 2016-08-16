@@ -662,8 +662,8 @@ static void led_multi_color_charge_level(int level)
 		LED_INFO("%s color transition at full strength: red %d green %d \n",__func__, red_coeff, green_coeff);
 	}
 
-	g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient = red_coeff / rgb_coeff_divider;
-	g_led_green->rgb_cfg->pwm_cfg->pwm_coefficient = green_coeff / rgb_coeff_divider;
+	g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient = red_coeff;// / rgb_coeff_divider;
+	g_led_green->rgb_cfg->pwm_cfg->pwm_coefficient = green_coeff;// / rgb_coeff_divider;
 	g_led_red->mode = val;
 	g_led_green->mode = val;
 	LED_INFO("%s color mixing charge level: red %d green %d \n",__func__, red_coeff / rgb_coeff_divider, green_coeff / rgb_coeff_divider);
@@ -1103,7 +1103,7 @@ static void led_blink_do_work(struct work_struct *work)
 static int qpnp_rgb_set(struct qpnp_led_data *led)
 {
 	int rc;
-	int lut_on_rgb [1] = {255};
+	int lut_on_rgb [1] = {255/rgb_coeff_divider};
 	int lut_off_rgb [1] = {0};
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
@@ -1123,7 +1123,7 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	if (led->cdev.brightness) {
 		if (led->status != ON) {
 			if (led->rgb_cfg->pwm_cfg->mode == RGB_MODE_PWM) {
-				rc = pwm_config_us(led->rgb_cfg->pwm_cfg->pwm_dev, 640 * led->rgb_cfg->pwm_cfg->pwm_coefficient / 255, 640);
+				rc = pwm_config_us(led->rgb_cfg->pwm_cfg->pwm_dev, 640 * led->rgb_cfg->pwm_cfg->pwm_coefficient / 255 / rgb_coeff_divider, 640);
 				if (rc < 0) {
 					dev_err(&led->spmi_dev->dev, "Failed to " \
 						"configure pwm for new values\n");
