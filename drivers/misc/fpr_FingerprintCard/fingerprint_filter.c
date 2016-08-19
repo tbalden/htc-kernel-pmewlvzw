@@ -276,26 +276,27 @@ static bool fpf_input_filter(struct input_handle *handle,
 				// job is not yet finished in home button func work, let's signal it, to do the home button = 0 sync as well
 					if (screen_on) {
 						do_home_button_off_too_in_work_func = 1;
+					} else {
+						return false;
 					}
 				}
 			}
 			return true;
 		} else 
-		{ // let even flow through
+		{ // let event flow through
 			return false;
 		}
 	}
 	}
 	if (fpf_switch == 1) {
 		// simple home button mode, user space handles behavior
+		if (!screen_on) {
+			return false;
+		}
 		if (value > 0) {
-			if (!screen_on) {
-				return false;
-			} else {
-				fpf_vib();
-				input_report_key(fpf_pwrdev, KEY_HOME, 1);
-				input_sync(fpf_pwrdev);
-			}
+			fpf_vib();
+			input_report_key(fpf_pwrdev, KEY_HOME, 1);
+			input_sync(fpf_pwrdev);
 		} else {
 			input_report_key(fpf_pwrdev, KEY_HOME, 0);
 			input_sync(fpf_pwrdev);
