@@ -801,6 +801,11 @@ static const struct tasha_reg_mask_val tasha_spkr_mode1[] = {
 	{WCD9335_CDC_BOOST1_BOOST_CTL, 0x7C, 0x44},
 };
 
+#ifdef CONFIG_SOUND_CONTROL
+static int hph_gain_l = 0;
+static int hph_gain_r = 0;
+#endif
+
 int tasha_set_spkr_gain_offset(struct snd_soc_codec *codec, int offset)
 {
 	struct tasha_priv *priv = snd_soc_codec_get_drvdata(codec);
@@ -3178,7 +3183,7 @@ static int tasha_set_compander(struct snd_kcontrol *kcontrol,
 		    kcontrol->private_value)->shift;
 	int value = ucontrol->value.integer.value[0];
 
-	pr_debug("%s: Compander %d enable current %d, new %d\n",
+	printk("%s: Compander %d enable current %d, new %d\n",
 		 __func__, comp + 1, tasha->comp_enabled[comp], value);
 	tasha->comp_enabled[comp] = value;
 
@@ -3187,11 +3192,11 @@ static int tasha_set_compander(struct snd_kcontrol *kcontrol,
 	case COMPANDER_1:
 		
 		snd_soc_update_bits(codec, WCD9335_HPH_L_EN, 0x20,
-				(value ? 0x00:0x20));
+				(value ? 0x00:(0x20+hph_gain_l)));
 		break;
 	case COMPANDER_2:
 		snd_soc_update_bits(codec, WCD9335_HPH_R_EN, 0x20,
-				(value ? 0x00:0x20));
+				(value ? 0x00:(0x20+hph_gain_r)));
 		break;
 	case COMPANDER_3:
 		break;
@@ -3511,10 +3516,18 @@ static void tasha_codec_hph_post_pa_config(struct tasha_priv *tasha,
 			snd_soc_update_bits(tasha->codec, WCD9335_HPH_AUTO_CHOP,
 					    0x20, 0x20);
 		}
+#ifdef CONFIG_SOUND_CONTROL
+		printk("%s boosting sound control with gain",__func__);
+		snd_soc_update_bits(tasha->codec, WCD9335_HPH_L_EN, 0x1F,
+				    tasha->hph_l_gain + hph_gain_l);
+		snd_soc_update_bits(tasha->codec, WCD9335_HPH_R_EN, 0x1F,
+				    tasha->hph_r_gain + hph_gain_r);
+#else
 		snd_soc_update_bits(tasha->codec, WCD9335_HPH_L_EN, 0x1F,
 				    tasha->hph_l_gain);
 		snd_soc_update_bits(tasha->codec, WCD9335_HPH_R_EN, 0x1F,
 				    tasha->hph_r_gain);
+#endif
 	}
 
 	if (SND_SOC_DAPM_EVENT_OFF(event)) {
@@ -3742,8 +3755,15 @@ static void tasha_codec_hph_mode_gain_opt(struct snd_soc_codec *codec,
 	hph_l_en = snd_soc_read(codec, WCD9335_HPH_L_EN);
 	hph_r_en = snd_soc_read(codec, WCD9335_HPH_R_EN);
 
+#ifdef CONFIG_SOUND_CONTROL
+	printk("%s sound control gain l %u r %u ol %u or %u",__func__,hph_gain_l,hph_gain_r, hph_l_en, hph_r_en);
+	l_val = (hph_l_en & 0xC0) | 0x20 | (gain + hph_gain_l);
+	r_val = (hph_r_en & 0xC0) | 0x20 | (gain + hph_gain_r);
+	printk("%s sound control gain -- calcval_l %u calcval_r %u",__func__,l_val, r_val);
+#else
 	l_val = (hph_l_en & 0xC0) | 0x20 | gain;
 	r_val = (hph_r_en & 0xC0) | 0x20 | gain;
+#endif
 
 	if ((l_val != hph_l_en) && !is_hphl_pa) {
 		snd_soc_write(codec, WCD9335_HPH_L_EN, l_val);
@@ -3816,10 +3836,22 @@ static void tasha_codec_hph_hifi_config(struct snd_soc_codec *codec,
 		snd_soc_update_bits(codec, WCD9335_HPH_CNP_WG_CTL, 0x07, 0x03);
 		snd_soc_update_bits(codec, WCD9335_HPH_PA_CTL2, 0x08, 0x08);
 		snd_soc_update_bits(codec, WCD9335_HPH_PA_CTL1, 0x0E, 0x0C);
+#ifdef CONFIG_SOUND_CONTROL
+		printk("%s boosting sound control with gain\n",__func__);
+		snd_soc_update_bits(codec, WCD9335_HPH_L_EN, 0x1F, 0x11 + hph_gain_l);
+		snd_soc_update_bits(codec, WCD9335_HPH_R_EN, 0x1F, 0x11 + hph_gain_r);
+#else
 		snd_soc_update_bits(codec, WCD9335_HPH_L_EN, 0x1F, 0x11);
 		snd_soc_update_bits(codec, WCD9335_HPH_R_EN, 0x1F, 0x11);
+#endif
+#ifdef CONFIG_SOUND_CONTROL
+		printk("%s boosting sound control with gain l %d r %d\n",__func__,0x20 + hph_gain_l,0x20 + hph_gain_r);
+		snd_soc_update_bits(codec, WCD9335_HPH_L_EN, 0x20, 0x20 + hph_gain_l);
+		snd_soc_update_bits(codec, WCD9335_HPH_R_EN, 0x20, 0x20 + hph_gain_r);
+#else
 		snd_soc_update_bits(codec, WCD9335_HPH_L_EN, 0x20, 0x20);
 		snd_soc_update_bits(codec, WCD9335_HPH_R_EN, 0x20, 0x20);
+#endif
 	}
 
 	if (SND_SOC_DAPM_EVENT_OFF(event)) {
@@ -7697,8 +7729,12 @@ static int tasha_ear_pa_gain_put(struct snd_kcontrol *kcontrol,
 	dev_dbg(codec->dev, "%s: ucontrol->value.integer.value[0]  = %ld\n",
 			__func__, ucontrol->value.integer.value[0]);
 
+#ifdef CONFIG_SOUND_CONTROL
+	printk("%s sound control boost on Analog ear directly ...",__func__);
+	ear_pa_gain =  ( ucontrol->value.integer.value[0] + max(hph_gain_l,hph_gain_r) ) << 4;
+#else
 	ear_pa_gain =  ucontrol->value.integer.value[0] << 4;
-
+#endif
 	snd_soc_update_bits(codec, WCD9335_ANA_EAR, 0x70, ear_pa_gain);
 	return 0;
 }
@@ -12040,6 +12076,7 @@ err:
 
 #ifdef CONFIG_SOUND_CONTROL
 struct snd_soc_codec *sound_control_codec_ptr;
+struct tasha_priv *sound_control_tasha_ptr;
 
 static ssize_t headphone_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
@@ -12077,8 +12114,47 @@ static struct kobj_attribute headphone_gain_attribute =
 		headphone_gain_show,
 		headphone_gain_store);
 
+static ssize_t headphone_pa_gain_show(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%u %u\n",
+	hph_gain_r,
+	hph_gain_l);
+}
+
+static ssize_t headphone_pa_gain_store(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+    unsigned int lval, rval;
+//    unsigned int gain, status;
+//    unsigned int out;
+
+    sscanf(buf, "%u %u", &lval, &rval);
+
+    hph_gain_r = rval;
+    hph_gain_l = lval;
+//    tasha_codec_hph_mode_gain_opt(sound_control_codec_ptr,0x11);
+	printk("%s boosting sound control with gain",__func__);
+	snd_soc_update_bits(sound_control_codec_ptr, WCD9335_HPH_L_EN, 0x1F,
+			    0x11 + hph_gain_l);
+	snd_soc_update_bits(sound_control_codec_ptr, WCD9335_HPH_R_EN, 0x1F,
+			    0x11 + hph_gain_r);
+
+	printk("%s boosting sound control with gain directly",__func__);
+	snd_soc_update_bits(sound_control_codec_ptr, WCD9335_ANA_EAR, 0x70, max(hph_gain_r, hph_gain_l));
+
+
+    return count;
+}
+
+static struct kobj_attribute headphone_pa_gain_attribute =
+	__ATTR(headphone_pa_gain, 0664,
+		headphone_pa_gain_show,
+		headphone_pa_gain_store);
+
 static struct attribute *sound_control_attrs[] = {
 		&headphone_gain_attribute.attr,
+		&headphone_pa_gain_attribute.attr,
 		NULL,
 };
 
@@ -12098,14 +12174,15 @@ static int tasha_codec_probe(struct snd_soc_codec *codec)
 	int i, ret;
 	void *ptr = NULL;
 
-#ifdef CONFIG_SOUND_CONTROL
-	sound_control_codec_ptr = codec;
-#endif
 	control = dev_get_drvdata(codec->dev->parent);
 
 	dev_info(codec->dev, "%s()\n", __func__);
 	tasha = snd_soc_codec_get_drvdata(codec);
 	tasha->intf_type = wcd9xxx_get_intf_type();
+#ifdef CONFIG_SOUND_CONTROL
+	sound_control_codec_ptr = codec;
+	sound_control_tasha_ptr = tasha;
+#endif
 
 	if (tasha->intf_type == WCD9XXX_INTERFACE_TYPE_SLIMBUS) {
 		control->dev_down = tasha_device_down;
