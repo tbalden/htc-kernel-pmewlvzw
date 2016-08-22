@@ -214,9 +214,46 @@ static void fpf_home_button_func_trigger(void) {
 		}
                 return;
 	}
-	schedule_work(&fpf_home_button_func_work);
         return;
 }
+
+
+int proximity_filter = 1;
+
+extern void start_proximity_adc_work(void);
+extern int get_proximity_adc(void);
+
+int is_proximity(void) {
+	u16 adc = get_proximity_adc();
+	printk("%s adc %d",__func__,adc);
+	if (adc == -1 || adc == 65535) return -1;
+	return (adc > 150);
+}
+
+DEFINE_MUTEX(proximity_guard_lock);
+
+static void proximity_guard_work_func(struct work_struct * workstruct) {
+	while (1) {
+		int prox_val = is_proximity();
+		if (prox_val>0) {
+			msleep(500);
+			if (screen_on) {
+				printk("%s proximity detected, guard off\n", __func__);
+				fpf_pwrtrigger(1);
+			}
+			break;
+		}
+		if (prox_val==0) {
+			printk("%s non-proximity detected, no guard\n", __func__);
+			break;
+		}
+		msleep(5);
+	}
+	mutex_unlock(&proximity_guard_lock);
+}
+
+DECLARE_WORK(proximity_guard_work, proximity_guard_work_func);
+
 
 /*
     filter will work on FP card events.
@@ -232,8 +269,18 @@ static bool fpf_input_filter(struct input_handle *handle,
                                     unsigned int type, unsigned int code,
                                     int value)
 {
+	// proximity filtering of all kinds of events when screen is off
+	if (!screen_on && proximity_filter) {
+		if (mutex_trylock(&proximity_guard_lock)) {
+			start_proximity_adc_work();
+			schedule_work(&proximity_guard_work);
+		}
+	}
+
 	// if it's not on, don't filter anything...
-	if (fpf_switch == 0) return false;
+	if (fpf_switch == 0) {
+		return false;
+	}
 
 	if (type != EV_KEY)
 		return false;

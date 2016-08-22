@@ -183,6 +183,10 @@ module_param(DEBUG_FLAG_LIGHT_POLLING, int, 0600);
 
 #endif
 
+#if 1
+int cached_adc = 0;
+#endif
+
 static int DEBUG_DISABLE;
 module_param(DEBUG_DISABLE, int, 0660);
 
@@ -2016,6 +2020,10 @@ static ssize_t get_proximity(struct device *dev, struct device_attribute *attr,
 				 data, sizeof(data));
 
         proximity_adc = (data[2] << 8) | data[1];
+#if 1
+	cached_adc = proximity_adc;
+		printk("%s caching proximity adc %d",__func__,(int)cached_adc);
+#endif
         return snprintf(buf, PAGE_SIZE, "%x %x \n",
 				 data[0], proximity_adc);
 }
@@ -2145,6 +2153,10 @@ static ssize_t get_proximity_polling(struct device *dev, struct device_attribute
         CWMCU_i2c_read_power(mcu_data, CWSTM32_READ_Proximity,
 				 data, sizeof(data));
         proximity_adc = (data[2] << 8) | data[1];
+#if 1
+	cached_adc = proximity_adc;
+		printk("%s caching proximity adc %d",__func__,(int)cached_adc);
+#endif
 
         return snprintf(buf, PAGE_SIZE, "ADC[0x%02X] status is %d\n",
 				 proximity_adc, data[0]);
@@ -4836,6 +4848,11 @@ static irqreturn_t cwmcu_irq_handler(int irq, void *handle)
 				ps_autok_thd    = (data[6] << 8) | data[5];
                                 ps_min_adc      = (data[4] << 8) | data[3];
                                 ps_adc          = (data[2] << 8) | data[1];
+#if 1
+	cached_adc = ps_adc;
+		printk("%s caching proximity adc %d",__func__,(int)cached_adc);
+#endif
+
                                 p_status        = data[0];
                                 data_buff[0]    = data[0];
 				data_buff[1]	= data[7];
@@ -5787,6 +5804,49 @@ static ssize_t p_status_show(struct device *dev,
 }
 static DEVICE_ATTR(p_status, 0444, p_status_show, NULL);
 
+
+#if 1
+DEFINE_MUTEX(proximity_adc_lock);
+
+static void get_proximity_adc_s(struct work_struct * workstruct) {
+	printk("%s starting work proximity adc previous adc: %d",__func__,(int)cached_adc);
+	mutex_lock(&proximity_adc_lock);
+	if (s_mcu_data != NULL) {
+		u8 data[REPORT_EVENT_PROXIMITY_LEN] = {0};
+		u16 proximity_adc = 0;
+		CWMCU_i2c_read_power(s_mcu_data, CWSTM32_READ_Proximity, data, sizeof(data));
+		proximity_adc = (data[2] << 8) | data[1];
+		cached_adc = proximity_adc;
+		printk("%s caching proximity adc %d",__func__,(int)cached_adc);
+		return;
+	}
+	return;
+}
+
+DECLARE_WORK(get_proximity_adc_work, get_proximity_adc_s);
+
+unsigned long last_jiffies = 0;
+
+void start_proximity_adc_work(void) {
+	if (!mutex_trylock(&proximity_adc_lock)) return;
+	if (jiffies - last_jiffies < 100) {
+		mutex_unlock(&proximity_adc_lock);
+		return;
+	}
+	last_jiffies = jiffies;
+	cached_adc = -1;
+	schedule_work(&get_proximity_adc_work);
+	mutex_unlock(&proximity_adc_lock);
+}
+EXPORT_SYMBOL(start_proximity_adc_work);
+
+int get_proximity_adc(void) {
+	return cached_adc;
+}
+
+EXPORT_SYMBOL(get_proximity_adc);
+#endif
+
 static ssize_t ps_adc_show(struct device *dev,
                struct device_attribute *attr, char *buf)
 {
@@ -5798,6 +5858,10 @@ static ssize_t ps_adc_show(struct device *dev,
 
         CWMCU_i2c_read_power(s_mcu_data, CWSTM32_READ_Proximity, data, sizeof(data));
         ps_adc          = (data[2] << 8) | data[1];
+#if 1
+	cached_adc = ps_adc;
+		printk("%s caching proximity adc %d",__func__,(int)cached_adc);
+#endif
         ps_autok_thd    = (data[6] << 8) | data[5];
         ps_pocket_mode  = data[8];
 
