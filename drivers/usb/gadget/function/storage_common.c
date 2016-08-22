@@ -506,7 +506,12 @@ ssize_t fsg_store_cdrom(struct fsg_lun *curlun, struct rw_semaphore *filesem,
 		return ret;
 
 	down_read(filesem);
+#if 0
 	ret = cdrom ? _fsg_store_ro(curlun, true) : 0;
+#endif
+#if 1
+	ret = cdrom ? _fsg_store_ro(curlun, true) : _fsg_store_ro(curlun, false);
+#endif
 
 	if (!ret) {
 		curlun->cdrom = cdrom;
