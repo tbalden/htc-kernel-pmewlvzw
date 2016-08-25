@@ -354,7 +354,8 @@ static int supposedly_charging = 0; // information from led call (multicolor wor
 static int colored_charge_level = 1; // if set to 1, colored charge level handling is enabled, 0 - not
 
 static int pulse_rgb_blink = 1;  // 0 - normal stock blinking / 1 - pulsating
-static int rgb_coeff_divider = 1; // value between 1 - 2
+static int rgb_coeff_divider = 1; // value between 1 - 20
+static int bln_coeff_divider = 2; // value between 1 - 20
 
 static int qpnp_buttonled_blink_with_alarm(int on,int cancel_alarm);
 static int qpnp_buttonled_blink(int on);
@@ -387,8 +388,18 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 	int rc;
 	u8 val;
 	int virtual_key_lut_table_stop[1] = {0};
-	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {0,1,2,4,5,6,7,8,9,10};
-	int virtual_key_lut_table_double_blink[VIRTUAL_LUT_LEN] = {0,1,3,6,8,10,8,5,3,1};
+	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {
+		0/bln_coeff_divider,10/bln_coeff_divider,
+		20/bln_coeff_divider,40/bln_coeff_divider,
+		50/bln_coeff_divider,60/bln_coeff_divider,
+		70/bln_coeff_divider,80/bln_coeff_divider,
+		90/bln_coeff_divider,100/bln_coeff_divider};
+	int virtual_key_lut_table_double_blink[VIRTUAL_LUT_LEN] = {
+		0/bln_coeff_divider,10/bln_coeff_divider,
+		30/bln_coeff_divider,60/bln_coeff_divider,
+		80/bln_coeff_divider,100/bln_coeff_divider,
+		80/bln_coeff_divider,50/bln_coeff_divider,
+		30/bln_coeff_divider,10/bln_coeff_divider};
 
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, blink_brightness, led->status);
 
@@ -662,8 +673,8 @@ static void led_multi_color_charge_level(int level)
 		LED_INFO("%s color transition at full strength: red %d green %d \n",__func__, red_coeff, green_coeff);
 	}
 
-	g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient = red_coeff;// / rgb_coeff_divider;
-	g_led_green->rgb_cfg->pwm_cfg->pwm_coefficient = green_coeff;// / rgb_coeff_divider;
+	g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient = red_coeff;
+	g_led_green->rgb_cfg->pwm_cfg->pwm_coefficient = green_coeff;
 	g_led_red->mode = val;
 	g_led_green->mode = val;
 	LED_INFO("%s color mixing charge level: red %d green %d \n",__func__, red_coeff / rgb_coeff_divider, green_coeff / rgb_coeff_divider);
@@ -2620,6 +2631,35 @@ static DEVICE_ATTR(bln_rgb_batt_colored, (S_IWUSR|S_IRUGO),
       bln_rgb_colored_battery_show, bln_rgb_colored_battery_dump);
 
 
+// coeff divider for button blinking
+static ssize_t bln_coeff2_div_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", bln_coeff_divider);
+}
+
+static ssize_t bln_coeff2_div_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 20)
+            input = 0;
+
+      bln_coeff_divider = input + 1;
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_light_level, (S_IWUSR|S_IRUGO),
+      bln_coeff2_div_show, bln_coeff2_div_dump);
+
+
 #endif
 
 static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coefficient){
@@ -3899,6 +3939,7 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_speed_max);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_pulse);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_blink_light_level);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_light_level);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_batt_colored);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_batt_test);
 #endif
