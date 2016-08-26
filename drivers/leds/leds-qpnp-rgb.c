@@ -2635,7 +2635,7 @@ static DEVICE_ATTR(bln_rgb_batt_colored, (S_IWUSR|S_IRUGO),
 static ssize_t bln_coeff2_div_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-      return snprintf(buf, PAGE_SIZE, "%d\n", bln_coeff_divider);
+      return snprintf(buf, PAGE_SIZE, "%d\n", (bln_coeff_divider-1));
 }
 
 static ssize_t bln_coeff2_div_dump(struct device *dev,
