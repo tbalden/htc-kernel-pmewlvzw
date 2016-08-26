@@ -70,4 +70,3 @@ config DHD_USE_SCHED_SCAN
 	default n
 	---help---
 	  Use CFG80211 sched scan
-
