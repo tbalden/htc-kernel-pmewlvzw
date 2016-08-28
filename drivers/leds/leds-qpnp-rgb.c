@@ -3617,7 +3617,9 @@ static int fb_notifier_callback(struct notifier_block *self,
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
-		qpnp_buttonled_blink(0);
+		if (blinking) {
+			qpnp_buttonled_blink(0);
+		}
 		break;
 	}
     }
