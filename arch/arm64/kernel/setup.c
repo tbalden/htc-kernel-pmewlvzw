@@ -638,3 +638,12 @@ static int msm8996_read_mx_fuse(void){
 }
 
 arch_initcall_sync(msm8996_read_mx_fuse);
+
+static int __init dumphardboot(void) {
+	unsigned long *h = ioremap(0x1fd00000, SZ_1M);
+	pr_info("Hardboot: %lx %lx %lx %lx %lx %lx %lx %lx\n",
+		h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
+	iounmap(h);
+	return 0;
+}
+arch_initcall(dumphardboot);
