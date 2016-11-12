@@ -335,17 +335,6 @@ kgsl_mem_entry_track_gpuaddr(struct kgsl_process_private *process,
 	return kgsl_mmu_get_gpuaddr(pagetable, &entry->memdesc);
 }
 
-static void kgsl_mem_entry_commit_process(struct kgsl_mem_entry *entry)
-{
-	if (!entry)
-		return;
-
-	spin_lock(&entry->priv->mem_lock);
-	idr_replace(&entry->priv->mem_idr, entry, entry->id);
-	spin_unlock(&entry->priv->mem_lock);
-}
-
-
 static void
 kgsl_mem_entry_untrack_gpuaddr(struct kgsl_process_private *process,
 				struct kgsl_mem_entry *entry)
@@ -354,6 +343,16 @@ kgsl_mem_entry_untrack_gpuaddr(struct kgsl_process_private *process,
 
 	if (entry->memdesc.gpuaddr)
 		kgsl_mmu_put_gpuaddr(pagetable, &entry->memdesc);
+}
+
+static void kgsl_mem_entry_commit_process(struct kgsl_mem_entry *entry)
+{
+	if (!entry)
+		return;
+
+	spin_lock(&entry->priv->mem_lock);
+	idr_replace(&entry->priv->mem_idr, entry, entry->id);
+	spin_unlock(&entry->priv->mem_lock);
 }
 
 int
@@ -370,7 +369,7 @@ kgsl_mem_entry_attach_process(struct kgsl_mem_entry *entry,
 		return -EBADF;
 	idr_preload(GFP_KERNEL);
 	spin_lock(&process->mem_lock);
-	/* Allocate the ID but don't attach the pointer just yet */
+	
 	id = idr_alloc(&process->mem_idr, NULL, 1, 0, GFP_NOWAIT);
 	spin_unlock(&process->mem_lock);
 	idr_preload_end();
