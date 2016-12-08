@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,7 +32,7 @@ static inline void signal_event(struct kgsl_device *device,
 {
 	list_del(&event->node);
 	event->result = result;
-	queue_kthread_work(&kgsl_driver.worker, &event->work);
+	queue_work(device->events_wq, &event->work);
 }
 
 /**
@@ -42,7 +42,7 @@ static inline void signal_event(struct kgsl_device *device,
  * Each event callback has its own work struct and is run on a event specific
  * workqeuue.  This is the worker that queues up the event callback function.
  */
-static void _kgsl_event_worker(struct kthread_work *work)
+static void _kgsl_event_worker(struct work_struct *work)
 {
 	struct kgsl_event *event = container_of(work, struct kgsl_event, work);
 	int id = KGSL_CONTEXT_ID(event->context);
@@ -54,6 +54,23 @@ static void _kgsl_event_worker(struct kthread_work *work)
 
 	kgsl_context_put(event->context);
 	kmem_cache_free(events_cache, event);
+}
+
+/* return true if the group needs to be processed */
+static bool _do_process_group(unsigned int processed, unsigned int cur)
+{
+	if (processed == cur)
+		return false;
+
+	/*
+	 * This ensures that the timestamp didn't slip back accidently, maybe
+	 * due to a memory barrier issue. This is highly unlikely but we've
+	 * been burned here in the past.
+	 */
+	if ((cur < processed) && ((processed - cur) < KGSL_TIMESTAMP_WINDOW))
+		return false;
+
+	return true;
 }
 
 static void _process_event_group(struct kgsl_device *device,
@@ -80,11 +97,7 @@ static void _process_event_group(struct kgsl_device *device,
 	group->readtimestamp(device, group->priv, KGSL_TIMESTAMP_RETIRED,
 		&timestamp);
 
-	/*
-	 * If no timestamps have been retired since the last time we were here
-	 * then we can avoid going through this loop
-	 */
-	if (!flush && timestamp_cmp(timestamp, group->processed) <= 0)
+	if (!flush && _do_process_group(group->processed, timestamp) == false)
 		goto out;
 
 	list_for_each_entry_safe(event, tmp, &group->events, node) {
@@ -269,7 +282,7 @@ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 	event->created = jiffies;
 	event->group = group;
 
-	init_kthread_work(&event->work, _kgsl_event_worker);
+	INIT_WORK(&event->work, _kgsl_event_worker);
 
 	trace_kgsl_register_event(KGSL_CONTEXT_ID(context), timestamp, func);
 
@@ -284,7 +297,7 @@ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 
 	if (timestamp_cmp(retired, timestamp) >= 0) {
 		event->result = KGSL_EVENT_RETIRED;
-		queue_kthread_work(&kgsl_driver.worker, &event->work);
+		queue_work(device->events_wq, &event->work);
 		spin_unlock(&group->lock);
 		return 0;
 	}
@@ -301,22 +314,16 @@ EXPORT_SYMBOL(kgsl_add_event);
 static DEFINE_RWLOCK(group_lock);
 static LIST_HEAD(group_list);
 
-/**
- * kgsl_process_events() - Work queue for processing new timestamp events
- * @work: Pointer to a work_struct
- */
-void kgsl_process_events(struct work_struct *work)
+void kgsl_process_event_groups(struct kgsl_device *device)
 {
 	struct kgsl_event_group *group;
-	struct kgsl_device *device = container_of(work, struct kgsl_device,
-		event_work);
 
 	read_lock(&group_lock);
 	list_for_each_entry(group, &group_list, group)
 		_process_event_group(device, group, false);
 	read_unlock(&group_lock);
 }
-EXPORT_SYMBOL(kgsl_process_events);
+EXPORT_SYMBOL(kgsl_process_event_groups);
 
 /**
  * kgsl_del_event_group() - Remove a GPU event group

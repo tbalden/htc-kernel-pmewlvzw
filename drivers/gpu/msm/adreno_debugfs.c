@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2008-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2008-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -138,7 +138,7 @@ static void sync_event_print(struct seq_file *s,
 		break;
 	}
 	case KGSL_CMD_SYNCPOINT_TYPE_FENCE:
-		seq_printf(s, "sync: [%p] %s", sync_event->handle,
+		seq_printf(s, "sync: [%pK] %s", sync_event->handle,
 		(sync_event->handle && sync_event->handle->fence)
 				? sync_event->handle->fence->name : "NULL");
 		break;
@@ -226,8 +226,7 @@ static void cmdbatch_print(struct seq_file *s, struct kgsl_cmdbatch *cmdbatch)
 	if (cmdbatch->flags & KGSL_CONTEXT_SYNC)
 		return;
 
-	seq_printf(s, "\t%d: ib: expires: %lu",
-		cmdbatch->timestamp, cmdbatch->expires);
+	seq_printf(s, "\t%d: ", cmdbatch->timestamp);
 
 	seq_puts(s, " flags: ");
 	print_flags(s, cmdbatch_flags, ARRAY_SIZE(cmdbatch_flags),
@@ -355,7 +354,7 @@ adreno_context_debugfs_init(struct adreno_device *adreno_dev,
 
 void adreno_debugfs_init(struct adreno_device *adreno_dev)
 {
-	struct kgsl_device *device = &adreno_dev->dev;
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 
 	if (!device->d_debugfs || IS_ERR(device->d_debugfs))
 		return;

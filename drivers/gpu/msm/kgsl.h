@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,13 +28,27 @@
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>
 #include "kgsl_htc.h"
-#include <linux/kthread.h>
 
 #define KGSL_MEMSTORE_SIZE	((int)(PAGE_SIZE * 2))
 #define KGSL_MEMSTORE_GLOBAL	(0)
 #define KGSL_PRIORITY_MAX_RB_LEVELS 4
 #define KGSL_MEMSTORE_MAX	(KGSL_MEMSTORE_SIZE / \
 	sizeof(struct kgsl_devmemstore) - 1 - KGSL_PRIORITY_MAX_RB_LEVELS)
+
+#define MEMSTORE_RB_OFFSET(rb, field)	\
+	KGSL_MEMSTORE_OFFSET(((rb)->id + KGSL_MEMSTORE_MAX), field)
+
+#define MEMSTORE_ID_GPU_ADDR(dev, iter, field) \
+	((dev)->memstore.gpuaddr + KGSL_MEMSTORE_OFFSET(iter, field))
+
+#define MEMSTORE_RB_GPU_ADDR(dev, rb, field)	\
+	((dev)->memstore.gpuaddr + \
+	 KGSL_MEMSTORE_OFFSET(((rb)->id + KGSL_MEMSTORE_MAX), field))
+
+
+#define SCRATCH_RPTR_OFFSET(id) ((id) * sizeof(unsigned int))
+#define SCRATCH_RPTR_GPU_ADDR(dev, id) \
+	((dev)->scratch.gpuaddr + SCRATCH_RPTR_OFFSET(id))
 
 #define KGSL_TIMESTAMP_WINDOW 0x80000000
 
@@ -83,9 +97,6 @@ struct kgsl_driver {
 	struct workqueue_struct *workqueue;
 	struct workqueue_struct *mem_workqueue;
 	struct kgsl_driver_htc_priv priv;
-
-	struct kthread_worker worker;
-	struct task_struct *worker_thread;
 };
 
 extern struct kgsl_driver kgsl_driver;
@@ -110,6 +121,7 @@ struct kgsl_memdesc_ops {
 #define KGSL_MEMDESC_SECURE BIT(4)
 #define KGSL_MEMDESC_PRIVILEGED BIT(6)
 #define KGSL_MEMDESC_TZ_LOCKED BIT(7)
+#define KGSL_MEMDESC_CONTIG BIT(8)
 
 struct kgsl_memdesc {
 	struct kgsl_pagetable *pagetable;
@@ -119,12 +131,16 @@ struct kgsl_memdesc {
 	uint64_t gpuaddr;
 	phys_addr_t physaddr;
 	uint64_t size;
+	uint64_t mapsize;
 	unsigned int priv;
 	struct sg_table *sgt;
 	struct kgsl_memdesc_ops *ops;
 	uint64_t flags;
 	struct device *dev;
 	struct dma_attrs attrs;
+	struct page **pages;
+	unsigned int page_count;
+
 	struct kgsl_process_private *private;
 };
 
@@ -165,7 +181,7 @@ struct kgsl_event {
 	void *priv;
 	struct list_head node;
 	unsigned int created;
-	struct kthread_work work;
+	struct work_struct work;
 	int result;
 	struct kgsl_event_group *group;
 };
@@ -341,12 +357,6 @@ kgsl_mem_entry_put(struct kgsl_mem_entry *entry)
 {
 	if (entry)
 		kref_put(&entry->refcount, kgsl_mem_entry_destroy);
-}
-
-static inline void kgsl_mem_entry_put_deferred(struct kgsl_mem_entry *entry)
-{
-	if (entry != NULL)
-		queue_work(kgsl_driver.mem_workqueue, &entry->work);
 }
 
 static inline bool kgsl_addr_range_overlap(uint64_t gpuaddr1,

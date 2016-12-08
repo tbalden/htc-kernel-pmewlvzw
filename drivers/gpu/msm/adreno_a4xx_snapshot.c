@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -168,15 +168,15 @@ static const unsigned int a4xx_vbif_ver_20050000_registers[] = {
 
 static const struct adreno_vbif_snapshot_registers
 					a4xx_vbif_snapshot_registers[] = {
-	{ 0x20000000, a4xx_vbif_ver_20000000_registers,
+	{ 0x20000000, 0xFFFF0000, a4xx_vbif_ver_20000000_registers,
 				ARRAY_SIZE(a4xx_vbif_ver_20000000_registers)/2},
-	{ 0x20020000, a4xx_vbif_ver_20020000_registers,
+	{ 0x20020000, 0xFFFF0000, a4xx_vbif_ver_20020000_registers,
 				ARRAY_SIZE(a4xx_vbif_ver_20020000_registers)/2},
-	{ 0x20050000, a4xx_vbif_ver_20050000_registers,
+	{ 0x20050000, 0xFFFF0000, a4xx_vbif_ver_20050000_registers,
 				ARRAY_SIZE(a4xx_vbif_ver_20050000_registers)/2},
-	{ 0x20070000, a4xx_vbif_ver_20020000_registers,
+	{ 0x20070000, 0xFFFF0000, a4xx_vbif_ver_20020000_registers,
 				ARRAY_SIZE(a4xx_vbif_ver_20020000_registers)/2},
-	{ 0x20090000, a4xx_vbif_ver_20050000_registers,
+	{ 0x20090000, 0xFFFF0000, a4xx_vbif_ver_20050000_registers,
 				ARRAY_SIZE(a4xx_vbif_ver_20050000_registers)/2},
 };
 
@@ -516,7 +516,7 @@ static void a4xx_reset_hlsq(struct kgsl_device *device)
 void a4xx_snapshot(struct adreno_device *adreno_dev,
 		struct kgsl_snapshot *snapshot)
 {
-	struct kgsl_device *device = &adreno_dev->dev;
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	struct adreno_snapshot_data *snap_data = gpudev->snapshot_data;
 
@@ -534,9 +534,6 @@ void a4xx_snapshot(struct adreno_device *adreno_dev,
 	kgsl_regwrite(device, A4XX_RBBM_CLOCK_CTL, 0);
 	kgsl_regwrite(device, A4XX_RBBM_CLOCK_CTL2, 0);
 
-	/* Turn on MMU clocks since we read MMU registers */
-	kgsl_mmu_enable_clk(&device->mmu);
-
 	/* Master set of (non debug) registers */
 
 	SNAPSHOT_REGISTERS(device, snapshot, a4xx_registers);
@@ -553,8 +550,6 @@ void a4xx_snapshot(struct adreno_device *adreno_dev,
 	adreno_snapshot_vbif_registers(device, snapshot,
 		a4xx_vbif_snapshot_registers,
 		ARRAY_SIZE(a4xx_vbif_snapshot_registers));
-
-	kgsl_mmu_disable_clk(&device->mmu);
 
 	kgsl_snapshot_indexed_registers(device, snapshot,
 		A4XX_CP_STATE_DEBUG_INDEX, A4XX_CP_STATE_DEBUG_DATA,

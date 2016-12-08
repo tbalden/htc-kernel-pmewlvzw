@@ -38,6 +38,13 @@ struct ion_co_heap_pdata {
 	void *(*setup_ion_region)(void);
 };
 
+struct msm_ion_prefetch_info {
+	struct list_head list;
+	int heap_id;
+	unsigned long *sizes;
+	int nr_sizes;
+};
+
 struct ion_cma_pdata {
 	unsigned long default_prefetch_size;
 };
