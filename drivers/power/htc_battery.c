@@ -1996,6 +1996,11 @@ static void batt_worker(struct work_struct *work)
 	}
 #endif //CONFIG_HTC_BATT_PCN0020
 
+
+#if 1
+	register_charge_level(htc_batt_info.rep.level);
+#endif
+
 	/* FIXME: htc_extension not ready */
 	BATT_EMBEDDED("ID=%d,"
 		"level=%d,"
