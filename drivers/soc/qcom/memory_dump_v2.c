@@ -86,7 +86,7 @@ static struct msm_dump_table *msm_dump_get_table(enum msm_dump_table_ids id)
 		return ERR_PTR(-EINVAL);
 	}
 
-	
+	/* Get the apps table pointer */
 #if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
 	if(id == MSM_DUMP_TABLE_APPS)
 		table = dump_table_apps_addr;
@@ -176,7 +176,7 @@ static int __init init_memory_dump(void)
 	memdump.table_phys = virt_to_phys(memdump.table);
 #endif
 	memcpy_toio(imem_base, &memdump.table_phys, sizeof(memdump.table_phys));
-	
+	/* Ensure write to imem_base is complete before unmapping */
 	mb();
 	pr_info("MSM Memory Dump base table set up\n");
 
@@ -190,7 +190,7 @@ static int __init init_memory_dump(void)
 		goto err1;
 	}
 	dump_table_apps_addr = table;
-	
+	/* memory dump table and MSM_DUMP_TAABLE_APPS are already initialized in LK, so just return */
 	pr_info("MSM Memory Dump apps data table already set up in LK\n");
 	return 0;
 #else

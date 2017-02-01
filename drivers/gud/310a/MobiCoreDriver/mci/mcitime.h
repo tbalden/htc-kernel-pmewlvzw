@@ -15,9 +15,13 @@
 #ifndef MCITIME_H_
 #define MCITIME_H_
 
+/*
+ * Trustonic TEE RICH OS Time:
+ * Seconds and nanoseconds since Jan 1, 1970, UTC
+ */
 struct mcp_time {
 	u64	seconds;
 	u64	nsec;
 };
 
-#endif 
+#endif /* MCITIME_H_ */

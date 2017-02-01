@@ -45,21 +45,40 @@
 #include "peripheral-loader.h"
 
 #define DISABLE_SSR 0x9889deed
+/* If set to 0x9889deed, call to subsystem_restart_dev() returns immediately */
 static uint disable_restart_work;
 module_param(disable_restart_work, uint, S_IRUGO | S_IWUSR);
 
 static int enable_debug;
 module_param(enable_debug, int, S_IRUGO | S_IWUSR);
 
+/* The maximum shutdown timeout is the product of MAX_LOOPS and DELAY_MS. */
 #define SHUTDOWN_ACK_MAX_LOOPS	100
 #define SHUTDOWN_ACK_DELAY_MS	100
 
+/**
+ * enum p_subsys_state - state of a subsystem (private)
+ * @SUBSYS_NORMAL: subsystem is operating normally
+ * @SUBSYS_CRASHED: subsystem has crashed and hasn't been shutdown
+ * @SUBSYS_RESTARTING: subsystem has been shutdown and is now restarting
+ *
+ * The 'private' side of the subsytem state used to determine where in the
+ * restart process the subsystem is.
+ */
 enum p_subsys_state {
 	SUBSYS_NORMAL,
 	SUBSYS_CRASHED,
 	SUBSYS_RESTARTING,
 };
 
+/**
+ * enum subsys_state - state of a subsystem (public)
+ * @SUBSYS_OFFLINING: subsystem is offlining
+ * @SUBSYS_OFFLINE: subsystem is offline
+ * @SUBSYS_ONLINE: subsystem is online
+ *
+ * The 'public' side of the subsytem state, exposed to userspace.
+ */
 enum subsys_state {
 	SUBSYS_OFFLINING,
 	SUBSYS_OFFLINE,
@@ -78,6 +97,9 @@ static const char * const restart_levels[] = {
 };
 
 #if defined(CONFIG_HTC_DEBUG_SSR)
+/**
+ * MSS restart reason feature (Non-block)
+ */
 
 #define SUBSYS_NAME_MAX_LENGTH 40
 #define RD_BUF_SIZE			  256
@@ -100,7 +122,7 @@ static ssize_t subsystem_restart_reason_nonblock_show(struct kobject *kobj,
 
 	for( i=0; i<MODEM_ERRMSG_LIST_LEN; i++ ) {
 		if( msr_info_list[i].valid != 0 ) {
-			
+			//Copy errmsg to buf
 			snprintf(tmp, RD_BUF_SIZE+30, "%ld-%s|\n\r", msr_info_list[i].msr_time.tv_sec, msr_info_list[i].modem_errmsg);
 			strcat(buf, tmp);
 			memset(tmp, 0, RD_BUF_SIZE+30);
@@ -148,6 +170,17 @@ static struct attribute_group attr_group = {
 
 #endif
 
+/**
+ * struct subsys_tracking - track state of a subsystem or restart order
+ * @p_state: private state of subsystem/order
+ * @state: public state of subsystem/order
+ * @s_lock: protects p_state
+ * @lock: protects subsystem/order callbacks and state
+ *
+ * Tracks the state of a subsystem or a set of subsystems (restart order).
+ * Doing this avoids the need to grab each subsystem's lock and update
+ * each subsystems state when restarting an order.
+ */
 struct subsys_tracking {
 	enum p_subsys_state p_state;
 	spinlock_t s_lock;
@@ -155,6 +188,13 @@ struct subsys_tracking {
 	struct mutex lock;
 };
 
+/**
+ * struct subsys_soc_restart_order - subsystem restart order
+ * @subsystem_list: names of subsystems in this restart order
+ * @count: number of subsystems in order
+ * @track: state tracking and locking
+ * @subsys_ptrs: pointers to subsystems in this restart order
+ */
 struct subsys_soc_restart_order {
 	struct device_node **device_ptrs;
 	int count;
@@ -170,6 +210,28 @@ struct restart_log {
 	struct list_head list;
 };
 
+/**
+ * struct subsys_device - subsystem device
+ * @desc: subsystem descriptor
+ * @work: context for subsystem_restart_wq_func() for this device
+ * @ssr_wlock: prevents suspend during subsystem_restart()
+ * @wlname: name of wakeup source
+ * @device_restart_work: work struct for device restart
+ * @track: state tracking and locking
+ * @notify: subsys notify handle
+ * @dev: device
+ * @owner: module that provides @desc
+ * @count: reference count of subsystem_get()/subsystem_put()
+ * @id: ida
+ * @restart_level: restart level (0 - panic, 1 - related, 2 - independent, etc.)
+ * @restart_order: order of other devices this devices restarts with
+ * @crash_count: number of times the device has crashed
+ * @dentry: debugfs directory for this device
+ * @do_ramdump_on_put: ramdump on subsystem_put() if true
+ * @err_ready: completion variable to record error ready from subsystem
+ * @crashed: indicates if subsystem has crashed
+ * @notif_state: current state of subsystem in terms of subsys notifications
+ */
 struct subsys_device {
 	struct subsys_desc *desc;
 	struct work_struct work;
@@ -304,7 +366,7 @@ void subsys_set_restart_reason(struct subsys_device *dev, const char* reason)
 	snprintf(dev->restart_reason, sizeof(dev->restart_reason) - 1, "%s", reason);
 }
 EXPORT_SYMBOL(subsys_set_restart_reason);
-#endif 
+#endif /* CONFIG_HTC_DEBUG_SSR */
 
 static ssize_t system_debug_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -535,6 +597,14 @@ static void subsys_set_state(struct subsys_device *subsys,
 	spin_unlock_irqrestore(&subsys->track.s_lock, flags);
 }
 
+/**
+ * subsytem_default_online() - Mark a subsystem as online by default
+ * @dev: subsystem to mark as online
+ *
+ * Marks a subsystem as "online" without increasing the reference count
+ * on the subsystem. This is typically used by subsystems that are already
+ * online when the kernel boots up.
+ */
 void subsys_default_online(struct subsys_device *dev)
 {
 	subsys_set_state(dev, SUBSYS_ONLINE);
@@ -622,7 +692,7 @@ static void do_epoch_check(struct subsys_device *dev)
 	max_restarts_check = max_restarts;
 	max_history_time_check = max_history_time;
 
-	
+	/* Check if epoch checking is enabled */
 	if (!max_restarts_check)
 		goto out;
 
@@ -764,10 +834,10 @@ static void enable_all_irqs(struct subsys_device *dev)
 		irq_set_irq_wake(dev->desc->generic_irq, 1);
 	}
 
-#if 1 
+#if 1 //Modem_BSP++
         if (dev->desc->reboot_req_irq)
                 enable_irq(dev->desc->reboot_req_irq);
-#endif 
+#endif //Modem_BSP--
 }
 
 static void disable_all_irqs(struct subsys_device *dev)
@@ -788,16 +858,20 @@ static void disable_all_irqs(struct subsys_device *dev)
 		irq_set_irq_wake(dev->desc->generic_irq, 0);
 	}
 
-#if 1 
+#if 1 //Modem_BSP++
         if (dev->desc->reboot_req_irq)
                 disable_irq(dev->desc->reboot_req_irq);
-#endif 
+#endif //Modem_BSP--
 }
 
 static int wait_for_err_ready(struct subsys_device *subsys)
 {
 	int ret;
 
+	/*
+	 * If subsys is using generic_irq in which case err_ready_irq will be 0,
+	 * don't return.
+	 */
 	if ((subsys->desc->generic_irq <= 0 && !subsys->desc->err_ready_irq) ||
 				enable_debug == 1 || is_timeout_disabled())
 		return 0;
@@ -908,6 +982,9 @@ static int subsys_start(struct subsys_device *subsys)
 
 	ret = wait_for_err_ready(subsys);
 	if (ret) {
+		/* pil-boot succeeded but we need to shutdown
+		 * the device because error ready timed out.
+		 */
 		notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,
 									NULL);
 		subsys->desc->shutdown(subsys->desc, false);
@@ -1019,18 +1096,44 @@ err_module:
 	return retval;
 }
 
+/**
+ * subsytem_get() - Boot a subsystem
+ * @name: pointer to a string containing the name of the subsystem to boot
+ *
+ * This function returns a pointer if it succeeds. If an error occurs an
+ * ERR_PTR is returned.
+ *
+ * If this feature is disable, the value %NULL will be returned.
+ */
 void *subsystem_get(const char *name)
 {
 	return __subsystem_get(name, NULL);
 }
 EXPORT_SYMBOL(subsystem_get);
 
+/**
+ * subsystem_get_with_fwname() - Boot a subsystem using the firmware name passed in
+ * @name: pointer to a string containing the name of the subsystem to boot
+ * @fw_name: pointer to a string containing the subsystem firmware image name
+ *
+ * This function returns a pointer if it succeeds. If an error occurs an
+ * ERR_PTR is returned.
+ *
+ * If this feature is disable, the value %NULL will be returned.
+ */
 void *subsystem_get_with_fwname(const char *name, const char *fw_name)
 {
 	return __subsystem_get(name, fw_name);
 }
 EXPORT_SYMBOL(subsystem_get_with_fwname);
 
+/**
+ * subsystem_put() - Shutdown a subsystem
+ * @peripheral_handle: pointer from a previous call to subsystem_get()
+ *
+ * This doesn't imply that a subsystem is shutdown until all callers of
+ * subsystem_get() have called subsystem_put().
+ */
 void subsystem_put(void *subsystem)
 {
 	struct subsys_device *subsys_d, *subsys = subsystem;
@@ -1076,6 +1179,11 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	unsigned count;
 	unsigned long flags;
 
+	/*
+	 * It's OK to not take the registration lock at this point.
+	 * This is because the subsystem list inside the relevant
+	 * restart order is not being traversed.
+	 */
 	if (order) {
 		list = order->subsys_ptrs;
 		count = order->count;
@@ -1086,6 +1194,11 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 		track = &dev->track;
 	}
 
+	/*
+	 * If a system reboot/shutdown is under way, ignore subsystem errors.
+	 * However, print a message so that we know that a subsystem behaved
+	 * unexpectedly here.
+	 */
 	if (system_state == SYSTEM_RESTART
 		|| system_state == SYSTEM_POWER_OFF) {
 		WARN(1, "SSR aborted: %s, system reboot/shutdown is under way\n",
@@ -1102,6 +1215,11 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 		return;
 	}
 
+	/*
+	 * It's necessary to take the registration lock because the subsystem
+	 * list in the SoC restart order will be traversed and it shouldn't be
+	 * changed until _this_ restart sequence completes.
+	 */
 	mutex_lock(&soc_order_reg_lock);
 
 	pr_debug("[%p]: Starting restart sequence for %s\n", current,
@@ -1117,7 +1235,7 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	track->p_state = SUBSYS_RESTARTING;
 	spin_unlock_irqrestore(&track->s_lock, flags);
 
-	
+	/* Collect ram dumps for all subsystems in order here */
 	for_each_subsys_device(list, count, NULL, subsystem_ramdump);
 
 	for_each_subsys_device(list, count, NULL, subsystem_free_memory);
@@ -1146,7 +1264,7 @@ static void __subsystem_restart_dev(struct subsys_device *dev)
 	unsigned long flags;
 
 #if defined(CONFIG_HTC_DEBUG_SSR)
-		
+		/*+SSD-RIL for nonblock restart reason	*/
 		if (!strncmp(name, "modem",
 					SUBSYS_NAME_MAX_LENGTH)) {
 		  msr_info_list[msm_msr_index].valid = 1;
@@ -1156,13 +1274,17 @@ static void __subsystem_restart_dev(struct subsys_device *dev)
 		  if(++msm_msr_index >= MODEM_ERRMSG_LIST_LEN)
 		    msm_msr_index = 0;
 		}
-	   
+	   /*-SSD-RIL for nonblock restart reason	*/
 #endif
 
 	pr_info("Restarting %s [level=%s]!\n", desc->name,
 			restart_levels[dev->restart_level]);
 
 	track = subsys_get_track(dev);
+	/*
+	 * Allow drivers to call subsystem_restart{_dev}() as many times as
+	 * they want up until the point where the subsystem is shutdown.
+	 */
 	spin_lock_irqsave(&track->s_lock, flags);
 	if (track->p_state != SUBSYS_CRASHED &&
 					dev->track.state == SUBSYS_ONLINE) {
@@ -1185,6 +1307,10 @@ static void device_restart_work_hdlr(struct work_struct *work)
 							device_restart_work);
 
 	notify_each_subsys_device(&dev, 1, SUBSYS_SOC_RESET, NULL);
+	/*
+	 * Temporary workaround until ramdump userspace application calls
+	 * sync() and fclose() on attempting the dump.
+	 */
 	msleep(100);
 
 #if defined(CONFIG_HTC_DEBUG_SSR)
@@ -1210,6 +1336,11 @@ int subsystem_restart_dev(struct subsys_device *dev)
 
 	name = dev->desc->name;
 
+	/*
+	 * If a system reboot/shutdown is underway, ignore subsystem errors.
+	 * However, print a message so that we know that a subsystem behaved
+	 * unexpectedly here.
+	 */
 	if (system_state == SYSTEM_RESTART
 		|| system_state == SYSTEM_POWER_OFF) {
 		pr_err("%s crashed during a system poweroff/shutdown.\n", name);
@@ -1273,6 +1404,11 @@ int subsystem_crashed(const char *name)
 
 	mutex_lock(&track->lock);
 	dev->do_ramdump_on_put = true;
+	/*
+	 * TODO: Make this work with multiple consumers where one is calling
+	 * subsystem_restart() and another is calling this function. To do
+	 * so would require updating private state, etc.
+	 */
 	mutex_unlock(&track->lock);
 
 	put_device(&dev->dev);
@@ -1574,6 +1710,10 @@ static struct subsys_soc_restart_order *ssr_parse_restart_orders(struct
 		order->device_ptrs[i] = ssr_node;
 	}
 
+	/*
+	 * Check for similar restart groups. If found, return
+	 * without adding the new group to the ssr_order_list.
+	 */
 	mutex_lock(&ssr_order_mutex);
 	list_for_each_entry(tmp, &ssr_order_list, list) {
 		for (i = 0; i < count; i++) {
@@ -1671,12 +1811,12 @@ static int subsys_parse_devicetree(struct subsys_desc *desc)
 	if (ret && ret != -ENOENT)
 		return ret;
 
-#if 1 
+#if 1 //Modem_BSP++
 	ret = __get_irq(desc, "qcom,gpio-reboot-req", &desc->reboot_req_irq,
 							NULL);
 	if (ret && ret != -ENOENT)
 		return ret;
-#endif 
+#endif //Modem_BSP--
 
 	ret = __get_gpio(desc, "qcom,gpio-force-stop", &desc->force_stop_gpio);
 	if (ret && ret != -ENOENT)
@@ -1734,7 +1874,7 @@ static int subsys_setup_irqs(struct subsys_device *subsys)
 		disable_irq(desc->err_fatal_irq);
 	}
 
-#if 1 
+#if 1 //Modem_BSP++
 	if (desc->reboot_req_irq) {
 		ret = devm_request_irq(desc->dev, desc->reboot_req_irq,
 				desc->reboot_req_handler,
@@ -1746,7 +1886,7 @@ static int subsys_setup_irqs(struct subsys_device *subsys)
 		}
 		disable_irq(desc->reboot_req_irq);
 	}
-#endif 
+#endif //Modem_BSP--
 
 	if (desc->stop_ack_irq && desc->stop_ack_handler) {
 		ret = devm_request_irq(desc->dev, desc->stop_ack_irq,
@@ -1809,10 +1949,10 @@ static void subsys_free_irqs(struct subsys_device *subsys)
 	if (desc->err_fatal_irq && desc->err_fatal_handler)
 		devm_free_irq(desc->dev, desc->err_fatal_irq, desc);
 
-#if 1 
+#if 1 //Modem_BSP++
 	if (desc->reboot_req_irq)
 		devm_free_irq(desc->dev, desc->reboot_req_irq, desc);
-#endif 
+#endif //Modem_BSP--
 	
 	if (desc->stop_ack_irq && desc->stop_ack_handler)
 		devm_free_irq(desc->dev, desc->stop_ack_irq, desc);
@@ -2005,7 +2145,7 @@ static int __init subsys_restart_init(void)
 	int ret;
 #if defined(CONFIG_HTC_DEBUG_SSR)
 		struct kobject *properties_kobj;
-		
+		/*+SSD-RIL for nonblock restart reason	*/
 		subsystem_restart_reason_nonblock_init();
 		properties_kobj = kobject_create_and_add("subsystem_restart_properties", NULL);
 		if (properties_kobj) {
@@ -2015,7 +2155,7 @@ static int __init subsys_restart_init(void)
 				return ret;
 			}
 		}
-		
+		/*-SSD-RIL for nonblock restart reason	*/
 #endif
 	ssr_wq = alloc_workqueue("ssr_wq", WQ_CPU_INTENSIVE, 0);
 	BUG_ON(!ssr_wq);

@@ -18,14 +18,27 @@
 struct tee_mmu;
 struct mcp_buffer_map;
 
+/*
+ * Allocate MMU table and map buffer into it.
+ * That is, create respective table entries.
+ */
 struct tee_mmu *tee_mmu_create(struct task_struct *task, const void *wsm_buffer,
 			       unsigned int wsm_len);
 
+/*
+ * Delete a used MMU table.
+ */
 void tee_mmu_delete(struct tee_mmu *mmu);
 
+/*
+ * Fill in buffer info for MMU table.
+ */
 void tee_mmu_buffer(const struct tee_mmu *mmu, struct mcp_buffer_map *map);
 
+/*
+ * Add info to debug buffer.
+ */
 int tee_mmu_debug_structs(struct kasnprintf_buf *buf,
 			  const struct tee_mmu *mmu);
 
-#endif 
+#endif /* _TBASE_MEM_H_ */

@@ -25,9 +25,9 @@
 
 #include "mci/mcifc.h"
 
-#include "platform.h"	
+#include "platform.h"	/* MC_FASTCALL_WORKER_THREAD and more */
 #include "main.h"
-#include "clock.h"	
+#include "clock.h"	/* mc_clock_enable, mc_clock_disable */
 #include "fastcall.h"
 
 struct fastcall_work {
@@ -39,6 +39,7 @@ struct fastcall_work {
 	void *data;
 };
 
+/* generic fast call parameters */
 union mc_fc_generic {
 	struct mc_fc_as_in {
 		u32 cmd;
@@ -51,6 +52,7 @@ union mc_fc_generic {
 	} as_out;
 };
 
+/* fast call init */
 union mc_fc_init {
 	union mc_fc_generic as_generic;
 	struct {
@@ -67,6 +69,7 @@ union mc_fc_init {
 	} as_out;
 };
 
+/* fast call info parameters */
 union mc_fc_info {
 	union mc_fc_generic as_generic;
 	struct {
@@ -83,6 +86,7 @@ union mc_fc_info {
 };
 
 #ifdef TBASE_CORE_SWITCHER
+/* fast call switch Core parameters */
 union mc_fc_swich_core {
 	union mc_fc_generic as_generic;
 	struct {
@@ -104,6 +108,7 @@ static struct task_struct *fastcall_thread;
 static DEFINE_KTHREAD_WORKER(fastcall_worker);
 #endif
 
+/* Structure to log SMC calls */
 struct smc_log_entry {
 	u64 cpu_clk;
 	struct mc_fc_as_in as_in;
@@ -113,12 +118,17 @@ struct smc_log_entry {
 static struct smc_log_entry smc_log[SMC_LOG_SIZE];
 static int smc_log_index;
 
+/*
+ * _smc() - fast call to MobiCore
+ *
+ * @data: pointer to fast call data
+ */
 static inline int _smc(union mc_fc_generic *mc_fc_generic)
 {
 	if (!mc_fc_generic)
 		return -EINVAL;
 
-	
+	/* Log SMC call */
 	smc_log[smc_log_index].cpu_clk = local_clock();
 	smc_log[smc_log_index].as_in = mc_fc_generic->as_in;
 	if (++smc_log_index >= SMC_LOG_SIZE)
@@ -126,15 +136,22 @@ static inline int _smc(union mc_fc_generic *mc_fc_generic)
 
 #ifdef MC_SMC_FASTCALL
 	return smc_fastcall(mc_fc_generic, sizeof(*mc_fc_generic));
-#else 
+#else /* MC_SMC_FASTCALL */
 	{
 #ifdef CONFIG_ARM64
-		
+		/* SMC expect values in x0-x3 */
 		register u64 reg0 __asm__("x0") = mc_fc_generic->as_in.cmd;
 		register u64 reg1 __asm__("x1") = mc_fc_generic->as_in.param[0];
 		register u64 reg2 __asm__("x2") = mc_fc_generic->as_in.param[1];
 		register u64 reg3 __asm__("x3") = mc_fc_generic->as_in.param[2];
 
+		/*
+		 * According to AARCH64 SMC Calling Convention (ARM DEN 0028A),
+		 * section 3.1: registers x4-x17 are unpredictable/scratch
+		 * registers.  So we have to make sure that the compiler does
+		 * not allocate any of those registers by letting him know that
+		 * the asm code might clobber them.
+		 */
 		__asm__ volatile (
 			"smc #0\n"
 			: "+r"(reg0), "+r"(reg1), "+r"(reg2), "+r"(reg3)
@@ -142,8 +159,8 @@ static inline int _smc(union mc_fc_generic *mc_fc_generic)
 			: "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
 			  "x12", "x13", "x14", "x15", "x16", "x17"
 		);
-#else 
-		
+#else /* CONFIG_ARM64 */
+		/* SMC expect values in r0-r3 */
 		register u32 reg0 __asm__("r0") = mc_fc_generic->as_in.cmd;
 		register u32 reg1 __asm__("r1") = mc_fc_generic->as_in.param[0];
 		register u32 reg2 __asm__("r2") = mc_fc_generic->as_in.param[1];
@@ -151,30 +168,39 @@ static inline int _smc(union mc_fc_generic *mc_fc_generic)
 
 		__asm__ volatile (
 #ifdef MC_ARCH_EXTENSION_SEC
+			/*
+			 * This pseudo op is supported and required from
+			 * binutils 2.21 on
+			 */
 			".arch_extension sec\n"
-#endif 
+#endif /* MC_ARCH_EXTENSION_SEC */
 			"smc #0\n"
 			: "+r"(reg0), "+r"(reg1), "+r"(reg2), "+r"(reg3)
 		);
 
 #ifdef __ARM_VE_A9X4_QEMU__
+		/*
+		 * Qemu does not return to the address following the SMC
+		 * instruction so we have to insert several nop instructions to
+		 * workaround this Qemu bug.
+		 */
 		__asm__ volatile (
 			"nop\n"
 			"nop\n"
 			"nop\n"
 			"nop"
 		);
-#endif 
-#endif 
+#endif /* __ARM_VE_A9X4_QEMU__ */
+#endif /* !CONFIG_ARM64 */
 
-		
+		/* set response */
 		mc_fc_generic->as_out.resp     = reg0;
 		mc_fc_generic->as_out.ret      = reg1;
 		mc_fc_generic->as_out.param[0] = reg2;
 		mc_fc_generic->as_out.param[1] = reg3;
 	}
 	return 0;
-#endif 
+#endif /* !MC_SMC_FASTCALL */
 }
 
 #ifdef TBASE_CORE_SWITCHER
@@ -190,7 +216,7 @@ static void mc_cpu_offline(int cpu)
 		return;
 	}
 
-	
+	/* Chose the first online CPU and switch! */
 	for_each_online_cpu(i) {
 		if (cpu != i) {
 			mc_dev_devel("CPU %d is dying, switching to %d\n",
@@ -225,7 +251,7 @@ static int mobicore_cpu_callback(struct notifier_block *nfb,
 static struct notifier_block mobicore_cpu_notifer = {
 	.notifier_call = mobicore_cpu_callback,
 };
-#endif 
+#endif /* MC_FASTCALL_WORKER_THREAD */
 
 static cpumask_t mc_exec_core_switch(union mc_fc_generic *mc_fc_generic)
 {
@@ -257,7 +283,7 @@ static ssize_t debug_coreswitch_write(struct file *file,
 {
 	int new_cpu = 0;
 
-	
+	/* Invalid data, nothing to do */
 	if (buffer_len < 1)
 		return -EINVAL;
 
@@ -272,12 +298,12 @@ static ssize_t debug_coreswitch_write(struct file *file,
 static const struct file_operations mc_debug_coreswitch_ops = {
 	.write = debug_coreswitch_write,
 };
-#else 
+#else /* TBASE_CORE_SWITCHER */
 static inline cpumask_t mc_exec_core_switch(union mc_fc_generic *mc_fc_generic)
 {
 	return CPU_MASK_CPU0;
 }
-#endif 
+#endif /* !TBASE_CORE_SWITCHER */
 
 #ifdef MC_FASTCALL_WORKER_THREAD
 static void fastcall_work_func(struct kthread_work *work)
@@ -320,7 +346,7 @@ static bool mc_fastcall(void *data)
 	if (!queue_kthread_work(&fastcall_worker, &fc_work.work))
 		return false;
 
-	
+	/* If work is queued or executing, wait for it to finish execution */
 	flush_kthread_work(&fc_work.work);
 #else
 	struct fastcall_work fc_work = {
@@ -353,17 +379,17 @@ int mc_fastcall_init(void)
 		return ret;
 	}
 
-	
+	/* this thread MUST run on CPU 0 at startup */
 	set_cpus_allowed(fastcall_thread, CPU_MASK_CPU0);
 
 	wake_up_process(fastcall_thread);
 #ifdef TBASE_CORE_SWITCHER
 	ret = register_cpu_notifier(&mobicore_cpu_notifer);
-	
+	/* Create debugfs structs entry */
 	debugfs_create_file("active_cpu", 0600, g_ctx.debug_dir, NULL,
 			    &mc_debug_coreswitch_ops);
 #endif
-#endif 
+#endif /* MC_FASTCALL_WORKER_THREAD */
 	return ret;
 }
 
@@ -377,10 +403,13 @@ void mc_fastcall_exit(void)
 		kthread_stop(fastcall_thread);
 		fastcall_thread = NULL;
 	}
-#endif 
+#endif /* MC_FASTCALL_WORKER_THREAD */
 	mc_clock_exit();
 }
 
+/*
+ * convert fast call return code to linux driver module error code
+ */
 static int convert_fc_ret(u32 ret)
 {
 	switch (ret) {
@@ -404,15 +433,15 @@ int mc_fc_init(uintptr_t base_pa, ptrdiff_t off, size_t q_len, size_t buf_len)
 #endif
 	union mc_fc_init fc_init;
 
-	
+	/* Call the INIT fastcall to setup MobiCore initialization */
 	memset(&fc_init, 0, sizeof(fc_init));
 	fc_init.as_in.cmd = MC_FC_INIT;
-	
+	/* base address of mci buffer PAGE_SIZE (default is 4KB) aligned */
 	fc_init.as_in.base = (u32)base_pa;
-	
+	/* notification buffer start/length [16:16] [start, length] */
 	fc_init.as_in.nq_info =
 	    (u32)(((base_high & 0xFFFF) << 16) | (q_len & 0xFFFF));
-	
+	/* mcp buffer start/length [16:16] [start, length] */
 	fc_init.as_in.mcp_info = (u32)((off << 16) | (buf_len & 0xFFFF));
 	mc_dev_devel("cmd=%d, base=0x%08x,nq_info=0x%08x, mcp_info=0x%08x\n",
 		     fc_init.as_in.cmd, fc_init.as_in.base,
@@ -509,6 +538,10 @@ static int show_smc_log_entry(struct kasnprintf_buf *buf,
 			  entry->as_in.param[2]);
 }
 
+/*
+ * Dump SMC log circular buffer, starting from oldest command. It is assumed
+ * nothing goes in any more at this point.
+ */
 int mc_fastcall_debug_smclog(struct kasnprintf_buf *buf)
 {
 	int i, ret = 0;
@@ -519,14 +552,14 @@ int mc_fastcall_debug_smclog(struct kasnprintf_buf *buf)
 		return ret;
 
 	if (smc_log[smc_log_index].cpu_clk)
-		
+		/* Buffer has wrapped around, dump end (oldest records) */
 		for (i = smc_log_index; i < SMC_LOG_SIZE; i++) {
 			ret = show_smc_log_entry(buf, &smc_log[i]);
 			if (ret < 0)
 				return ret;
 		}
 
-	
+	/* Dump first records */
 	for (i = 0; i < smc_log_index; i++) {
 		ret = show_smc_log_entry(buf, &smc_log[i]);
 		if (ret < 0)

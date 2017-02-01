@@ -42,7 +42,7 @@
 
 #define LPASS_BE_MI2S_RX "MI2S_RX"
 #define LPASS_BE_MI2S_TX "MI2S_TX"
-#define LPASS_BE_QUAT_MI2S "QUAT_MI2S" 
+#define LPASS_BE_QUAT_MI2S "QUAT_MI2S" //HTC_AUD
 #define LPASS_BE_QUAT_MI2S_RX "QUAT_MI2S_RX"
 #define LPASS_BE_QUAT_MI2S_TX "QUAT_MI2S_TX"
 #define LPASS_BE_SEC_MI2S_RX "SEC_MI2S_RX"
@@ -135,6 +135,11 @@
 #define LPASS_BE_QUAT_TDM_RX_7 "QUAT_TDM_RX_7"
 #define LPASS_BE_QUAT_TDM_TX_7 "QUAT_TDM_TX_7"
 
+/* For multimedia front-ends, asm session is allocated dynamically.
+ * Hence, asm session/multimedia front-end mapping has to be maintained.
+ * Due to this reason, additional multimedia front-end must be placed before
+ * non-multimedia front-ends.
+ */
 
 enum {
 	MSM_FRONTEND_DAI_MULTIMEDIA1 = 0,
@@ -341,10 +346,13 @@ struct msm_pcm_routing_evt {
 };
 
 struct msm_pcm_routing_bdai_data {
-	u16 port_id; 
-	u8 active; 
-	unsigned long fe_sessions; 
-	u64 port_sessions; 
+	u16 port_id; /* AFE port ID */
+	u8 active; /* track if this backend is enabled */
+	unsigned long fe_sessions; /* Front-end sessions */
+	u64 port_sessions; /* track Tx BE ports -> Rx BE
+			    * number of BE should not exceed
+			    * the size of this field
+			    */
 	unsigned int  sample_rate;
 	unsigned int  channel;
 	unsigned int  format;
@@ -353,8 +361,8 @@ struct msm_pcm_routing_bdai_data {
 };
 
 struct msm_pcm_routing_fdai_data {
-	u16 be_srate; 
-	int strm_id; 
+	u16 be_srate; /* track prior backend sample rate for flushing purpose */
+	int strm_id; /* ASM stream ID */
 	int perf_mode;
 	struct msm_pcm_routing_evt event_info;
 };
@@ -372,6 +380,7 @@ struct msm_pcm_stream_app_type_cfg {
 	int sample_rate;
 };
 
+//HTC_AUD_START
 struct htc_adm_effect_s {
 	u16 used;
 	u16 port_id;
@@ -388,7 +397,12 @@ enum HTC_ADM_EFFECT_ID {
 	HTC_ADM_EFFECT_ONEDOTONE_RAMPING,
 	HTC_ADM_EFFECT_MAX,
 };
+//HTC_AUD_END
 
+/* dai_id: front-end ID,
+ * dspst_id:  DSP audio stream ID
+ * stream_type: playback or capture
+ */
 int msm_pcm_routing_reg_phy_stream(int fedai_id, int perf_mode, int dspst_id,
 				   int stream_type);
 void msm_pcm_routing_reg_psthr_stream(int fedai_id, int dspst_id,
@@ -417,7 +431,9 @@ void msm_pcm_routing_reg_stream_app_type_cfg(int fedai_id, int app_type,
 			int acdb_dev_id, int sample_rate, int session_type);
 int msm_pcm_routing_get_stream_app_type_cfg(int fedai_id, int session_type,
 			int *app_type, int *acdb_dev_id, int *sample_rate);
+//HTC_AUD_START
 int htc_adm_effect_control(enum HTC_ADM_EFFECT_ID effect_id, u16 port_id, uint32_t copp_id,
 					uint32_t payload_size, void *payload);
 ushort get_adm_custom_effect_status(void);
-#endif 
+//HTC_AUD_END
+#endif /*_MSM_PCM_H*/

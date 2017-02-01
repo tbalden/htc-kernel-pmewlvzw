@@ -48,7 +48,7 @@ static void PIL_Show_Time(void)
 	struct timespec ts_rtc;
 	struct rtc_time tm;
 
-	
+	//rtc
 	getnstimeofday(&ts_rtc);
 	rtc_time_to_tm(ts_rtc.tv_sec - (sys_tz.tz_minuteswest * 60), &tm);
 
@@ -93,12 +93,12 @@ static void log_modem_sfr(void)
 
 #if defined(CONFIG_HTC_DEBUG_SSR)
 
-       
+       /*+SSD_RIL: show time for debug*/
 	PIL_Show_Time();
-       
+       /*-SSD_RIL: show time for debug*/
 
-#if defined(CONFIG_HTC_FEATURES_SSR) 
-       if (get_radio_flag() & BIT(3)) 
+#if defined(CONFIG_HTC_FEATURES_SSR) /*+SSD_RIL: Set dump mode when modem send specific words in SSR reason*/
+       if (get_radio_flag() & BIT(3)) //Only enable under Radio flag =8;
        {
          if (strstr(reason, "[htc_disable_ssr]") || strstr(reason, "SFR Init: wdog or kernel error suspected") )
          {
@@ -114,7 +114,7 @@ static void log_modem_sfr(void)
            pr_info("%s: [pil] Modem request skip ramdump.\n", __func__);
          }
 	}
-#endif 
+#endif /*-SSD_RIL: Set dump mode when modem send specific words in SSR reason*/
 
 	subsys_set_restart_reason(dev, reason);
 #endif
@@ -138,7 +138,7 @@ static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 {
 	struct modem_data *drv = subsys_to_drv(dev_id);
 
-	
+	/* Ignore if we're the one that set the force stop GPIO */
 	if (drv->crash_shutdown)
 		return IRQ_HANDLED;
 
@@ -148,7 +148,7 @@ static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-#if 1 
+#if 1 //Modem_BSP++
 #include <linux/reboot.h>
 static irqreturn_t modem_reboot_intr_handler(int irq, void *dev_id)
 {
@@ -157,7 +157,7 @@ static irqreturn_t modem_reboot_intr_handler(int irq, void *dev_id)
 
 	return IRQ_HANDLED;
 }
-#endif 
+#endif //Modem_BSP--
 
 static irqreturn_t modem_stop_ack_intr_handler(int irq, void *dev_id)
 {
@@ -203,12 +203,17 @@ static int modem_powerup(const struct subsys_desc *subsys)
 
 	if (subsys->is_not_loadable)
 		return 0;
+	/*
+	 * At this time, the modem is shutdown. Therefore this function cannot
+	 * run concurrently with the watchdog bite error handler, making it safe
+	 * to unset the flag below.
+	 */
 	reinit_completion(&drv->stop_ack);
 	drv->subsys_desc.ramdump_disable = 0;
 	drv->ignore_errors = false;
 	drv->q6->desc.fw_name = subsys->fw_name;
 
-#if defined(CONFIG_HTC_FEATURES_SSR) 
+#if defined(CONFIG_HTC_FEATURES_SSR) /*+SSD_RIL: Set dump mode when modem send specific words in SSR reason*/
         if (htc_skip_ramdump==true)
         {
           htc_skip_ramdump=false;
@@ -216,7 +221,7 @@ static int modem_powerup(const struct subsys_desc *subsys)
           subsys_config_modem_enable_ramdump(drv->subsys);
           pr_info("%s: [pil] restore htc ramdump mode!!\n",__func__);
         }
-#endif 
+#endif /*-SSD_RIL: Set dump mode when modem send specific words in SSR reason*/
 
 	return pil_boot(&drv->q6->desc);
 }
@@ -292,9 +297,9 @@ static int pil_subsys_init(struct modem_data *drv,
 	drv->subsys_desc.ramdump = modem_ramdump;
 	drv->subsys_desc.crash_shutdown = modem_crash_shutdown;
 	drv->subsys_desc.err_fatal_handler = modem_err_fatal_intr_handler;
-#if 1 
+#if 1 //Modem_BSP++
 	drv->subsys_desc.reboot_req_handler = modem_reboot_intr_handler;
-#endif 
+#endif //Modem_BSP--
 	drv->subsys_desc.stop_ack_handler = modem_stop_ack_intr_handler;
 	drv->subsys_desc.wdog_bite_handler = modem_wdog_bite_intr_handler;
 
@@ -420,7 +425,7 @@ static int pil_mss_loadable_init(struct modem_data *drv,
 	drv->subsys_desc.pil_mss_memsetup =
 	of_property_read_bool(pdev->dev.of_node, "qcom,pil-mss-memsetup");
 
-	
+	/* Optional. */
 	if (of_property_match_string(pdev->dev.of_node,
 			"qcom,active-clock-names", "gpll0_mss_clk") >= 0)
 		q6->gpll0_mss_clk = devm_clk_get(&pdev->dev, "gpll0_mss_clk");
@@ -459,7 +464,7 @@ static int pil_mss_driver_probe(struct platform_device *pdev)
 	}
 	init_completion(&drv->stop_ack);
 
-	
+	/* Probe the MBA mem device if present */
 	ret = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 	if (ret)
 		return ret;

@@ -67,7 +67,7 @@ static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
 	while ((cp = strpbrk(cp + 1, " :")))
 		ntokens++;
 
-	
+	/* single number: apply to all CPUs */
 	if (!ntokens) {
 		if (sscanf(buf, "%u\n", &val) != 1)
 			return -EINVAL;
@@ -80,7 +80,7 @@ static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
 		goto check_enable;
 	}
 
-	
+	/* CPU:value pair */
 	if (!(ntokens % 2))
 		return -EINVAL;
 
@@ -96,7 +96,7 @@ static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
 		cp++;
 	}
 
-	
+	//assign input boost freq to all cpus in the same cluster
 	boost_freq = 0;
 	for_each_cpu(i, (struct cpumask *) (&big_cluster_mask)) {
 		if (!boost_freq && per_cpu(sync_info, i).input_boost_freq != 0) {
@@ -106,13 +106,13 @@ static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
 			per_cpu(sync_info, i).input_boost_freq = boost_freq;
 		}
 	}
-	
+	//check if need to do boost for big cluster
 	if (boost_freq)
 		wake_bc = 1;
 	else
 		wake_bc = 0;
 
-	
+	//assign input boost freq to all cpus in the same cluster
 	boost_freq = 0;
 	for_each_cpu(i, (struct cpumask *) (&little_cluster_mask)) {
 		if (!boost_freq && per_cpu(sync_info, i).input_boost_freq != 0) {
@@ -122,7 +122,7 @@ static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
 			per_cpu(sync_info, i).input_boost_freq = boost_freq;
 		}
 	}
-	
+	//check if need to do boost for little cluster
 	if (boost_freq)
 		wake_lc = 1;
 	else
@@ -160,6 +160,17 @@ static const struct kernel_param_ops param_ops_input_boost_freq = {
 };
 module_param_cb(input_boost_freq, &param_ops_input_boost_freq, NULL, 0644);
 
+/*
+ * The CPUFREQ_ADJUST notifier is used to override the current policy min to
+ * make sure policy min >= boost_min. The cpufreq framework then does the job
+ * of enforcing the new policy.
+ *
+ * The sync kthread needs to run on the CPU in question to avoid deadlocks in
+ * the wake up code. Achieve this by binding the thread to the respective
+ * CPU. But a CPU going offline unbinds threads from that CPU. So, set it up
+ * again each time the CPU comes back up. We can use CPUFREQ_START to figure
+ * out a CPU is coming online instead of registering for hotplug notifiers.
+ */
 static int boost_adjust_notify(struct notifier_block *nb, unsigned long val,
 				void *data)
 {
@@ -195,7 +206,7 @@ static void update_policy_online(void)
 {
 	unsigned int i;
 
-	
+	/* Re-evaluate policy to trigger adjust notifier for online CPUs */
 	get_online_cpus();
 
 	for_each_online_cpu(i) {
@@ -220,14 +231,14 @@ static void do_input_boost_rem(struct work_struct *work)
 	unsigned int i, ret;
 	struct cpu_sync *i_sync_info;
 
-	
+	/* Reset the input_boost_min for all CPUs in the system */
 	pr_debug("Resetting input boost min for all CPUs\n");
 	for_each_possible_cpu(i) {
 		i_sync_info = &per_cpu(sync_info, i);
 		i_sync_info->input_boost_min = 0;
 	}
 
-	
+	/* Update policies for all online CPUs */
 	update_policy_online();
 
 	if (sched_boost_active) {
@@ -275,7 +286,7 @@ static int do_input_boost(void *data)
 			}
 		}
 
-		
+		/* Enable scheduler boost to migrate tasks to big cluster */
 		if (sched_boost_on_input) {
 			ret = sched_set_boost(1);
 			if (ret)
@@ -300,11 +311,11 @@ static void cpuboost_input_event(struct input_handle *handle,
 	if (!input_boost_enabled)
 		return;
 
-	
+	/* touch down. */
 	if (type == EV_ABS && code == ABS_MT_TRACKING_ID && value != -1)
 		need_boost = 1;
 
-	
+	/* press key */
 	if (type == EV_KEY && value == 1 &&
 		(code == KEY_POWER || code == KEY_VOLUMEUP || code == KEY_VOLUMEDOWN))
 		need_boost = 1;
@@ -318,7 +329,7 @@ static void cpuboost_input_event(struct input_handle *handle,
 
 	cancel_delayed_work(&input_boost_rem);
 
-	
+	// up_task[0] for big cluster, up_task[1] for little cluster
 	if (wake_bc)
 		wake_up_process(up_task[0]);
 
@@ -368,7 +379,7 @@ static void cpuboost_input_disconnect(struct input_handle *handle)
 }
 
 static const struct input_device_id cpuboost_ids[] = {
-	
+	/* multi-touch touchscreen */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
@@ -377,7 +388,7 @@ static const struct input_device_id cpuboost_ids[] = {
 			BIT_MASK(ABS_MT_POSITION_X) |
 			BIT_MASK(ABS_MT_POSITION_Y) },
 	},
-	
+	/* touchpad */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
@@ -385,7 +396,7 @@ static const struct input_device_id cpuboost_ids[] = {
 		.absbit = { [BIT_WORD(ABS_X)] =
 			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
 	},
-	
+	/* Keypad */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
 		.evbit = { BIT_MASK(EV_KEY) },

@@ -64,6 +64,10 @@ int diag_mux_init()
 	md_logger.log_ops = &md_log_ops;
 	diag_md_init();
 
+	/*
+	 * Set USB logging as the default logger. This is the mode
+	 * Diag should be in when it initializes.
+	 */
 	diag_mux->usb_ptr = &usb_logger;
 	diag_mux->md_ptr = &md_logger;
 	diag_mux->logger = &usb_logger;
@@ -86,7 +90,7 @@ int diag_mux_register(int proc, int ctx, struct diag_mux_ops *ops)
 	if (proc < 0 || proc >= NUM_MUX_PROC)
 		return 0;
 
-	
+	/* Register with USB logger */
 	usb_logger.ops[proc] = ops;
 	err = diag_usb_register(proc, ctx, ops);
 	if (err) {
@@ -155,7 +159,7 @@ int diag_mux_close_peripheral(int proc, uint8_t peripheral)
 	struct diag_logger_t *logger = NULL;
 	if (proc < 0 || proc >= NUM_MUX_PROC)
 		return -EINVAL;
-	
+	/* Peripheral should account for Apps data as well */
 	if (peripheral > NUM_PERIPHERALS)
 		return -EINVAL;
 	if (!diag_mux)
@@ -185,16 +189,20 @@ int diag_mux_switch_logging(int *req_mode, int *peripheral_mask)
 
 	switch (*req_mode) {
 	case DIAG_USB_MODE:
+/*++ 2015/07/14, USB Team, PCN00012 ++*/
 		DIAG_INFO("sdlogging disable\n");
-		driver->qxdm2sd_drop = 1;	
+/*-- 2015/07/14, USB Team, PCN00012 --*/
+		driver->qxdm2sd_drop = 1;	/*++ 2015/02/02, USB Team, PCN00002 ++*/
 
 		new_mask = ~(*peripheral_mask) & diag_mux->mux_mask;
 		if (new_mask != DIAG_CON_NONE)
 			*req_mode = DIAG_MULTI_MODE;
 		break;
 	case DIAG_MEMORY_DEVICE_MODE:
+/*++ 2015/07/14, USB Team, PCN00012 ++*/
 		DIAG_INFO("sdlogging enable\n");
-		driver->qxdm2sd_drop = 0;	
+/*-- 2015/07/14, USB Team, PCN00012 --*/
+		driver->qxdm2sd_drop = 0;	/*++ 2015/02/02, USB Team, PCN00002 ++*/
 
 		new_mask = (*peripheral_mask) | diag_mux->mux_mask;
 		if (new_mask != DIAG_CON_ALL)

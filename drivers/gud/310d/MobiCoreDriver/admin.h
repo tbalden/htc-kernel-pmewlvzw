@@ -29,4 +29,4 @@ struct tee_object *tee_object_read(u32 spid, uintptr_t address, size_t length);
 void tee_object_free(struct tee_object *object);
 int is_authenticator_pid(pid_t pid);
 
-#endif 
+#endif /* _MC_ADMIN_H_ */

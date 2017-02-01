@@ -15,10 +15,12 @@
 #ifndef _MC_PM_H_
 #define _MC_PM_H_
 
-#include "platform.h"	
+#include "platform.h"	/* MC_BL_NOTIFIER */
 
 #ifdef MC_BL_NOTIFIER
+/* Initialize Power Management */
 int mc_pm_start(void);
+/* Free all Power Management resources*/
 void mc_pm_stop(void);
 #else
 static inline int mc_pm_start(void)
@@ -31,4 +33,4 @@ static inline void mc_pm_stop(void)
 }
 #endif
 
-#endif 
+#endif /* _MC_PM_H_ */

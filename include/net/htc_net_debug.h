@@ -39,4 +39,4 @@ do{ \
 		net_dbg_log_event("[NET]" fmt, ##args); \
 } while(0)
 
-#endif 
+#endif /* end of _HTC_NET_DEBUG_H */

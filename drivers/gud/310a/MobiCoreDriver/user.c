@@ -23,45 +23,66 @@
 #include "main.h"
 #include "user.h"
 #include "client.h"
-#include "mcp.h"	
+#include "mcp.h"	/* mcp_get_version */
 
+/*
+ * Get client object from file pointer
+ */
 static inline struct tee_client *get_client(struct file *file)
 {
 	return (struct tee_client *)file->private_data;
 }
 
+/*
+ * Callback for system open()
+ * A set of internal client data are created and initialized.
+ *
+ * @inode
+ * @file
+ * Returns 0 if OK or -ENOMEM if no allocation was possible.
+ */
 static int user_open(struct inode *inode, struct file *file)
 {
 	struct tee_client *client;
 
-	
+	/* Create client */
 	mc_dev_devel("from %s (%d)\n", current->comm, current->pid);
 	client = client_create(false);
 	if (!client)
 		return -ENOMEM;
 
-	
+	/* Store client in user file */
 	file->private_data = client;
 	return 0;
 }
 
+/*
+ * Callback for system close()
+ * The client object is freed.
+ * @inode
+ * @file
+ * Returns 0
+ */
 static int user_release(struct inode *inode, struct file *file)
 {
 	struct tee_client *client = get_client(file);
 
-	
+	/* Close client */
 	mc_dev_devel("from %s (%d)\n", current->comm, current->pid);
 	if (WARN(!client, "No client data available"))
 		return -EPROTO;
 
-	
+	/* Detach client from user file */
 	file->private_data = NULL;
 
-	
+	/* Destroy client, including remaining sessions */
 	client_close(client);
 	return 0;
 }
 
+/*
+ * Check r/w access to referenced memory
+ */
 static inline int ioctl_check_pointer(unsigned int cmd, int __user *uarg)
 {
 	int err = 0;
@@ -77,6 +98,15 @@ static inline int ioctl_check_pointer(unsigned int cmd, int __user *uarg)
 	return 0;
 }
 
+/*
+ * Callback for system ioctl()
+ * Implement most of ClientLib API functions
+ * @file	pointer to file
+ * @cmd		command
+ * @arg		arguments
+ *
+ * Returns 0 for OK and an errno in case of error
+ */
 static long user_ioctl(struct file *file, unsigned int id, unsigned long arg)
 {
 	struct tee_client *client = get_client(file);
@@ -93,7 +123,7 @@ static long user_ioctl(struct file *file, unsigned int id, unsigned long arg)
 
 	switch (id) {
 	case MC_IO_HAS_SESSIONS:
-		
+		/* Freeze the client */
 		if (client_has_sessions(client))
 			ret = -ENOTEMPTY;
 		else
@@ -130,7 +160,7 @@ static long user_ioctl(struct file *file, unsigned int id, unsigned long arg)
 			break;
 		}
 
-		
+		/* Call internal api */
 		ret = client_open_trustlet(client, &trustlet.sid, trustlet.spid,
 					   trustlet.buffer, trustlet.tlen,
 					   trustlet.tci, trustlet.tcilen);
@@ -179,7 +209,7 @@ static long user_ioctl(struct file *file, unsigned int id, unsigned long arg)
 		if (ret)
 			break;
 
-		
+		/* Fill in return struct */
 		if (copy_to_user(uarg, &map, sizeof(map))) {
 			ret = -EFAULT;
 			client_unmap_session_wsms(client, map.sid, map.bufs);
@@ -212,7 +242,7 @@ static long user_ioctl(struct file *file, unsigned int id, unsigned long arg)
 		if (ret)
 			break;
 
-		
+		/* Fill in return struct */
 		if (put_user(exit_code, &uerr->value)) {
 			ret = -EFAULT;
 			break;
@@ -240,12 +270,15 @@ static long user_ioctl(struct file *file, unsigned int id, unsigned long arg)
 	return ret;
 }
 
+/*
+ * Callback for system mmap()
+ */
 static int user_mmap(struct file *file, struct vm_area_struct *vmarea)
 {
 	struct tee_client *client = get_client(file);
 	u32 len = (u32)(vmarea->vm_end - vmarea->vm_start);
 
-	
+	/* Alloc contiguous buffer for this client */
 	return client_cbuf_create(client, len, NULL, vmarea);
 }
 

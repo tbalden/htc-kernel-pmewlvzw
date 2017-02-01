@@ -43,7 +43,7 @@ static atomic_t mnemosync_is_init = ATOMIC_INIT(0);
 struct mnemosyne_meta {
 	char *name;
 	int num;
-	int index;	
+	int index;	/* start index in raw data */
 };
 
 #undef DECLARE_MNEMOSYNE_START
@@ -94,7 +94,7 @@ static int mnemosyne_setup(phys_addr_t phys, phys_addr_t size)
 		return 0;
 	}
 
-	
+	/* dynamic map virtual address if base is not pre-set. */
 
 
 	mnemosyne_phys = (struct mnemosyne_data *) phys;
@@ -123,7 +123,7 @@ static int mnemosyne_setup(phys_addr_t phys, phys_addr_t size)
 			MNEMOSYNE_ELEMENT_SIZE_BIT_SHIFT);
 	pr_info("%s: init success.\n", MNEMOSYNE_MODULE_NAME);
 
-	
+	/* fill start index of each footprint to save query time */
 	for (i=0, index=0; i<sizeof(mnemosyne_meta_data)/sizeof(struct mnemosyne_meta); i++) {
 		mnemosyne_meta_data[i].index = index;
 		index += mnemosyne_meta_data[i].num;
@@ -137,7 +137,7 @@ static int mnemosyne_setup(phys_addr_t phys, phys_addr_t size)
 static int mnemosyne_parse_dt(struct device_node *node)
 {
 	phys_addr_t phys = 0, size = 0;
-	
+	//struct device_node *pnode = NULL;
 	int ret;
 	int i = 0, of_ret = 0;
 	char* mnemosyne_resource_name = "htc_mnemosyne_res";
@@ -151,7 +151,7 @@ static int mnemosyne_parse_dt(struct device_node *node)
 		goto PARSE_DT_ERR_OUT;
 	}
 
-	
+	/* Start DTB searching */
 	for(i = 0 ; (of_ret = of_address_to_resource(node, i, &r)) == 0 ; i++) {
 		if(!strcmp(mnemosyne_resource_name, r.name))
 			break;
@@ -161,7 +161,7 @@ static int mnemosyne_parse_dt(struct device_node *node)
 		printk("couldn't found resource \n");
 		return 1;
 	}
-	
+	/* End of DTB Searching */
 
 	size = resource_size(&r);
 	phys = r.start;
@@ -209,7 +209,7 @@ static const struct file_operations is_init_fops = {
 
 static void* rawdata_seq_start(struct seq_file *sfile, loff_t *pos)
 {
-	
+	/* early return for non-init driver. */
 	if (atomic_read(&mnemosync_is_init) == 0) {
 		pr_warn("%s: not init!\n", MNEMOSYNE_MODULE_NAME);
 		return NULL;
@@ -339,6 +339,7 @@ static int __init mnemosyne_init(void)
 
 	return platform_driver_register(&mnemosyne_driver);
 }
+/* do not move it before or equal to core_init, because we need /sys/kernel for SYSFS node. */
 arch_initcall(mnemosyne_init);
 
 int mnemosyne_is_ready(void)

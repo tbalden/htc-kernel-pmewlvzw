@@ -82,7 +82,7 @@ static inline bool is_valid_device(u32 device_id)
 
 static struct tee_client *client;
 static int open_count;
-static DEFINE_MUTEX(dev_mutex);	
+static DEFINE_MUTEX(dev_mutex);	/* Lock for the device */
 
 static bool clientlib_client_get(void)
 {
@@ -109,7 +109,7 @@ enum mc_result mc_open_device(u32 device_id)
 {
 	enum mc_result mc_result = MC_DRV_OK;
 
-	
+	/* Check parameters */
 	if (!is_valid_device(device_id))
 		return MC_DRV_ERR_UNKNOWN_DEVICE;
 
@@ -134,7 +134,7 @@ enum mc_result mc_close_device(u32 device_id)
 {
 	enum mc_result mc_result = MC_DRV_OK;
 
-	
+	/* Check parameters */
 	if (!is_valid_device(device_id))
 		return MC_DRV_ERR_UNKNOWN_DEVICE;
 
@@ -149,13 +149,13 @@ enum mc_result mc_close_device(u32 device_id)
 		goto end;
 	}
 
-	
+	/* Check sessions and freeze client */
 	if (client_has_sessions(client)) {
 		mc_result = MC_DRV_ERR_SESSION_PENDING;
 		goto end;
 	}
 
-	
+	/* Close the device */
 	client_close(client);
 	client = NULL;
 	open_count = 0;
@@ -174,7 +174,7 @@ enum mc_result mc_open_session(struct mc_session_handle *session,
 	};
 	enum mc_result ret;
 
-	
+	/* Check parameters */
 	if (!session || !uuid)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -184,7 +184,7 @@ enum mc_result mc_open_session(struct mc_session_handle *session,
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_open_session(client, &session->session_id, uuid,
 					  (uintptr_t)tci, len, false,
 					  &identity));
@@ -199,7 +199,7 @@ enum mc_result mc_open_trustlet(struct mc_session_handle *session, u32 spid,
 {
 	enum mc_result ret;
 
-	
+	/* Check parameters */
 	if (!session || !trustlet)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -209,7 +209,7 @@ enum mc_result mc_open_trustlet(struct mc_session_handle *session, u32 spid,
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_open_trustlet(client, &session->session_id, spid,
 					   (uintptr_t)trustlet, trustlet_len,
 					   (uintptr_t)tci, len));
@@ -222,7 +222,7 @@ enum mc_result mc_close_session(struct mc_session_handle *session)
 {
 	enum mc_result ret;
 
-	
+	/* Check parameters */
 	if (!session)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -232,7 +232,7 @@ enum mc_result mc_close_session(struct mc_session_handle *session)
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_remove_session(client, session->session_id));
 	clientlib_client_put();
 	return ret;
@@ -243,7 +243,7 @@ enum mc_result mc_notify(struct mc_session_handle *session)
 {
 	enum mc_result ret;
 
-	
+	/* Check parameters */
 	if (!session)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -253,7 +253,7 @@ enum mc_result mc_notify(struct mc_session_handle *session)
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_notify_session(client, session->session_id));
 	clientlib_client_put();
 	return ret;
@@ -265,7 +265,7 @@ enum mc_result mc_wait_notification(struct mc_session_handle *session,
 {
 	enum mc_result ret;
 
-	
+	/* Check parameters */
 	if (!session)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -275,7 +275,7 @@ enum mc_result mc_wait_notification(struct mc_session_handle *session,
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_waitnotif_session(client, session->session_id,
 					       timeout, false));
 	clientlib_client_put();
@@ -289,7 +289,7 @@ enum mc_result mc_malloc_wsm(u32 device_id, u32 align, u32 len, u8 **wsm,
 	enum mc_result ret;
 	uintptr_t va;
 
-	
+	/* Check parameters */
 	if (!is_valid_device(device_id))
 		return MC_DRV_ERR_UNKNOWN_DEVICE;
 
@@ -302,7 +302,7 @@ enum mc_result mc_malloc_wsm(u32 device_id, u32 align, u32 len, u8 **wsm,
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_cbuf_create(client, len, &va, NULL));
 	if (ret == MC_DRV_OK)
 		*wsm = (u8 *)va;
@@ -317,14 +317,14 @@ enum mc_result mc_free_wsm(u32 device_id, u8 *wsm)
 	enum mc_result ret;
 	uintptr_t va = (uintptr_t)wsm;
 
-	
+	/* Check parameters */
 	if (!is_valid_device(device_id))
 		return MC_DRV_ERR_UNKNOWN_DEVICE;
 
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_cbuf_free(client, va));
 	clientlib_client_put();
 	return ret;
@@ -338,7 +338,7 @@ enum mc_result mc_map(struct mc_session_handle *session, void *address,
 	struct mc_ioctl_buffer bufs[MC_MAP_MAX];
 	u32 i;
 
-	
+	/* Check parameters */
 	if (!session)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -351,7 +351,7 @@ enum mc_result mc_map(struct mc_session_handle *session, void *address,
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	bufs[0].va = (uintptr_t)address;
 	bufs[0].len = length;
 	for (i = 1; i < MC_MAP_MAX; i++)
@@ -376,7 +376,7 @@ enum mc_result mc_unmap(struct mc_session_handle *session, void *address,
 	struct mc_ioctl_buffer bufs[MC_MAP_MAX];
 	u32 i;
 
-	
+	/* Check parameters */
 	if (!session)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -389,7 +389,7 @@ enum mc_result mc_unmap(struct mc_session_handle *session, void *address,
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	bufs[0].va = (uintptr_t)address;
 	bufs[0].len = map_info->secure_virt_len;
 	bufs[0].sva = map_info->secure_virt_addr;
@@ -408,7 +408,7 @@ enum mc_result mc_get_session_error_code(struct mc_session_handle *session,
 {
 	enum mc_result ret;
 
-	
+	/* Check parameters */
 	if (!session)
 		return MC_DRV_ERR_INVALID_PARAMETER;
 
@@ -421,7 +421,7 @@ enum mc_result mc_get_session_error_code(struct mc_session_handle *session,
 	if (!clientlib_client_get())
 		return MC_DRV_ERR_DAEMON_DEVICE_NOT_OPEN;
 
-	
+	/* Call core api */
 	ret = convert(client_get_session_exitcode(client, session->session_id,
 						  exit_code));
 	clientlib_client_put();

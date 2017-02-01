@@ -22,4 +22,4 @@ static inline void mc_user_exit(void)
 {
 }
 
-#endif 
+#endif /* _USER_H_ */
