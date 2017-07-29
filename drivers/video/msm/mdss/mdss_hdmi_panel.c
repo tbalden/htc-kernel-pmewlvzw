@@ -32,11 +32,9 @@
 
 #define HDMI_TX_KHZ_TO_HZ                  1000U
 
-/* AVI INFOFRAME DATA */
 #define NUM_MODES_AVI 20
 #define AVI_MAX_DATA_BYTES 13
 
-/* Line numbers at which AVI Infoframe and Vendor Infoframe will be sent */
 #define AVI_IFRAME_LINE_NUMBER 1
 #define VENDOR_IFRAME_LINE_NUMBER 3
 
@@ -45,35 +43,15 @@
 	((d >> 16) & 0xff) + ((d >> 24) & 0xff))
 
 #define IFRAME_PACKET_OFFSET 0x80
-/*
- * InfoFrame Type Code:
- * 0x0 - Reserved
- * 0x1 - Vendor Specific
- * 0x2 - Auxiliary Video Information
- * 0x3 - Source Product Description
- * 0x4 - AUDIO
- * 0x5 - MPEG Source
- * 0x6 - NTSC VBI
- * 0x7 - 0xFF - Reserved
- */
 #define AVI_IFRAME_TYPE 0x2
 #define AVI_IFRAME_VERSION 0x2
 #define LEFT_SHIFT_BYTE(x) ((x) << 8)
 #define LEFT_SHIFT_WORD(x) ((x) << 16)
 #define LEFT_SHIFT_24BITS(x) ((x) << 24)
 
-/* AVI Infoframe data byte 3, bit 7 (msb) represents ITC bit */
 #define SET_ITC_BIT(byte)  (byte = (byte | BIT(7)))
 #define CLR_ITC_BIT(byte)  (byte = (byte & ~BIT(7)))
 
-/*
- * CN represents IT content type, if ITC bit in infoframe data byte 3
- * is set, CN bits will represent content type as below:
- * 0b00 Graphics
- * 0b01 Photo
- * 0b10 Cinema
- * 0b11 Game
-*/
 #define CONFIG_CN_BITS(bits, byte) \
 		(byte = (byte & ~(BIT(4) | BIT(5))) |\
 			((bits & (BIT(0) | BIT(1))) << 4))
@@ -245,7 +223,7 @@ static int hdmi_panel_config_avi(struct hdmi_panel *panel)
 		goto end;
 	}
 
-	/* Setup AVI Infoframe content */
+	
 	avi->pixel_format  = pinfo->out_format;
 	avi->is_it_content = panel->data->is_it_content;
 	avi->content_type  = panel->data->content_type;
@@ -284,7 +262,7 @@ static int hdmi_panel_setup_video(struct hdmi_panel *panel)
 		return -EPERM;
 	}
 
-	/* reduce horizontal params by half for YUV420 output */
+	
 	if (panel->vid_cfg.avi_iframe.pixel_format == MDP_Y_CBCR_H2V2)
 		div = 1;
 
@@ -349,14 +327,6 @@ static void hdmi_panel_set_avi_infoframe(struct hdmi_panel *panel)
 	avi = &panel->vid_cfg.avi_iframe;
 	timing = panel->vid_cfg.timing;
 
-	/*
-	 * BYTE - 1:
-	 *	0:1 - Scan Information
-	 *	2:3 - Bar Info
-	 *	4   - Active Format Info present
-	 *	5:6 - Pixel format type;
-	 *	7   - Reserved;
-	 */
 	avi_iframe[0] = (avi->scan_info & 0x3) |
 			(avi->bar_info.vert_binfo_present ? BIT(2) : 0) |
 			(avi->bar_info.horz_binfo_present ? BIT(3) : 0) |
@@ -368,12 +338,6 @@ static void hdmi_panel_set_avi_infoframe(struct hdmi_panel *panel)
 	else if (avi->pixel_format == MDP_Y_CBCR_H1V1)
 		avi_iframe[0] |= (0x2 << 5);
 
-	/*
-	 * BYTE - 2:
-	 *	0:3 - Active format info
-	 *	4:5 - Picture aspect ratio
-	 *	6:7 - Colorimetry info
-	 */
 	avi_iframe[1] |= 0x08;
 	if (timing->ar == HDMI_RES_AR_4_3)
 		avi_iframe[1] |= (0x1 << 4);
@@ -382,48 +346,31 @@ static void hdmi_panel_set_avi_infoframe(struct hdmi_panel *panel)
 
 	avi_iframe[1] |= (avi->colorimetry_info & 0x3) << 6;
 
-	/*
-	 * BYTE - 3:
-	 *	0:1 - Scaling info
-	 *	2:3 - Quantization range
-	 *	4:6 - Extended Colorimetry
-	 *	7   - IT content
-	 */
 	avi_iframe[2] |= (avi->scaling_info & 0x3) |
 			 ((avi->rgb_quantization_range & 0x3) << 2) |
 			 ((avi->ext_colorimetry_info & 0x7) << 4) |
 			 ((avi->is_it_content ? 0x1 : 0x0) << 7);
-	/*
-	 * BYTE - 4:
-	 *	0:7 - VIC
-	 */
 	if (timing->video_format < HDMI_VFRMT_END)
 		avi_iframe[3] = timing->video_format;
 
-	/*
-	 * BYTE - 5:
-	 *	0:3 - Pixel Repeat factor
-	 *	4:5 - Content type
-	 *	6:7 - YCC Quantization range
-	 */
 	avi_iframe[4] = (avi->pixel_rpt_factor & 0xF) |
 			((avi->content_type & 0x3) << 4) |
 			((avi->yuv_quantization_range & 0x3) << 6);
 
-	/* BYTE - 6,7: End of top bar */
+	
 	avi_iframe[5] = avi->bar_info.end_of_top_bar & 0xFF;
 	avi_iframe[6] = ((avi->bar_info.end_of_top_bar & 0xFF00) >> 8);
 
-	/* BYTE - 8,9: Start of bottom bar */
+	
 	avi_iframe[7] = avi->bar_info.start_of_bottom_bar & 0xFF;
 	avi_iframe[8] = ((avi->bar_info.start_of_bottom_bar & 0xFF00) >>
 			 8);
 
-	/* BYTE - 10,11: Endof of left bar */
+	
 	avi_iframe[9] = avi->bar_info.end_of_left_bar & 0xFF;
 	avi_iframe[10] = ((avi->bar_info.end_of_left_bar & 0xFF00) >> 8);
 
-	/* BYTE - 12,13: Start of right bar */
+	
 	avi_iframe[11] = avi->bar_info.start_of_right_bar & 0xFF;
 	avi_iframe[12] = ((avi->bar_info.start_of_right_bar & 0xFF00) >>
 			  8);
@@ -460,7 +407,7 @@ static void hdmi_panel_set_avi_infoframe(struct hdmi_panel *panel)
 		LEFT_SHIFT_24BITS(AVI_IFRAME_VERSION);
 	DSS_REG_W(io, HDMI_AVI_INFO3, reg_val);
 
-	/* AVI InfFrame enable (every frame) */
+	
 	DSS_REG_W(io, HDMI_INFOFRAME_CTRL0,
 		DSS_REG_R(io, HDMI_INFOFRAME_CTRL0) | BIT(1) | BIT(0));
 
@@ -473,20 +420,20 @@ static void hdmi_panel_set_avi_infoframe(struct hdmi_panel *panel)
 static void hdmi_panel_set_vendor_specific_infoframe(void *input)
 {
 	int i;
-	u8 vs_iframe[9]; /* two header + length + 6 data */
+	u8 vs_iframe[9]; 
 	u32 sum, reg_val;
 	u32 hdmi_vic, hdmi_video_format, s3d_struct = 0;
 	struct hdmi_panel *panel = input;
 	struct dss_io_data *io = panel->io;
 
-	/* HDMI Spec 1.4a Table 8-10 */
-	vs_iframe[0] = 0x81; /* type */
-	vs_iframe[1] = 0x1;  /* version */
-	vs_iframe[2] = 0x8;  /* length */
+	
+	vs_iframe[0] = 0x81; 
+	vs_iframe[1] = 0x1;  
+	vs_iframe[2] = 0x8;  
 
-	vs_iframe[3] = 0x0; /* PB0: checksum */
+	vs_iframe[3] = 0x0; 
 
-	/* PB1..PB3: 24 Bit IEEE Registration Code 00_0C_03 */
+	
 	vs_iframe[4] = 0x03;
 	vs_iframe[5] = 0x0C;
 	vs_iframe[6] = 0x00;
@@ -505,7 +452,7 @@ static void hdmi_panel_set_vendor_specific_infoframe(void *input)
 		}
 		hdmi_video_format = 0x2;
 		hdmi_vic = 0;
-		/* PB5: 3D_Structure[7:4], Reserved[3:0] */
+		
 		vs_iframe[8] = s3d_struct << 4;
 	} else {
 		hdmi_video_format = 0x1;
@@ -526,13 +473,13 @@ static void hdmi_panel_set_vendor_specific_infoframe(void *input)
 			hdmi_video_format = 0x0;
 			hdmi_vic = 0x0;
 		}
-		/* PB5: HDMI_VIC */
+		
 		vs_iframe[8] = hdmi_vic;
 	}
-	/* PB4: HDMI Video Format[7:5],  Reserved[4:0] */
+	
 	vs_iframe[7] = (hdmi_video_format << 5) & 0xE0;
 
-	/* compute checksum */
+	
 	sum = 0;
 	for (i = 0; i < 9; i++)
 		sum += vs_iframe[i];
@@ -546,7 +493,7 @@ static void hdmi_panel_set_vendor_specific_infoframe(void *input)
 		  vs_iframe[2];
 	DSS_REG_W(io, HDMI_VENSPEC_INFO0, reg_val);
 
-	/* vendor specific info-frame enable (every frame) */
+	
 	DSS_REG_W(io, HDMI_INFOFRAME_CTRL0,
 		DSS_REG_R(io, HDMI_INFOFRAME_CTRL0) | BIT(13) | BIT(12));
 
@@ -569,12 +516,7 @@ static void hdmi_panel_set_spd_infoframe(struct hdmi_panel *panel)
 	vendor_name = panel->spd_vendor_name;
 	product_description = panel->spd_product_description;
 
-	/* Setup Packet header and payload */
-	/*
-	 * 0x83 InfoFrame Type Code
-	 * 0x01 InfoFrame Version Number
-	 * 0x19 Length of Source Product Description InfoFrame
-	 */
+	
 	packet_header  = 0x83 | (0x01 << 8) | (0x19 << 16);
 	DSS_REG_W(io, HDMI_GENERIC1_HDR, packet_header);
 	check_sum += IFRAME_CHECKSUM_32(packet_header);
@@ -586,7 +528,7 @@ static void hdmi_panel_set_spd_infoframe(struct hdmi_panel *panel)
 	DSS_REG_W(io, HDMI_GENERIC1_1, packet_payload);
 	check_sum += IFRAME_CHECKSUM_32(packet_payload);
 
-	/* Product Description (7-bit ASCII code) */
+	
 	packet_payload = (vendor_name[7] & 0x7f)
 		| ((product_description[0] & 0x7f) << 8)
 		| ((product_description[1] & 0x7f) << 16)
@@ -615,24 +557,11 @@ static void hdmi_panel_set_spd_infoframe(struct hdmi_panel *panel)
 	DSS_REG_W(io, HDMI_GENERIC1_5, packet_payload);
 	check_sum += IFRAME_CHECKSUM_32(packet_payload);
 
-	/*
-	 * Source Device Information
-	 * 00h unknown
-	 * 01h Digital STB
-	 * 02h DVD
-	 * 03h D-VHS
-	 * 04h HDD Video
-	 * 05h DVC
-	 * 06h DSC
-	 * 07h Video CD
-	 * 08h Game
-	 * 09h PC general
-	 */
 	packet_payload = (product_description[15] & 0x7f) | 0x00 << 8;
 	DSS_REG_W(io, HDMI_GENERIC1_6, packet_payload);
 	check_sum += IFRAME_CHECKSUM_32(packet_payload);
 
-	/* Vendor Name (7bit ASCII code) */
+	
 	packet_payload = ((vendor_name[0] & 0x7f) << 8)
 		| ((vendor_name[1] & 0x7f) << 16)
 		| ((vendor_name[2] & 0x7f) << 24);
@@ -640,12 +569,6 @@ static void hdmi_panel_set_spd_infoframe(struct hdmi_panel *panel)
 	packet_payload |= ((0x100 - (0xff & check_sum)) & 0xff);
 	DSS_REG_W(io, HDMI_GENERIC1_0, packet_payload);
 
-	/*
-	 * GENERIC1_LINE | GENERIC1_CONT | GENERIC1_SEND
-	 * Setup HDMI TX generic packet control
-	 * Enable this packet to transmit every frame
-	 * Enable HDMI TX engine to transmit Generic packet 1
-	 */
 	packet_control = DSS_REG_R_ND(io, HDMI_GEN_PKT_CTRL);
 	packet_control |= ((0x1 << 24) | (1 << 5) | (1 << 4));
 	DSS_REG_W(io, HDMI_GEN_PKT_CTRL, packet_control);
@@ -690,7 +613,7 @@ static int hdmi_panel_setup_scrambler(struct hdmi_panel *panel)
 		return -EINVAL;
 	}
 
-	/* Scrambling is supported from HDMI TX 4.0 */
+	
 	if (panel->version < HDMI_TX_SCRAMBLER_MIN_TX_VERSION) {
 		pr_debug("scrambling not supported by tx\n");
 		return 0;
@@ -715,8 +638,8 @@ static int hdmi_panel_setup_scrambler(struct hdmi_panel *panel)
 		}
 
 		reg_val = DSS_REG_R(panel->io, HDMI_CTRL);
-		reg_val |= BIT(31); /* Enable Update DATAPATH_MODE */
-		reg_val |= BIT(28); /* Set SCRAMBLER_EN bit */
+		reg_val |= BIT(31); 
+		reg_val |= BIT(28); 
 
 		DSS_REG_W(panel->io, HDMI_CTRL, reg_val);
 
@@ -729,11 +652,6 @@ static int hdmi_panel_setup_scrambler(struct hdmi_panel *panel)
 			return rc;
 		}
 
-		/*
-		 * Setup hardware to periodically check for scrambler
-		 * status bit on the sink. Sink should set this bit
-		 * with in 200ms after scrambler is enabled.
-		 */
 		timeout_hsync = hdmi_utils_get_timeout_in_hysnc(
 					panel->vid_cfg.timing,
 					HDMI_TX_SCRAMBLER_TIMEOUT_MSEC);
@@ -822,7 +740,7 @@ static int hdmi_panel_power_on(void *input)
 	if (panel->vic != panel->data->vic) {
 		res_changed = true;
 
-		pr_debug("switching from %d => %d\n",
+		pr_info("switching from %d => %d\n",
 			panel->vic, panel->data->vic);
 
 		panel->vic = panel->data->vic;
@@ -870,7 +788,7 @@ end:
 	panel->on = true;
 
 	info = panel->vid_cfg.timing;
-	pr_debug("%dx%d%s@%dHz %dMHz %s (%d)\n",
+	pr_info("%dx%d%s@%dHz %dMHz %s (%d)\n",
 		info->active_h, info->active_v,
 		info->interlaced ? "i" : "p",
 		info->refresh_rate / 1000,

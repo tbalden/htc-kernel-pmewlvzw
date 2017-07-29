@@ -21,4 +21,4 @@ int tlc_ack_cmd(struct tlc_tui_response_t *rsp_id);
 bool tlc_notify_event(uint32_t event_type);
 
 extern atomic_t fileopened;
-#endif /* TLCTUI_H_ */
+#endif 

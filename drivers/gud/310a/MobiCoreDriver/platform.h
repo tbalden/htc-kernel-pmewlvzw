@@ -14,15 +14,12 @@
 #ifndef _MC_PLATFORM_H_
 #define _MC_PLATFORM_H_
 
-/* MobiCore Interrupt for Qualcomm (DT IRQ has priority if present) */
 #define MC_INTR_SSIQ	280
 
-/* Use SMC for fastcalls */
 #define MC_SMC_FASTCALL
 
 #include <linux/types.h>
 
-/*--------------- Implementation -------------- */
 #if defined(CONFIG_ARCH_APQ8084) || defined(CONFIG_ARCH_MSM8916) || \
 	defined(CONFIG_ARCH_MSM8994) || defined(CONFIG_ARCH_MSM8909) || \
 	defined(CONFIG_ARCH_MSM8996)
@@ -54,7 +51,6 @@
 #include <mach/scm.h>
 #endif
 
-/* from following file */
 #define SCM_SVC_MOBICORE		250
 #define SCM_CMD_MOBICORE		1
 
@@ -102,40 +98,25 @@ static inline int smc_fastcall(void *fc_generic, size_t size)
 #endif
 #endif
 
-/*
- * Perform crypto clock enable/disable
- * of clocks
- *     "bus_clk"
- *     "core_clk"
- *     "iface_clk"
- */
 #if !defined(CONFIG_ARCH_MSM8994) || defined(CONFIG_ARCH_MSM8996)
 #define MC_CRYPTO_CLOCK_MANAGEMENT
 #endif
 
-/*
- * Perform clock enable/disable for clock  "core_clk_src"
- */
 #if defined(CONFIG_ARCH_MSM8916) || defined(CONFIG_ARCH_MSM8909) || \
 	defined(CONFIG_ARCH_MSM8996)
 #define MC_DEVICE_PROPNAME "qcom,mcd"
 #if defined(MC_CRYPTO_CLOCK_MANAGEMENT)
 #define MC_CLOCK_CORESRC_PROPNAME "qcom,ce-opp-freq"
 #define MC_CLOCK_CORESRC_DEFAULTRATE 100000000
-#endif /* MC_CRYPTO_CLOCK_MANAGEMENT */
+#endif 
 #endif
 
 #if !defined(CONFIG_ARCH_MSM8996)
-/* Fastcall value should be the one for armv7, even if on armv8,
- * as long as the __aarch32__ flag is not activated in SW.
- * But for 8996, architecture is armv8 with __aarch32__ in Sw.
- */
 #define MC_ARMV7_FC
-#endif /* not CONFIG_ARCH_MSM8996 */
+#endif 
 
-/* uidgid.h does not exist in kernels before 3.5 */
 #if defined(CONFIG_ARCH_MSM8226)
 #define MC_NO_UIDGIT_H
-#endif /* CONFIG_ARCH_MSM8226 */
+#endif 
 
-#endif /* _MC_PLATFORM_H_ */
+#endif 

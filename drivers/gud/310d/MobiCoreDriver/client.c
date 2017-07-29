@@ -22,45 +22,39 @@
 #include "public/mc_admin.h"
 
 #include "main.h"
-#include "admin.h"	/* tee_object* */
+#include "admin.h"	
 #include "mcp.h"
 #include "mmu.h"
 #include "session.h"
 #include "client.h"
 
-/* Context */
 static struct client_ctx {
-	/* Clients list */
+	
 	struct mutex		clients_lock;
 	struct list_head	clients;
-	/* Clients waiting for their last cbuf to be released */
+	
 	struct mutex		closing_clients_lock;
 	struct list_head	closing_clients;
 } client_ctx;
 
-/*
- * Contiguous buffer allocated to TLCs.
- * These buffers are used as world shared memory (wsm) to share with
- * secure world.
- */
 struct cbuf {
-	/* Client this cbuf belongs to */
+	
 	struct tee_client	*client;
-	/* List element for client's list of cbuf's */
+	
 	struct list_head	list;
-	/* Number of references kept to this buffer */
+	
 	struct kref		kref;
-	/* virtual Kernel start address */
+	
 	uintptr_t		addr;
-	/* virtual Userspace start address */
+	
 	uintptr_t		uaddr;
-	/* physical start address */
+	
 	phys_addr_t		phys;
-	/* 2^order = number of pages allocated */
+	
 	unsigned int		order;
-	/* Length of memory mapped to user */
+	
 	u32			len;
-	/* Has been freed via the API */
+	
 	bool			api_freed;
 };
 
@@ -74,18 +68,18 @@ static void cbuf_release(struct kref *kref)
 	struct cbuf *cbuf = container_of(kref, struct cbuf, kref);
 	struct tee_client *client = cbuf->client;
 
-	/* Unlist from client */
+	
 	mutex_lock(&client->cbufs_lock);
 	list_del_init(&cbuf->list);
 	mutex_unlock(&client->cbufs_lock);
-	/* Release client token */
+	
 	client_put(client);
-	/* Free */
+	
 	free_pages(cbuf->addr, cbuf->order);
 	mc_dev_devel("freed cbuf %p: client %p addr %lx uaddr %lx len %u\n",
 		     cbuf, client, cbuf->addr, cbuf->uaddr, cbuf->len);
 	kfree(cbuf);
-	/* Decrement debug counter */
+	
 	atomic_dec(&g_ctx.c_cbufs);
 }
 
@@ -94,9 +88,6 @@ static inline void cbuf_put(struct cbuf *cbuf)
 	kref_put(&cbuf->kref, cbuf_release);
 }
 
-/*
- * Map a kernel contiguous buffer to user space
- */
 static int cbuf_map(struct vm_area_struct *vmarea, uintptr_t addr, u32 len,
 		    uintptr_t *uaddr)
 {
@@ -131,21 +122,18 @@ static int cbuf_map(struct vm_area_struct *vmarea, uintptr_t addr, u32 len,
 	return 0;
 }
 
-/*
- * Allocate and initialize a client object
- */
 struct tee_client *client_create(bool is_from_kernel)
 {
 	struct tee_client *client;
 
-	/* Allocate client structure */
+	
 	client = kzalloc(sizeof(*client), GFP_KERNEL);
 	if (!client)
 		return NULL;
 
-	/* Increment debug counter */
+	
 	atomic_inc(&g_ctx.c_clients);
-	/* initialize members */
+	
 	client->pid = is_from_kernel ? 0 : current->pid;
 	memcpy(client->comm, current->comm, sizeof(client->comm));
 	kref_init(&client->kref);
@@ -155,7 +143,7 @@ struct tee_client *client_create(bool is_from_kernel)
 	INIT_LIST_HEAD(&client->closing_sessions);
 	mutex_init(&client->sessions_lock);
 	INIT_LIST_HEAD(&client->list);
-	/* Add client to list of clients */
+	
 	mutex_lock(&client_ctx.clients_lock);
 	list_add_tail(&client->list, &client_ctx.clients);
 	mutex_unlock(&client_ctx.clients_lock);
@@ -163,23 +151,18 @@ struct tee_client *client_create(bool is_from_kernel)
 	return client;
 }
 
-/*
- * Free client object + all objects it contains.
- * Can be called only by last user referencing the client,
- * therefore mutex lock seems overkill
- */
 static void client_release(struct kref *kref)
 {
 	struct tee_client *client;
 
 	client = container_of(kref, struct tee_client, kref);
-	/* Client is closed, remove from closing list */
+	
 	mutex_lock(&client_ctx.closing_clients_lock);
 	list_del(&client->list);
 	mutex_unlock(&client_ctx.closing_clients_lock);
 	mc_dev_devel("freed client %p\n", client);
 	kfree(client);
-	/* Decrement debug counter */
+	
 	atomic_dec(&g_ctx.c_clients);
 }
 
@@ -188,24 +171,16 @@ void client_put(struct tee_client *client)
 	kref_put(&client->kref, client_release);
 }
 
-/*
- * Returns true if client is a kernel object.
- */
 static inline bool client_is_kernel(struct tee_client *client)
 {
 	return !client->pid;
 }
 
-/*
- * Set client "closing" state, only if it contains no session.
- * Once in "closing" state, system "close" can be called.
- * Return: 0 if this state could be set.
- */
 bool client_has_sessions(struct tee_client *client)
 {
 	bool ret;
 
-	/* Check for sessions */
+	
 	mutex_lock(&client->sessions_lock);
 	ret = !list_empty(&client->sessions);
 	mutex_unlock(&client->sessions_lock);
@@ -213,10 +188,6 @@ bool client_has_sessions(struct tee_client *client)
 	return ret;
 }
 
-/*
- * At this point, nobody has access to the client anymore, so no new sessions
- * are being created.
- */
 static void client_close_sessions(struct tee_client *client)
 {
 	struct tee_session *session;
@@ -226,9 +197,9 @@ static void client_close_sessions(struct tee_client *client)
 		session = list_first_entry(&client->sessions,
 					   struct tee_session, list);
 
-		/* Move session to closing sessions list */
+		
 		list_move(&session->list, &client->closing_sessions);
-		/* Call session_close without lock */
+		
 		mutex_unlock(&client->sessions_lock);
 		session_close(session);
 		mutex_lock(&client->sessions_lock);
@@ -237,17 +208,13 @@ static void client_close_sessions(struct tee_client *client)
 	mutex_unlock(&client->sessions_lock);
 }
 
-/*
- * At this point, nobody has access to the client anymore, so no new contiguous
- * buffers are being created.
- */
 static void client_close_kernel_cbufs(struct tee_client *client)
 {
-	/* Put buffers allocated and not freed via the kernel API */
+	
 	if (!client_is_kernel(client))
 		return;
 
-	/* Look for cbufs that the client has not freed and put them */
+	
 	while (true) {
 		struct cbuf *cbuf = NULL, *candidate;
 
@@ -268,39 +235,27 @@ static void client_close_kernel_cbufs(struct tee_client *client)
 	}
 }
 
-/*
- * Release a client and the session+cbuf objects it contains.
- * @param client_t client
- * @return driver error code
- */
 void client_close(struct tee_client *client)
 {
-	/* Move client from active clients to closing clients for debug */
+	
 	mutex_lock(&client_ctx.clients_lock);
 	mutex_lock(&client_ctx.closing_clients_lock);
 	list_move(&client->list, &client_ctx.closing_clients);
 	mutex_unlock(&client_ctx.closing_clients_lock);
 	mutex_unlock(&client_ctx.clients_lock);
 	client_close_kernel_cbufs(client);
-	/* Close all remaining sessions */
+	
 	client_close_sessions(client);
 	client_put(client);
 	mc_dev_devel("client %p closed\n", client);
 }
 
-/*
- * The TEE is going to die, so get rid of whatever is shared with it
- */
 void clients_kill_sessions(void)
 {
 	struct tee_client *client;
 
 	mutex_lock(&client_ctx.clients_lock);
 	list_for_each_entry(client, &client_ctx.clients, list) {
-		/*
-		 * session_kill() will put the session which should get freed
-		 * and free its wsms/mmus and put any cbuf concerned
-		 */
 		mutex_lock(&client->sessions_lock);
 		while (!list_empty(&client->sessions)) {
 			struct tee_session *session;
@@ -315,11 +270,6 @@ void clients_kill_sessions(void)
 	mutex_unlock(&client_ctx.clients_lock);
 }
 
-/*
- * Open TA for given client. TA binary is provided by the daemon.
- * @param
- * @return driver error code
- */
 int client_open_session(struct tee_client *client, u32 *session_id,
 			const struct mc_uuid_t *uuid, uintptr_t	 tci,
 			size_t tci_len, bool is_gp_uuid,
@@ -329,10 +279,10 @@ int client_open_session(struct tee_client *client, u32 *session_id,
 	u32 sid = 0;
 	struct tee_object *obj;
 
-	/* Get secure object */
+	
 	obj = tee_object_get(uuid, is_gp_uuid);
 	if (IS_ERR(obj)) {
-		/* Try to select secure object inside the SWd if not found */
+		
 		if ((PTR_ERR(obj) == -ENOENT) && g_ctx.f_ta_auth)
 			obj = tee_object_select(uuid);
 
@@ -342,14 +292,14 @@ int client_open_session(struct tee_client *client, u32 *session_id,
 		}
 	}
 
-	/* Open session */
+	
 	err = client_add_session(client, obj, tci, tci_len, &sid, is_gp_uuid,
 				 identity);
-	/* Fill in return parameter */
+	
 	if (!err)
 		*session_id = sid;
 
-	/* Delete secure object */
+	
 	tee_object_free(obj);
 
 end:
@@ -358,11 +308,6 @@ end:
 	return err;
 }
 
-/*
- * Open TA for given client. TA binary is provided by the client.
- * @param
- * @return driver error code
- */
 int client_open_trustlet(struct tee_client *client, u32 *session_id, u32 spid,
 			 uintptr_t trustlet, size_t trustlet_len,
 			 uintptr_t tci, size_t tci_len)
@@ -374,21 +319,21 @@ int client_open_trustlet(struct tee_client *client, u32 *session_id, u32 spid,
 	u32 sid = 0;
 	int err = 0;
 
-	/* Create secure object from user-space trustlet binary */
+	
 	obj = tee_object_read(spid, trustlet, trustlet_len);
 	if (IS_ERR(obj)) {
 		err = PTR_ERR(obj);
 		goto end;
 	}
 
-	/* Open session */
+	
 	err = client_add_session(client, obj, tci, tci_len, &sid, false,
 				 &identity);
-	/* Fill in return parameter */
+	
 	if (!err)
 		*session_id = sid;
 
-	/* Delete secure object */
+	
 	tee_object_free(obj);
 
 end:
@@ -396,10 +341,6 @@ end:
 	return err;
 }
 
-/*
- * Opens a TA and add corresponding session object to given client
- * return: driver error code
- */
 int client_add_session(struct tee_client *client, const struct tee_object *obj,
 		       uintptr_t tci, size_t len, u32 *session_id, bool is_gp,
 		       struct mc_identity *identity)
@@ -408,42 +349,35 @@ int client_add_session(struct tee_client *client, const struct tee_object *obj,
 	struct tee_mmu *obj_mmu = NULL;
 	int ret = 0;
 
-	/*
-	 * Create session object with temp sid=0 BEFORE session is started,
-	 * otherwise if a GP TA is started and NWd session object allocation
-	 * fails, we cannot handle the potentially delayed GP closing.
-	 * Adding session to list must be done AFTER it is started (once we have
-	 * sid), therefore it cannot be done within session_create().
-	 */
 	session = session_create(client, is_gp, identity);
 	if (IS_ERR(session))
 		return PTR_ERR(session);
 
-	/* Create blob L2 table (blob is allocated by driver, so task=NULL) */
+	
 	obj_mmu = tee_mmu_create(NULL, obj->data, obj->length);
 	if (IS_ERR(obj_mmu)) {
 		ret = PTR_ERR(obj_mmu);
 		goto err;
 	}
 
-	/* Open session */
+	
 	ret = session_open(session, obj, obj_mmu, tci, len);
-	/* Blob table no more needed in any case */
+	
 	tee_mmu_delete(obj_mmu);
 	if (ret)
 		goto err;
 
 	mutex_lock(&client->sessions_lock);
-	/* Add session to client */
+	
 	list_add_tail(&session->list, &client->sessions);
-	/* Set sid returned by SWd */
+	
 	*session_id = session->mcp_session.id;
 	mutex_unlock(&client->sessions_lock);
 
 err:
-	/* Close or free session on error */
+	
 	if (ret == -ENODEV) {
-		/* The session must enter the closing process... */
+		
 		list_add_tail(&session->list, &client->closing_sessions);
 		session_close(session);
 	} else if (ret) {
@@ -453,15 +387,11 @@ err:
 	return ret;
 }
 
-/*
- * Remove a session object from client and close corresponding TA
- * Return: true if session was found and closed
- */
 int client_remove_session(struct tee_client *client, u32 session_id)
 {
 	struct tee_session *session = NULL, *candidate;
 
-	/* Move session from main list to closing list */
+	
 	mutex_lock(&client->sessions_lock);
 	list_for_each_entry(candidate, &client->sessions, list) {
 		if (candidate->mcp_session.id == session_id) {
@@ -475,15 +405,10 @@ int client_remove_session(struct tee_client *client, u32 session_id)
 	if (!session)
 		return -ENXIO;
 
-	/* Close session */
+	
 	return session_close(session);
 }
 
-/*
- * Find a session object and increment its reference counter.
- * Object cannot be freed until its counter reaches 0.
- * return: pointer to the object, NULL if not found.
- */
 static struct tee_session *client_get_session(struct tee_client *client,
 					      u32 session_id)
 {
@@ -505,114 +430,98 @@ static struct tee_session *client_get_session(struct tee_client *client,
 	return session;
 }
 
-/*
- * Send a notification to TA
- * @return driver error code
- */
 int client_notify_session(struct tee_client *client, u32 session_id)
 {
 	struct tee_session *session;
 	int ret;
 
-	/* Find/get session */
+	
 	session = client_get_session(client, session_id);
 	if (!session)
 		return -ENXIO;
 
-	/* Send command to SWd */
+	
 	ret = session_notify_swd(session);
-	/* Put session */
+	
 	session_put(session);
 	mc_dev_devel("session %x, exit with %d\n", session_id, ret);
 	return ret;
 }
 
-/*
- * Wait for a notification from TA
- * @return driver error code
- */
 int client_waitnotif_session(struct tee_client *client, u32 session_id,
 			     s32 timeout, bool silent_expiry)
 {
 	struct tee_session *session;
 	int ret;
 
-	/* Find/get session */
+	
 	session = client_get_session(client, session_id);
 	if (!session)
 		return -ENXIO;
 
 	ret = session_waitnotif(session, timeout, silent_expiry);
-	/* Put session */
+	
 	session_put(session);
 	mc_dev_devel("session %x, exit with %d\n", session_id, ret);
 	return ret;
 }
 
-/*
- * Read session exit/termination code
- */
 int client_get_session_exitcode(struct tee_client *client, u32 session_id,
 				s32 *exit_code)
 {
 	struct tee_session *session;
 
-	/* Find/get session */
+	
 	session = client_get_session(client, session_id);
 	if (!session)
 		return -ENXIO;
 
-	/* Retrieve error */
+	
 	*exit_code = session_exitcode(session);
-	/* Put session */
+	
 	session_put(session);
 	mc_dev_devel("session %x, exit code %d\n", session_id, *exit_code);
 	return 0;
 }
 
-/* Share a buffer with given TA in SWd */
 int client_map_session_wsms(struct tee_client *client, u32 session_id,
 			    struct mc_ioctl_buffer *bufs)
 {
 	struct tee_session *session;
 	int ret;
 
-	/* Find/get session */
+	
 	session = client_get_session(client, session_id);
 	if (!session)
 		return -ENXIO;
 
-	/* Add buffer to the session */
+	
 	ret = session_wsms_add(session, bufs);
-	/* Put session */
+	
 	session_put(session);
 	mc_dev_devel("session %x, exit with %d\n", session_id, ret);
 	return ret;
 }
 
-/* Stop sharing a buffer with SWd */
 int client_unmap_session_wsms(struct tee_client *client, u32 session_id,
 			      const struct mc_ioctl_buffer *bufs)
 {
 	struct tee_session *session;
 	int ret;
 
-	/* Find/get session */
+	
 	session = client_get_session(client, session_id);
 	if (!session)
 		return -ENXIO;
 
-	/* Remove buffer from session */
+	
 	ret = session_wsms_remove(session, bufs);
-	/* Put session */
+	
 	session_put(session);
 	mc_dev_devel("session %x, exit with %d\n", session_id, ret);
 	return ret;
 }
 
-/*
- * This callback is called on remap
- */
 static void cbuf_vm_open(struct vm_area_struct *vmarea)
 {
 	struct cbuf *cbuf = vmarea->vm_private_data;
@@ -620,9 +529,6 @@ static void cbuf_vm_open(struct vm_area_struct *vmarea)
 	cbuf_get(cbuf);
 }
 
-/*
- * This callback is called on unmap
- */
 static void cbuf_vm_close(struct vm_area_struct *vmarea)
 {
 	struct cbuf *cbuf = vmarea->vm_private_data;
@@ -635,9 +541,6 @@ static struct vm_operations_struct cbuf_vm_ops = {
 	.close = cbuf_vm_close,
 };
 
-/*
- * Create a cbuf object and add it to client
- */
 int client_cbuf_create(struct tee_client *client, u32 len, uintptr_t *addr,
 		       struct vm_area_struct *vmarea)
 {
@@ -657,35 +560,35 @@ int client_cbuf_create(struct tee_client *client, u32 len, uintptr_t *addr,
 		return -ENOMEM;
 	}
 
-	/* Allocate buffer descriptor structure */
+	
 	cbuf = kzalloc(sizeof(*cbuf), GFP_KERNEL);
 	if (!cbuf)
 		return -ENOMEM;
 
-	/* Increment debug counter */
+	
 	atomic_inc(&g_ctx.c_cbufs);
-	/* Allocate buffer */
+	
 	cbuf->addr = __get_free_pages(GFP_USER | __GFP_ZERO, order);
 	if (!cbuf->addr) {
 		kfree(cbuf);
-		/* Decrement debug counter */
+		
 		atomic_dec(&g_ctx.c_cbufs);
 		return -ENOMEM;
 	}
 
-	/* Map to user space if applicable */
+	
 	if (!client_is_kernel(client)) {
 		err = cbuf_map(vmarea, cbuf->addr, len, &cbuf->uaddr);
 		if (err) {
 			free_pages(cbuf->addr, order);
 			kfree(cbuf);
-			/* Decrement debug counter */
+			
 			atomic_dec(&g_ctx.c_cbufs);
 			return err;
 		}
 	}
 
-	/* Init descriptor members */
+	
 	cbuf->client = client;
 	cbuf->phys = virt_to_phys((void *)cbuf->addr);
 	cbuf->len = len;
@@ -693,20 +596,20 @@ int client_cbuf_create(struct tee_client *client, u32 len, uintptr_t *addr,
 	kref_init(&cbuf->kref);
 	INIT_LIST_HEAD(&cbuf->list);
 
-	/* Keep cbuf in VMA private data for refcounting (user-space clients) */
+	
 	if (vmarea) {
 		vmarea->vm_private_data = cbuf;
 		vmarea->vm_ops = &cbuf_vm_ops;
 	}
 
-	/* Fill return parameter for k-api */
+	
 	if (addr)
 		*addr = cbuf->addr;
 
-	/* Get a token on the client */
+	
 	client_get(client);
 
-	/* Add buffer to list */
+	
 	mutex_lock(&client->cbufs_lock);
 	list_add_tail(&cbuf->list, &client->cbufs);
 	mutex_unlock(&client->cbufs_lock);
@@ -715,11 +618,6 @@ int client_cbuf_create(struct tee_client *client, u32 len, uintptr_t *addr,
 	return err;
 }
 
-/*
- * Find a contiguous buffer (cbuf) in the cbuf list of given client that
- * contains given address and take a reference on it.
- * Return pointer to the object, or NULL if not found.
- */
 static struct cbuf *cbuf_get_by_addr(struct tee_client *client, uintptr_t addr)
 {
 	struct cbuf *cbuf = NULL, *candidate;
@@ -727,12 +625,12 @@ static struct cbuf *cbuf_get_by_addr(struct tee_client *client, uintptr_t addr)
 
 	mutex_lock(&client->cbufs_lock);
 	list_for_each_entry(candidate, &client->cbufs, list) {
-		/* Compare to kernel VA or user VA depending on client type */
+		
 		uintptr_t start = is_kernel ?
 			candidate->addr : candidate->uaddr;
 		uintptr_t end = start + candidate->len;
 
-		/* Check that (user) cbuf has not been unmapped */
+		
 		if (!start)
 			break;
 
@@ -749,10 +647,6 @@ static struct cbuf *cbuf_get_by_addr(struct tee_client *client, uintptr_t addr)
 	return cbuf;
 }
 
-/*
- * Remove a cbuf object from client, and mark it for freeing.
- * Freeing will happen once all current references are released.
- */
 int client_cbuf_free(struct tee_client *client, uintptr_t addr)
 {
 	struct cbuf *cbuf = cbuf_get_by_addr(client, addr);
@@ -762,7 +656,7 @@ int client_cbuf_free(struct tee_client *client, uintptr_t addr)
 		return -EINVAL;
 	}
 
-	/* Two references to put: the caller's and the one we just took */
+	
 	cbuf_put(cbuf);
 	mutex_lock(&client->cbufs_lock);
 	cbuf->api_freed = true;
@@ -774,7 +668,7 @@ int client_cbuf_free(struct tee_client *client, uintptr_t addr)
 struct tee_mmu *client_mmu_create(struct tee_client *client, uintptr_t va,
 				  u32 len, struct cbuf **cbuf_p)
 {
-	/* Check if buffer is contained in a cbuf */
+	
 	struct cbuf *cbuf = cbuf_get_by_addr(client, va);
 	struct task_struct *task = NULL;
 	struct tee_mmu *mmu;
@@ -787,7 +681,7 @@ struct tee_mmu *client_mmu_create(struct tee_client *client, uintptr_t va,
 			offset = va - cbuf->addr;
 		} else {
 			offset = va - cbuf->uaddr;
-			/* Update va to point to kernel address */
+			
 			va = cbuf->addr + offset;
 		}
 
@@ -797,11 +691,11 @@ struct tee_mmu *client_mmu_create(struct tee_client *client, uintptr_t va,
 			return ERR_PTR(-EINVAL);
 		}
 	} else if (!client_is_kernel(client)) {
-		/* Provide task if buffer was allocated in user space */
+		
 		task = current;
 	}
 
-	/* Build MMU table for buffer */
+	
 	mmu = tee_mmu_create(task, (void *)va, len);
 	if (IS_ERR_OR_NULL(mmu) && cbuf)
 		cbuf_put(cbuf);
@@ -854,7 +748,7 @@ static int client_debug_structs(struct kasnprintf_buf *buf,
 	if (ret < 0)
 		return ret;
 
-	/* Buffers */
+	
 	mutex_lock(&client->cbufs_lock);
 	if (list_empty(&client->cbufs))
 		goto done_cbufs;
@@ -870,7 +764,7 @@ done_cbufs:
 	if (ret < 0)
 		return ret;
 
-	/* Sessions */
+	
 	mutex_lock(&client->sessions_lock);
 	list_for_each_entry(session, &client->sessions, list) {
 		ret = session_debug_structs(buf, session, false);

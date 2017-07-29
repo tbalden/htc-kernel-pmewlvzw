@@ -18,7 +18,6 @@
 #include <linux/proc_fs.h>
 #include <asm/uaccess.h>
 #include <linux/seq_file.h>
-//#include <mach/board.h>
 
 #define MSM_MAX_PARTITIONS 128
 
@@ -148,8 +147,12 @@ static ssize_t htc_cancel_fsync_write(struct file *file, const char __user *buff
 		size_t count, loff_t *ppos)
 {
 	int val;
+	char buf[64];
 
-	sscanf(buffer, "%d", &val);
+        if (copy_from_user(buf, buffer, 64))
+                return -EFAULT;
+
+	sscanf(buf, "%d", &val);
 
 	if (val == 1) {
 		pr_info("Cancel fsync.\n");
@@ -191,7 +194,7 @@ static int __init sysinfo_proc_init(void)
 		pr_info(KERN_ERR "%s: unable to create /proc entry of cancel_fsync\n", __func__);
 	cancel_fsync = 0;
 
-	/* NOTE: kernel 3.10 use proc_create_data to create /proc file node */
+	
 	entry = proc_create_data("emmc", 0644, NULL, &htc_emmc_partition_fops, NULL);
 	if (entry == NULL) {
 		pr_info(KERN_ERR "%s: unable to create /proc entry\n", __func__);

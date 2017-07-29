@@ -36,11 +36,6 @@ struct tui_mempool {
 
 static struct tui_mempool g_tui_mem_pool;
 
-/* basic implementation of a memory pool for TUI framebuffer.  This
- * implementation is using kmalloc, for the purpose of demonstration only.
- * A real implementation might prefer using more advanced allocator, like ION,
- * in order not to exhaust memory available to kmalloc
- */
 static bool allocate_tui_memory_pool(struct tui_mempool *pool, size_t size)
 {
 	bool ret = false;
@@ -74,65 +69,21 @@ static void free_tui_memory_pool(struct tui_mempool *pool)
 	memset(pool, 0, sizeof(*pool));
 }
 
-/**
- * hal_tui_init() - integrator specific initialization for kernel module
- *
- * This function is called when the kernel module is initialized, either at
- * boot time, if the module is built statically in the kernel, or when the
- * kernel is dynamically loaded if the module is built as a dynamic kernel
- * module. This function may be used by the integrator, for instance, to get a
- * memory pool that will be used to allocate the secure framebuffer and work
- * buffer for TUI sessions.
- *
- * Return: must return 0 on success, or non-zero on error. If the function
- * returns an error, the module initialization will fail.
- */
 uint32_t hal_tui_init(void)
 {
-	/* Allocate memory pool for the framebuffer
-	 */
 	if (!allocate_tui_memory_pool(&g_tui_mem_pool, TUI_MEMPOOL_SIZE))
 		return TUI_DCI_ERR_INTERNAL_ERROR;
 
 	return TUI_DCI_OK;
 }
 
-/**
- * hal_tui_exit() - integrator specific exit code for kernel module
- *
- * This function is called when the kernel module exit. It is called when the
- * kernel module is unloaded, for a dynamic kernel module, and never called for
- * a module built into the kernel. It can be used to free any resources
- * allocated by hal_tui_init().
- */
 void hal_tui_exit(void)
 {
-	/* delete memory pool if any */
+	
 	if (g_tui_mem_pool.va)
 		free_tui_memory_pool(&g_tui_mem_pool);
 }
 
-/**
- * hal_tui_alloc() - allocator for secure framebuffer and working buffer
- * @allocbuffer:    putput parameter that the allocator fills with the physical
- *                  addresses of the allocated buffers
- * @allocsize:      size of the buffer to allocate.  All the buffer are of the
- *                  same size
- * @number:         Number to allocate.
- *
- * This function is called when the module receives a CMD_TUI_SW_OPEN_SESSION
- * message from the secure driver.  The function must allocate 'number'
- * buffer(s) of physically contiguous memory, where the length of each buffer
- * is at least 'allocsize' bytes.  The physical address of each buffer must be
- * stored in the array of structure 'allocbuffer' which is provided as
- * arguments.
- *
- * Physical address of the first buffer must be put in allocate[0].pa , the
- * second one on allocbuffer[1].pa, and so on.  The function must return 0 on
- * success, non-zero on error.  For integrations where the framebuffer is not
- * allocated by the Normal World, this function should do nothing and return
- * success (zero).
- */
 uint32_t hal_tui_alloc(
 	struct tui_alloc_buffer_t allocbuffer[MAX_DCI_BUFFER_NUMBER],
 	size_t allocsize, uint32_t number)
@@ -159,7 +110,7 @@ uint32_t hal_tui_alloc(
 	}
 
 	if ((size_t)(allocsize*number) <= g_tui_mem_pool.size) {
-		/* requested buffer fits in the memory pool */
+		
 		allocbuffer[0].pa = (uint64_t) g_tui_mem_pool.pa;
 		allocbuffer[1].pa = (uint64_t) (g_tui_mem_pool.pa +
 						g_tui_mem_pool.size/2);
@@ -169,8 +120,6 @@ uint32_t hal_tui_alloc(
 			 allocbuffer[1].pa);
 		ret = TUI_DCI_OK;
 	} else {
-		/* requested buffer is bigger than the memory pool, return an
-		   error */
 		pr_debug("%s(%d): Memory pool too small\n", __func__, __LINE__);
 		ret = TUI_DCI_ERR_INTERNAL_ERROR;
 	}
@@ -178,65 +127,26 @@ uint32_t hal_tui_alloc(
 	return ret;
 }
 
-/**
- * hal_tui_free() - free memory allocated by hal_tui_alloc()
- *
- * This function is called at the end of the TUI session, when the TUI module
- * receives the CMD_TUI_SW_CLOSE_SESSION message. The function should free the
- * buffers allocated by hal_tui_alloc(...).
- */
 void hal_tui_free(void)
 {
 }
 
-/**
- * hal_tui_deactivate() - deactivate Normal World display and input
- *
- * This function should stop the Normal World display and, if necessary, Normal
- * World input. It is called when a TUI session is opening, before the Secure
- * World takes control of display and input.
- *
- * Return: must return 0 on success, non-zero otherwise.
- */
 uint32_t hal_tui_deactivate(void)
 {
-	/* Set linux TUI flag */
+	
 	trustedui_set_mask(TRUSTEDUI_MODE_TUI_SESSION);
-	/*
-	 * Stop NWd display here.  After this function returns, SWd will take
-	 * control of the display and input.  Therefore the NWd should no longer
-	 * access it
-	 * This can be done by calling the fb_blank(FB_BLANK_POWERDOWN) function
-	 * on the appropriate framebuffer device
-	 */
 	trustedui_set_mask(TRUSTEDUI_MODE_VIDEO_SECURED|
 			   TRUSTEDUI_MODE_INPUT_SECURED);
 
 	return TUI_DCI_OK;
 }
 
-/**
- * hal_tui_activate() - restore Normal World display and input after a TUI
- * session
- *
- * This function should enable Normal World display and, if necessary, Normal
- * World input. It is called after a TUI session, after the Secure World has
- * released the display and input.
- *
- * Return: must return 0 on success, non-zero otherwise.
- */
 uint32_t hal_tui_activate(void)
 {
-	/* Protect NWd */
+	
 	trustedui_clear_mask(TRUSTEDUI_MODE_VIDEO_SECURED|
 			     TRUSTEDUI_MODE_INPUT_SECURED);
-	/*
-	 * Restart NWd display here.  TUI session has ended, and therefore the
-	 * SWd will no longer use display and input.
-	 * This can be done by calling the fb_blank(FB_BLANK_UNBLANK) function
-	 * on the appropriate framebuffer device
-	 */
-	/* Clear linux TUI flag */
+	
 	trustedui_set_mode(TRUSTEDUI_MODE_OFF);
 	return TUI_DCI_OK;
 }

@@ -120,7 +120,7 @@ static int rmidev_sysfs_irq_enable(struct synaptics_rmi4_data *rmi4_data,
 		if (rmidev->irq_enabled)
 			return retval;
 
-		/* Clear interrupts first */
+		
 		retval = synaptics_rmi4_reg_read(rmi4_data,
 				rmi4_data->f01_data_base_addr + 1,
 				intr_status,
@@ -277,20 +277,6 @@ static ssize_t rmidev_sysfs_attn_state_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%u\n", attn_state);
 }
 
-/*
- * rmidev_llseek - used to set up register address
- *
- * @filp: file structure for seek
- * @off: offset
- *   if whence == SEEK_SET,
- *     high 16 bits: page address
- *     low 16 bits: register address
- *   if whence == SEEK_CUR,
- *     offset from current position
- *   if whence == SEEK_END,
- *     offset from end position (0xFFFF)
- * @whence: SEEK_SET, SEEK_CUR, or SEEK_END
- */
 static loff_t rmidev_llseek(struct file *filp, loff_t off, int whence)
 {
 	loff_t newpos;
@@ -335,19 +321,11 @@ clean_up:
 	return newpos;
 }
 
-/*
- * rmidev_read: - use to read data from rmi device
- *
- * @filp: file structure for read
- * @buf: user space buffer pointer
- * @count: number of bytes to read
- * @f_pos: offset (starting register address)
- */
 static ssize_t rmidev_read(struct file *filp, char __user *buf,
 		size_t count, loff_t *f_pos)
 {
 	ssize_t retval;
-	unsigned char tmpbuf[count + 1];
+	unsigned char *tmpbuf;
 	struct rmidev_data *dev_data = filp->private_data;
 
 	if (IS_ERR(dev_data)) {
@@ -355,13 +333,24 @@ static ssize_t rmidev_read(struct file *filp, char __user *buf,
 		return -EBADF;
 	}
 
-	if (count == 0)
-		return 0;
+	mutex_lock(&(dev_data->file_mutex));
 
+	if (*f_pos > REG_ADDR_LIMIT) {
+		retval = -EFAULT;
+		goto unlock;
+	}
 	if (count > (REG_ADDR_LIMIT - *f_pos))
 		count = REG_ADDR_LIMIT - *f_pos;
+	if (count == 0) {
+		retval = 0;
+		goto unlock;
+	}
 
-	mutex_lock(&(dev_data->file_mutex));
+	tmpbuf = kzalloc(count + 1, GFP_KERNEL);
+	if (!tmpbuf) {
+		retval = -ENOMEM;
+		goto unlock;
+	}
 
 	retval = synaptics_rmi4_reg_read(rmidev->rmi4_data,
 			*f_pos,
@@ -376,24 +365,18 @@ static ssize_t rmidev_read(struct file *filp, char __user *buf,
 		*f_pos += retval;
 
 clean_up:
+	kfree(tmpbuf);
+unlock:
 	mutex_unlock(&(dev_data->file_mutex));
 
 	return retval;
 }
 
-/*
- * rmidev_write: - used to write data to rmi device
- *
- * @filep: file structure for write
- * @buf: user space buffer pointer
- * @count: number of bytes to write
- * @f_pos: offset (starting register address)
- */
 static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 		size_t count, loff_t *f_pos)
 {
 	ssize_t retval;
-	unsigned char tmpbuf[count + 1];
+	unsigned char *tmpbuf;
 	struct rmidev_data *dev_data = filp->private_data;
 
 	if (IS_ERR(dev_data)) {
@@ -401,16 +384,29 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 		return -EBADF;
 	}
 
-	if (count == 0)
-		return 0;
+	mutex_lock(&(dev_data->file_mutex));
 
+	if (*f_pos > REG_ADDR_LIMIT) {
+		retval = -EFAULT;
+		goto unlock;
+	}
 	if (count > (REG_ADDR_LIMIT - *f_pos))
 		count = REG_ADDR_LIMIT - *f_pos;
+	if (count == 0) {
+		retval = 0;
+		goto unlock;
+	}
 
-	if (copy_from_user(tmpbuf, buf, count))
-		return -EFAULT;
+	tmpbuf = kzalloc(count + 1, GFP_KERNEL);
+	if (!tmpbuf) {
+		retval = -ENOMEM;
+		goto unlock;
+	}
 
-	mutex_lock(&(dev_data->file_mutex));
+	if (copy_from_user(tmpbuf, buf, count)) {
+		retval = -EFAULT;
+		goto clean_up;
+	}
 
 	retval = synaptics_rmi4_reg_write(rmidev->rmi4_data,
 			*f_pos,
@@ -418,17 +414,13 @@ static ssize_t rmidev_write(struct file *filp, const char __user *buf,
 			count);
 	if (retval >= 0)
 		*f_pos += retval;
-
+clean_up:
+	kfree(tmpbuf);
+unlock:
 	mutex_unlock(&(dev_data->file_mutex));
-
 	return retval;
 }
 
-/*
- * rmidev_open: enable access to rmi device
- * @inp: inode struture
- * @filp: file structure
- */
 static int rmidev_open(struct inode *inp, struct file *filp)
 {
 	int retval = 0;
@@ -458,11 +450,6 @@ static int rmidev_open(struct inode *inp, struct file *filp)
 	return retval;
 }
 
-/*
- * rmidev_release: - release access to rmi device
- * @inp: inode structure
- * @filp: file structure
- */
 static int rmidev_release(struct inode *inp, struct file *filp)
 {
 	struct synaptics_rmi4_data *rmi4_data = rmidev->rmi4_data;

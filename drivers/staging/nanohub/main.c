@@ -53,14 +53,6 @@
 #define ERR_RESET_COUNT		70
 #define ERR_WARNING_COUNT	10
 
-/**
- * struct gpio_config - this is a binding between platform data and driver data
- * @label:     for diagnostics
- * @flags:     to pass to gpio_request_one()
- * @options:   one or more of GPIO_OPT_* flags, below
- * @pdata_off: offset of u32 field in platform data with gpio #
- * @data_off:  offset of int field in driver data with irq # (optional)
- */
 struct gpio_config {
 	const char *label;
 	u16 flags;
@@ -138,7 +130,7 @@ static inline bool nanohub_has_priority_lock_locked(struct nanohub_data *data)
 static inline void nanohub_notify_thread(struct nanohub_data *data)
 {
 	atomic_set(&data->kthread_run, 1);
-	/* wake_up implementation works as memory barrier */
+	
 	wake_up_interruptible_sync(&data->kthread_wait);
 }
 
@@ -276,7 +268,7 @@ static inline void nanohub_handle_irq2(struct nanohub_data *data)
 
 static inline bool mcu_wakeup_try_lock(struct nanohub_data *data, int key)
 {
-	/* implementation contains memory barrier */
+	
 	return atomic_cmpxchg(&data->wakeup_acquired, 0, key) == 0;
 }
 
@@ -290,16 +282,15 @@ static inline void mcu_wakeup_unlock(struct nanohub_data *data, int key)
 static inline void nanohub_set_state(struct nanohub_data *data, int state)
 {
 	atomic_set(&data->thread_state, state);
-	smp_mb__after_atomic(); /* updated thread state is now visible */
+	smp_mb__after_atomic(); 
 }
 
 static inline int nanohub_get_state(struct nanohub_data *data)
 {
-	smp_mb__before_atomic(); /* wait for all updates to finish */
+	smp_mb__before_atomic(); 
 	return atomic_read(&data->thread_state);
 }
 
-/* the following fragment is based on wait_event_* code from wait.h */
 #define wait_event_interruptible_timeout_locked(q, cond, tmo)		\
 ({									\
 	long __ret = (tmo);						\
@@ -329,7 +320,7 @@ static inline int nanohub_get_state(struct nanohub_data *data)
 		if (!list_empty(&__wait.task_list))			\
 			list_del_init(&__wait.task_list);		\
 		else if (__ret == -ERESTARTSYS &&			\
-			 /*reimplementation of wait_abort_exclusive() */\
+			 \
 			 waitqueue_active(&(q)))			\
 			__wake_up_locked_key(&(q), TASK_INTERRUPTIBLE,	\
 			NULL);						\
@@ -391,9 +382,6 @@ int nanohub_wait_for_interrupt(struct nanohub_data *data)
 {
 	int ret = -EFAULT;
 
-	/* release the wakeup line, and wait for nanohub to send
-	 * us an interrupt indicating the transaction completed.
-	 */
 	spin_lock(&data->wakeup_wait.lock);
 	if (mcu_wakeup_gpio_is_locked(data)) {
 		mcu_wakeup_gpio_set_value(data, 1);
@@ -580,7 +568,6 @@ static inline int nanohub_wakeup_lock(struct nanohub_data *data, int mode)
 	return 0;
 }
 
-/* returns lock mode used to perform this lock */
 static inline int nanohub_wakeup_unlock(struct nanohub_data *data)
 {
 	int mode = atomic_read(&data->lock_mode);
@@ -895,7 +882,7 @@ static ssize_t nanohub_lock_bl(struct device *dev,
 	__nanohub_hw_reset(data, 1);
 
 	gpio_set_value(data->pdata->boot0_gpio, 0);
-	/* this command reboots itself */
+	
 	status = nanohub_bl_lock(data);
 	dev_info(dev, "%s: status=%02x\n", __func__, status);
 	msleep(350);
@@ -921,7 +908,7 @@ static ssize_t nanohub_unlock_bl(struct device *dev,
 	__nanohub_hw_reset(data, 1);
 
 	gpio_set_value(data->pdata->boot0_gpio, 0);
-	/* this command reboots itself (erasing the flash) */
+	
 	status = nanohub_bl_unlock(data);
 	dev_info(dev, "%s: status=%02x\n", __func__, status);
 	msleep(20);
@@ -1192,8 +1179,6 @@ static void nanohub_process_buffer(struct nanohub_data *data,
 	nanohub_io_put_buf(io, *buf);
 
 	*buf = NULL;
-	/* (for wakeup interrupts): hold a wake lock for 250ms so the sensor hal
-	 * has time to grab its own wake lock */
 	if (wakeup)
 		wake_lock_timeout(&data->wakelock_read, msecs_to_jiffies(250));
 	release_wakeup(data);
@@ -1265,7 +1250,7 @@ static int nanohub_kthread(void *arg)
 					continue;
 				}
 			} else if (ret == 0) {
-				/* queue empty, go to sleep */
+				
 				data->err_cnt = 0;
 				data->interrupts[0] &= ~0x00000006;
 				release_wakeup(data);
@@ -1291,8 +1276,6 @@ static int nanohub_kthread(void *arg)
 				nanohub_set_state(data, ST_IDLE);
 				continue;
 			}
-			/* pending interrupt, but no room to read data -
-			 * clear interrupts */
 			if (request_wakeup(data))
 				continue;
 			nanohub_comms_tx_rx_retrans(data,
@@ -1336,7 +1319,7 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		goto free_pdata;
 	}
 
-	/* optional (strongly recommended) */
+	
 	pdata->irq2_gpio = of_get_named_gpio(dt, "sensorhub,irq2-gpio", 0);
 
 	ret = pdata->wakeup_gpio =
@@ -1355,16 +1338,16 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		goto free_pdata;
 	}
 
-	/* optional (stm32f bootloader) */
+	
 	pdata->boot0_gpio = of_get_named_gpio(dt, "sensorhub,boot0-gpio", 0);
 
-	/* optional (spi) */
+	
 	pdata->spi_cs_gpio = of_get_named_gpio(dt, "sensorhub,spi-cs-gpio", 0);
 
-	/* optional (stm32f bootloader) */
+	
 	of_property_read_u32(dt, "sensorhub,bl-addr", &pdata->bl_addr);
 
-	/* optional (stm32f bootloader) */
+	
 	tmp = of_get_property(dt, "sensorhub,num-flash-banks", NULL);
 	if (tmp) {
 		pdata->num_flash_banks = be32_to_cpup(tmp);
@@ -1375,8 +1358,6 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		if (!pdata->flash_banks)
 			goto no_mem;
 
-		/* TODO: investigate replacing with of_property_read_u32_array
-		 */
 		i = 0;
 		of_property_for_each_u32(dt, "sensorhub,flash-banks", prop, tmp,
 					 u) {
@@ -1397,7 +1378,7 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		}
 	}
 
-	/* optional (stm32f bootloader) */
+	
 	tmp = of_get_property(dt, "sensorhub,num-shared-flash-banks", NULL);
 	if (tmp) {
 		pdata->num_shared_flash_banks = be32_to_cpup(tmp);
@@ -1408,8 +1389,6 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		if (!pdata->shared_flash_banks)
 			goto no_mem_shared;
 
-		/* TODO: investigate replacing with of_property_read_u32_array
-		 */
 		i = 0;
 		of_property_for_each_u32(dt, "sensorhub,shared-flash-banks",
 					 prop, tmp, u) {
@@ -1480,9 +1459,6 @@ static int nanohub_request_irqs(struct nanohub_data *data)
 		disable_irq(data->irq2);
 	}
 
-	/* if 2d request fails, hide this; it is optional IRQ,
-	 * and failure should not interrupt driver init sequence.
-	 */
 	return 0;
 }
 
@@ -1496,7 +1472,7 @@ static int nanohub_request_gpios(struct nanohub_data *data)
 		const char *label;
 		bool optional = gpio_is_optional(cfg);
 
-		ret = 0; /* clear errors on optional pins, if any */
+		ret = 0; 
 
 		if (!gpio_is_valid(gpio) && optional)
 			continue;

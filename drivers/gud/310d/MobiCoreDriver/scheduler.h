@@ -22,4 +22,4 @@ void mc_scheduler_stop(void);
 int mc_scheduler_suspend(void);
 int mc_scheduler_resume(void);
 
-#endif /* __MC_SCHEDULER_H__ */
+#endif 

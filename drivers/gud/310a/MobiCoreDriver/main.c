@@ -20,9 +20,9 @@
 #include <linux/suspend.h>
 
 #include "public/mc_user.h"
-#include "public/mc_admin.h"	/* MC_ADMIN_DEVNODE */
+#include "public/mc_admin.h"	
 
-#include "platform.h"		/* MC_PM_RUNTIME */
+#include "platform.h"		
 #include "main.h"
 #include "fastcall.h"
 #include "arm.h"
@@ -37,7 +37,6 @@
 
 #include "build_tag.h"
 
-/* Define a MobiCore device structure for use with dev_debug() etc */
 static struct device_driver driver = {
 	.name = "Trustonic"
 };
@@ -52,22 +51,22 @@ struct mc_device_ctx g_ctx = {
 
 static struct main_ctx {
 #ifdef MC_PM_RUNTIME
-	/* Whether hibernation succeeded */
+	
 	bool did_hibernate;
-	/* Reboot notifications */
+	
 	struct notifier_block reboot_notifier;
-	/* PM notifications */
+	
 	struct notifier_block pm_notifier;
 #endif
-	/* Devices */
+	
 	dev_t device;
 	struct class *class;
-	/* Admin device */
+	
 	struct cdev admin_cdev;
-	/* User device */
+	
 	dev_t user_dev;
 	struct cdev user_cdev;
-	/* Debug counters */
+	
 	struct mutex struct_counters_buf_mutex;
 	char struct_counters_buf[256];
 	int struct_counters_buf_len;
@@ -109,7 +108,7 @@ ssize_t debug_generic_read(struct file *file, char __user *user_buf,
 			   size_t count, loff_t *ppos,
 			   int (*function)(struct kasnprintf_buf *buf))
 {
-	/* Add/update buffer */
+	
 	if (!file->private_data || !*ppos) {
 		struct kasnprintf_buf *buf, *old_buf;
 		int ret;
@@ -205,7 +204,7 @@ static inline int device_user_init(void)
 	int ret = 0;
 
 	main_ctx.user_dev = MKDEV(MAJOR(main_ctx.device), 1);
-	/* Create the user node */
+	
 	mc_user_init(&main_ctx.user_cdev);
 	ret = cdev_add(&main_ctx.user_cdev, main_ctx.user_dev, 1);
 	if (ret) {
@@ -222,7 +221,7 @@ static inline int device_user_init(void)
 		return PTR_ERR(dev);
 	}
 
-	/* Create debugfs structs entry */
+	
 	debugfs_create_file("structs", 0400, g_ctx.debug_dir, NULL,
 			    &mc_debug_structs_ops);
 
@@ -261,21 +260,21 @@ static int suspend_notifier(struct notifier_block *nb, unsigned long event,
 	case PM_POST_SUSPEND:
 		return mc_scheduler_resume();
 	case PM_HIBERNATION_PREPARE:
-		/* Try to stop the TEE nicely (ignore failure) */
+		
 		mc_scheduler_suspend();
-		/* Make sure the TEE cannot run anymore */
+		
 		mc_scheduler_stop();
-		/* Flush log buffer */
+		
 		mc_logging_run();
 		break;
 	case PM_POST_HIBERNATION:
 		if (main_ctx.did_hibernate) {
-			/* Really did hibernate */
+			
 			clients_kill_sessions();
 			return mobicore_start();
 		}
 
-		/* Did not hibernate, just restart the TEE */
+		
 		ret = mc_scheduler_start();
 		if (!ret)
 			ret = mc_scheduler_resume();
@@ -283,7 +282,7 @@ static int suspend_notifier(struct notifier_block *nb, unsigned long event,
 
 	return ret;
 }
-#endif /* MC_PM_RUNTIME */
+#endif 
 
 static int mobicore_start(void)
 {
@@ -315,12 +314,12 @@ static int mobicore_start(void)
 		goto err_pm;
 	}
 
-	/* Must be called before creating the user device node to avoid race */
+	
 	ret = mcp_get_version(&version_info);
 	if (ret)
 		goto err_mcp_cmd;
 
-	/* CMP version is meaningless in this case and is thus not printed */
+	
 	mc_dev_info("\n"
 		    "    product_id        = %s\n"
 		    "    version_mci       = 0x%08x\n"
@@ -352,28 +351,28 @@ static int mobicore_start(void)
 		goto err_version;
 	}
 
-	/* Determine which features are supported */
+	
 	switch (version_info.version_mci) {
-	case MC_VERSION(1, 4):	/* 310 */
+	case MC_VERSION(1, 4):	
 		dynamic_lpae = true;
-		/* Fall through */
+		
 	case MC_VERSION(1, 3):
 		g_ctx.f_time = true;
-		/* Fall through */
+		
 	case MC_VERSION(1, 2):
 		g_ctx.f_client_login = true;
-		/* Fall through */
+		
 	case MC_VERSION(1, 1):
 		g_ctx.f_multimap = true;
-		/* Fall through */
-	case MC_VERSION(1, 0):	/* 302 */
+		
+	case MC_VERSION(1, 0):	
 		g_ctx.f_mem_ext = true;
 		g_ctx.f_ta_auth = true;
-		/* Fall through */
+		
 	case MC_VERSION(0, 7):
 		g_ctx.f_timeout = true;
-		/* Fall through */
-	case MC_VERSION(0, 6):	/* 301 */
+		
+	case MC_VERSION(0, 6):	
 		break;
 	}
 
@@ -483,7 +482,7 @@ static inline int device_admin_init(void)
 		goto err_class;
 	}
 
-	/* Create the ADMIN node */
+	
 	ret = mc_admin_init(&main_ctx.admin_cdev, mobicore_start,
 			    mobicore_stop);
 	if (ret)
@@ -504,7 +503,7 @@ static inline int device_admin_init(void)
 		goto err_device;
 	}
 
-	/* Create debugfs sessions and MCP commands entries */
+	
 	debugfs_create_file("sessions", 0400, g_ctx.debug_dir, NULL,
 			    &mc_debug_sessions_ops);
 	debugfs_create_file("last_mcp_commands", 0400, g_ctx.debug_dir, NULL,
@@ -531,11 +530,6 @@ static inline void device_admin_exit(void)
 	unregister_chrdev_region(main_ctx.device, 2);
 }
 
-/*
- * This function is called by the kernel during startup or by a insmod command.
- * This device is installed and registered as cdev, then interrupt and
- * queue handling is set up
- */
 static int mobicore_probe(struct platform_device *pdev)
 {
 	int err = 0;
@@ -547,22 +541,22 @@ static int mobicore_probe(struct platform_device *pdev)
 #ifdef MOBICORE_COMPONENT_BUILD_TAG
 	mc_dev_info("MobiCore %s\n", MOBICORE_COMPONENT_BUILD_TAG);
 #endif
-	/* Hardware does not support ARM TrustZone -> Cannot continue! */
+	
 	if (!has_security_extensions()) {
 		mc_dev_err("Hardware doesn't support ARM TrustZone!\n");
 		return -ENODEV;
 	}
 
-	/* Running in secure mode -> Cannot load the driver! */
+	
 	if (is_secure_mode()) {
 		mc_dev_err("Running in secure MODE!\n");
 		return -ENODEV;
 	}
 
-	/* Make sure we can create debugfs entries */
+	
 	g_ctx.debug_dir = debugfs_create_dir("trustonic_tee", NULL);
 
-	/* Initialize debug counters */
+	
 	atomic_set(&g_ctx.c_clients, 0);
 	atomic_set(&g_ctx.c_cbufs, 0);
 	atomic_set(&g_ctx.c_sessions, 0);
@@ -570,14 +564,14 @@ static int mobicore_probe(struct platform_device *pdev)
 	atomic_set(&g_ctx.c_mmus, 0);
 	atomic_set(&g_ctx.c_maps, 0);
 	mutex_init(&main_ctx.struct_counters_buf_mutex);
-	/* Create debugfs info entry */
+	
 	debugfs_create_file("structs_counters", 0400, g_ctx.debug_dir, NULL,
 			    &mc_debug_struct_counters_ops);
 
-	/* Initialize common API layer */
+	
 	client_init();
 
-	/* Initialize plenty of nice features */
+	
 	err = mc_fastcall_init();
 	if (err) {
 		mc_dev_err("Fastcall support init failed!\n");
@@ -602,10 +596,6 @@ static int mobicore_probe(struct platform_device *pdev)
 		goto fail_mc_device_sched_init;
 	}
 
-	/*
-	 * Create admin dev so that daemon can already communicate with
-	 * the driver
-	 */
 	err = device_admin_init();
 	if (err)
 		goto fail_creat_dev_admin;
@@ -641,14 +631,10 @@ static struct platform_driver mc_plat_driver = {
 	}
 };
 
-#endif /* MC_DEVICE_PROPNAME */
+#endif 
 
 static int __init mobicore_init(void)
 {
-	/*
-	 * Do not remove or change the following trace.
-	 * The string "MobiCore" is used to detect if the TEE is in of the image
-	 */
 	mc_dev_info("MobiCore mcDrvModuleApi version is %d.%d\n",
 		    MCDRVMODULEAPI_VERSION_MAJOR, MCDRVMODULEAPI_VERSION_MINOR);
 #ifdef MC_DEVICE_PROPNAME

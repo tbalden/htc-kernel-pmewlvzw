@@ -17,26 +17,20 @@
 
 
 
-/* Response header */
 struct tlc_tui_response_t {
 	uint32_t	id;
 	uint32_t	return_code;
 };
 
-/* Command IDs */
 #define TLC_TUI_CMD_NONE                0
 #define TLC_TUI_CMD_START_ACTIVITY      1
 #define TLC_TUI_CMD_STOP_ACTIVITY       2
 
-/* Return codes */
 #define TLC_TUI_OK                  0
 #define TLC_TUI_ERROR               1
 #define TLC_TUI_ERR_UNKNOWN_CMD     2
 
 
-/*
- * defines for the ioctl TUI driver module function call from user space.
- */
 #define TUI_DEV_NAME		"t-base-tui"
 
 #define TUI_IO_MAGIC		't'
@@ -49,4 +43,4 @@ struct tlc_tui_response_t {
 #define reinit_completion(x) INIT_COMPLETION(*(x))
 #endif
 
-#endif /* TUI_IOCTL_H_ */
+#endif 

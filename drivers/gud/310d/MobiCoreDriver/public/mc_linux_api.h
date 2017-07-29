@@ -16,15 +16,8 @@
 
 #include <linux/types.h>
 
-/*
- * Switch TEE active core to core_num, defined as linux
- * core id
- */
 int mc_switch_core(int core_num);
 
-/*
- * Return TEE active core as Linux core id
- */
 int mc_active_core(void);
 
-#endif /* _MC_LINUX_API_H_ */
+#endif 

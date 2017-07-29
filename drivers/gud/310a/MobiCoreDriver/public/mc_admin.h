@@ -23,9 +23,8 @@ extern "C" {
 
 #define MC_ADMIN_DEVNODE "mobicore"
 
-/* Driver/daemon commands */
 enum {
-	/* Command 0 is reserved */
+	
 	MC_DRV_GET_ROOT_CONTAINER = 1,
 	MC_DRV_GET_SP_CONTAINER = 2,
 	MC_DRV_GET_TRUSTLET_CONTAINER = 3,
@@ -33,36 +32,35 @@ enum {
 	MC_DRV_SIGNAL_CRASH = 5,
 };
 
-/* MobiCore IOCTL magic number */
 #define MC_IOC_MAGIC    'M'
 
 struct mc_admin_request {
-	__u32		request_id;	/* Unique request identifier */
-	__u32		command;	/* Command to daemon */
-	struct mc_uuid_t uuid;		/* UUID of trustlet, if relevant */
-	__u32		is_gp;		/* Whether trustlet is GP */
-	__u32		spid;		/* SPID of trustlet, if relevant */
+	__u32		request_id;	
+	__u32		command;	
+	struct mc_uuid_t uuid;		
+	__u32		is_gp;		
+	__u32		spid;		
 };
 
 struct mc_admin_response {
-	__u32		request_id;	/* Unique request identifier */
-	__u32		error_no;	/* Errno from daemon */
-	__u32		spid;		/* SPID of trustlet, if relevant */
-	__u32		service_type;	/* Type of trustlet being returned */
-	__u32		length;		/* Length of data to get */
-	/* Any data follows */
+	__u32		request_id;	
+	__u32		error_no;	
+	__u32		spid;		
+	__u32		service_type;	
+	__u32		length;		
+	
 };
 
 struct mc_admin_driver_info {
-	/* Version, and something else..*/
+	
 	__u32		drv_version;
 	__u32		initial_cmd_id;
 };
 
 struct mc_admin_load_info {
-	__u32		spid;		/* SPID of trustlet, if relevant */
-	__u64		address;	/* Address of the data */
-	__u32		length;		/* Length of data to get */
+	__u32		spid;		
+	__u64		address;	
+	__u32		length;		
 };
 
 #define MC_ADMIN_IO_GET_DRIVER_REQUEST \
@@ -79,4 +77,4 @@ struct mc_admin_load_info {
 #ifdef __cplusplus
 }
 #endif
-#endif /* __MC_ADMIN_IOCTL_H__ */
+#endif 

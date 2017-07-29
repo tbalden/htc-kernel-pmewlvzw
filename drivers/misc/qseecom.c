@@ -2069,6 +2069,7 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 	struct qseecom_load_app_64bit_ireq load_req_64bit;
 	void *cmd_buf = NULL;
 	size_t cmd_len;
+	bool first_time = false;
 
 	/* Copy the relevant information needed for loading the image */
 	if (copy_from_user(&load_img_req,
@@ -2144,6 +2145,7 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 		&qseecom.registered_app_list_lock, flags);
 		ret = 0;
 	} else {
+		first_time = true;
 		pr_warn("App (%s) does'nt exist, loading apps for first time\n",
 			(char *)(load_img_req.img_name));
 		/* Get the handle of the shared fd */
@@ -2275,8 +2277,15 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 	load_img_req.app_id = app_id;
 	if (copy_to_user(argp, &load_img_req, sizeof(load_img_req))) {
 		pr_err("copy_to_user failed\n");
-		kzfree(entry);
 		ret = -EFAULT;
+		if (first_time == true) {
+			spin_lock_irqsave(
+				&qseecom.registered_app_list_lock, flags);
+			list_del(&entry->list);
+			spin_unlock_irqrestore(
+				&qseecom.registered_app_list_lock, flags);
+			kzfree(entry);
+		}
 	}
 
 loadapp_err:
@@ -7144,8 +7153,10 @@ static int qseecom_open(struct inode *inode, struct file *file)
 	atomic_set(&data->ioctl_count, 0);
 
 	data->sglistinfo_ptr = kzalloc(SGLISTINFO_TABLE_SIZE, GFP_KERNEL);
-	if (!(data->sglistinfo_ptr))
+	if (!(data->sglistinfo_ptr)) {
+		kzfree(data);
 		return -ENOMEM;
+	}
 	return ret;
 }
 
@@ -8009,8 +8020,10 @@ static int qseecom_check_whitelist_feature(void)
 		qseecom.whitelist_support = true;
 		ret = 0;
 	} else {
-		pr_err("Failed to check whitelist: ret = %d, result = 0x%x\n",
+		pr_info("Check whitelist with ret = %d, result = 0x%x\n",
 			ret, resp.result);
+		qseecom.whitelist_support = false;
+		ret = 0;
 	}
 	kfree(buf);
 	return ret;

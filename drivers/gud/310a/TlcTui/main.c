@@ -30,13 +30,8 @@
 #include "tui-hal.h"
 #include "build_tag.h"
 
-/*static int tui_dev_major_number = 122; */
 
-/*module_param(tui_dev_major_number, int, 0000); */
-/*MODULE_PARM_DESC(major, */
-/* "The device major number used to register a unique char device driver"); */
 
-/* Static variables */
 static struct cdev tui_cdev;
 
 static long tui_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
@@ -71,7 +66,7 @@ static long tui_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 			return ret;
 		}
 
-		/* Write command id to user */
+		
 		pr_debug("IOCTL: sending command %d to user.\n", cmd_id);
 
 		if (copy_to_user(uarg, &cmd_id, sizeof(cmd_id)))
@@ -87,7 +82,7 @@ static long tui_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 
 		pr_info("TUI_IO_ACK\n");
 
-		/* Read user response */
+		
 		if (copy_from_user(&rsp_id, uarg, sizeof(rsp_id)))
 			ret = -EFAULT;
 		else
@@ -133,7 +128,6 @@ static const struct file_operations tui_fops = {
 	.release = tui_release
 };
 
-/*--------------------------------------------------------------------------- */
 static int __init tlc_tui_init(void)
 {
 	pr_info("Loading t-base-tui module.\n");
@@ -154,7 +148,7 @@ static int __init tlc_tui_init(void)
 
 	cdev_init(&tui_cdev, &tui_fops);
 	tui_cdev.owner = THIS_MODULE;
-	/*    tui_cdev.ops = &tui_fops; */
+	
 
 	err = cdev_add(&tui_cdev, devno, 1);
 	if (err) {

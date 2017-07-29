@@ -27,11 +27,6 @@
  * $Id: dhd_linux.h 399301 2013-04-29 21:41:52Z $
  */
 
-/* wifi platform functions for power, interrupt and pre-alloc, either
- * from Android-like platform device data, or Broadcom wifi platform
- * device data.
- *
- */
 #ifndef __DHD_LINUX_H__
 #define __DHD_LINUX_H__
 
@@ -43,13 +38,10 @@
 #ifdef DHD_WMF
 #include <dhd_wmf_linux.h>
 #endif
-/* Linux wireless extension support */
-#if defined(WL_WIRELESS_EXT)
-#include <wl_iw.h>
-#endif /* defined(WL_WIRELESS_EXT) */
+
 #if defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
-#endif /* defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND) */
+#endif 
 
 #if defined(CONFIG_WIFI_CONTROL_FUNC)
 #include <linux/wlan_plat.h>
@@ -65,18 +57,18 @@ struct wifi_platform_data {
 	int (*get_mac_addr)(unsigned char *buf);
 #if defined(CUSTOMER_HW_ONE)
 	int (*get_wake_irq)(void);
-#endif /* CUSTOMER_HW_ONE */
+#endif 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 58)) || defined(CUSTOM_COUNTRY_CODE)
 	void *(*get_country_code)(char *ccode, u32 flags);
-#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 58)) || defined (CUSTOM_COUNTRY_CODE) */
+#else 
 	void *(*get_country_code)(char *ccode);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 58)) */
+#endif 
 #if defined(CUSTOMER_HW_ONE)
 	int (*get_irq_number)(unsigned long *flags_ptr);
-#endif /* CUSTOMER_HW_ONE */
+#endif 
  };
-#endif /* CONFIG_WIFI_CONTROL_FUNC */
-#define DHD_REGISTRATION_TIMEOUT  12000  /* msec : allowed time to finished dhd registration */
+#endif 
+#define DHD_REGISTRATION_TIMEOUT  12000  
 
 typedef struct wifi_adapter_info {
 	const char	*name;
@@ -84,7 +76,7 @@ typedef struct wifi_adapter_info {
 	uint		intr_flags;
 	const char	*fw_path;
 	const char	*nv_path;
-	void		*wifi_plat_data;	/* wifi ctrl func, for backward compatibility */
+	void		*wifi_plat_data;	
 	uint		bus_type;
 	uint		bus_num;
 	uint		slot_num;
@@ -95,15 +87,14 @@ typedef struct bcmdhd_wifi_platdata {
 	wifi_adapter_info_t	*adapters;
 } bcmdhd_wifi_platdata_t;
 
-/** Per STA params. A list of dhd_sta objects are managed in dhd_if */
 typedef struct dhd_sta {
-	cumm_ctr_t cumm_ctr;    /* cummulative queue length of child flowrings */
-	uint16 flowid[NUMPRIO]; /* allocated flow ring ids (by priority) */
-	void * ifp;             /* associated dhd_if */
-	struct ether_addr ea;   /* stations ethernet mac address */
-	struct list_head list;  /* link into dhd_if::sta_list */
-	int idx;                /* index of self in dhd_pub::sta_pool[] */
-	int ifidx;              /* index of interface in dhd */
+	cumm_ctr_t cumm_ctr;    
+	uint16 flowid[NUMPRIO]; 
+	void * ifp;             
+	struct ether_addr ea;   
+	struct list_head list;  
+	int idx;                
+	int ifidx;              
 } dhd_sta_t;
 typedef dhd_sta_t dhd_sta_pool_t;
 
@@ -120,7 +111,7 @@ void *wifi_platform_get_country_code(wifi_adapter_info_t *adapter, char *ccode,
    u32 flags);
 #else
 void *wifi_platform_get_country_code(wifi_adapter_info_t *adapter, char *ccode);
-#endif /* CUSTOM_COUNTRY_CODE */
+#endif 
 void* wifi_platform_prealloc(wifi_adapter_info_t *adapter, int section, unsigned long size);
 void* wifi_platform_get_prealloc_func_ptr(wifi_adapter_info_t *adapter);
 
@@ -129,5 +120,5 @@ bool dhd_update_fw_nv_path(struct dhd_info *dhdinfo);
 
 #ifdef DHD_WMF
 dhd_wmf_t* dhd_wmf_conf(dhd_pub_t *dhdp, uint32 idx);
-#endif /* DHD_WMF */
-#endif /* __DHD_LINUX_H__ */
+#endif 
+#endif 

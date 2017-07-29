@@ -23,4 +23,4 @@ struct nanohub_platform_data {
 	struct nanohub_flash_bank *shared_flash_banks;
 };
 
-#endif /* __LINUX_PLATFORM_DATA_NANOHUB_H */
+#endif 

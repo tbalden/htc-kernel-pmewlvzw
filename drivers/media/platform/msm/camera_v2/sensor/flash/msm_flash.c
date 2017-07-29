@@ -18,29 +18,22 @@
 #include "msm_flash.h"
 #include "msm_camera_dt_util.h"
 #include "msm_cci.h"
-//HTC_START, porting flashlight control
 #include <linux/htc_flashlight.h>
-//HTC_END
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_info("[CAM][FL]"fmt, ##args)
 
-//HTC_START
 #define CONFIG_HTC_FLASHLIGHT_COMMON
 #define HTC_CAM_FEATURE_FLASH_RESTRICTION
-/*#define CONFIG_MSMB_CAMERA_DEBUG*/
-//HTC_END
 
 DEFINE_MSM_MUTEX(msm_flash_mutex);
 
 static struct v4l2_file_operations msm_flash_v4l2_subdev_fops;
 static struct led_trigger *torch_trigger;
 
-//HTC_START
 #ifdef HTC_CAM_FEATURE_FLASH_RESTRICTION
-static struct kobject *led_status_obj; // tmp remove for fc-1
-#endif //HTC_CAM_FEATURE_FLASH_RESTRICTION
-//HTC_END
+static struct kobject *led_status_obj; 
+#endif 
 
 static const struct of_device_id msm_flash_dt_match[] = {
 	{.compatible = "qcom,camera-flash", .data = NULL},
@@ -232,7 +225,7 @@ static int32_t msm_flash_i2c_init(
 		flash_ctrl->power_setting_array.power_setting =
 			compat_ptr(power_setting_array32->power_setting);
 
-		/* Validate power_up array size and power_down array size */
+		
 		if ((!flash_ctrl->power_setting_array.size) ||
 			(flash_ctrl->power_setting_array.size >
 			MAX_POWER_CONFIG) ||
@@ -247,7 +240,7 @@ static int32_t msm_flash_i2c_init(
 			power_setting_array32 = NULL;
 			return -EINVAL;
 		}
-		/* Copy the settings from compat struct to regular struct */
+		
 		msm_flash_copy_power_settings_compat(
 			flash_ctrl->power_setting_array.power_setting_a,
 			power_setting_array32->power_setting_a,
@@ -282,6 +275,16 @@ static int32_t msm_flash_i2c_init(
 		flash_ctrl->power_setting_array.size;
 	flash_ctrl->power_info.power_down_setting_size =
 		flash_ctrl->power_setting_array.size_down;
+
+	if ((flash_ctrl->power_info.power_setting_size > MAX_POWER_CONFIG) ||
+	(flash_ctrl->power_info.power_down_setting_size > MAX_POWER_CONFIG)) {
+		pr_err("%s:%d invalid power setting size=%d size_down=%d\n",
+			__func__, __LINE__,
+			flash_ctrl->power_info.power_setting_size,
+			flash_ctrl->power_info.power_down_setting_size);
+		rc = -EINVAL;
+		goto msm_flash_i2c_init_fail;
+	}
 
 	rc = msm_camera_power_up(&flash_ctrl->power_info,
 		flash_ctrl->flash_device_type,
@@ -331,7 +334,6 @@ static int32_t msm_flash_gpio_init(
 	int32_t i = 0;
 	int32_t rc = 0;
 
-//	CDBG("Enter");
 	for (i = 0; i < flash_ctrl->flash_num_sources; i++)
 		flash_ctrl->flash_op_current[i] = LED_FULL;
 
@@ -352,7 +354,6 @@ static int32_t msm_flash_gpio_init(
 
 	rc = flash_ctrl->func_tbl->camera_flash_off(flash_ctrl, flash_data);
 
-//	CDBG("Exit");
 	return rc;
 }
 
@@ -382,17 +383,17 @@ static int32_t msm_flash_i2c_release(
 static int32_t msm_flash_off(struct msm_flash_ctrl_t *flash_ctrl,
 	struct msm_flash_cfg_data_t *flash_data)
 {
-	//HTC_START, porting flashlight control
+	
 	#ifndef CONFIG_HTC_FLASHLIGHT_COMMON
-	//HTC_END
+	
 	int32_t i = 0;
-	//HTC_START, porting flashlight control
+	
 	#endif
-	//HTC_END
+	
 
 	CDBG("Enter\n");
 
-	//HTC_START, porting flashlight control
+	
 	#ifdef CONFIG_HTC_FLASHLIGHT_COMMON
 	if(htc_flash_main && htc_torch_main)
 	{
@@ -417,7 +418,7 @@ static int32_t msm_flash_off(struct msm_flash_ctrl_t *flash_ctrl,
 		pr_err("[CAM][FL]Front msm_flash_off, flashlight control is NULL\n");
 
 	#else
-	//HTC_END
+	
 
 	for (i = 0; i < flash_ctrl->flash_num_sources; i++)
 		if (flash_ctrl->flash_trigger[i])
@@ -429,9 +430,9 @@ static int32_t msm_flash_off(struct msm_flash_ctrl_t *flash_ctrl,
 	if (flash_ctrl->switch_trigger)
 		led_trigger_event(flash_ctrl->switch_trigger, 0);
 
-	//HTC_START, porting flashlight control
+	
 	#endif
-	//HTC_END
+	
 	CDBG("Exit\n");
 	return 0;
 }
@@ -546,21 +547,21 @@ static int32_t msm_flash_low(
 	struct msm_flash_ctrl_t *flash_ctrl,
 	struct msm_flash_cfg_data_t *flash_data)
 {
-	//HTC_START, porting flashlight control
+	
 	#ifndef CONFIG_HTC_FLASHLIGHT_COMMON
-	//HTC_END
+	
 	uint32_t curr = 0, max_current = 0;
 	int32_t i = 0;
-	//HTC_START, porting flashlight control
+	
 	#endif
-	//HTC_END
+	
 
 	CDBG("Enter\n");
-    //HTC_START, porting flashlight control
+    
     CDBG("pdev->id = %d\n", flash_ctrl->pdev->id);
-    //HTC_END
+    
 
-	//HTC_START, porting flashlight control
+	
 	#ifdef CONFIG_HTC_FLASHLIGHT_COMMON
 	if(htc_torch_main && htc_flash_main)
 	{
@@ -579,14 +580,14 @@ static int32_t msm_flash_low(
 		pr_err("[CAM][FL] Front msm_flash_low, flashlight control is NULL\n");
 
 	#else
-	//HTC_END
+	
 
-	/* Turn off flash triggers */
+	
 	for (i = 0; i < flash_ctrl->flash_num_sources; i++)
 		if (flash_ctrl->flash_trigger[i])
 			led_trigger_event(flash_ctrl->flash_trigger[i], 0);
 
-	/* Turn on flash triggers */
+	
 	for (i = 0; i < flash_ctrl->torch_num_sources; i++) {
 		if (flash_ctrl->torch_trigger[i]) {
 			max_current = flash_ctrl->torch_max_current[i];
@@ -607,9 +608,9 @@ static int32_t msm_flash_low(
 	if (flash_ctrl->switch_trigger)
 		led_trigger_event(flash_ctrl->switch_trigger, 1);
 
-	//HTC_START, porting flashlight control
+	
 	#endif
-	//HTC_END
+	
 
 	CDBG("Exit\n");
 	return 0;
@@ -619,19 +620,19 @@ static int32_t msm_flash_high(
 	struct msm_flash_ctrl_t *flash_ctrl,
 	struct msm_flash_cfg_data_t *flash_data)
 {
-	//HTC_START, porting flashlight control
+	
 	#ifndef CONFIG_HTC_FLASHLIGHT_COMMON
-	//HTC_END
+	
 	int32_t curr = 0;
 	int32_t max_current = 0;
 	int32_t i = 0;
-	//HTC_START, porting flashlight control
+	
 	#endif
-	//HTC_END
+	
 
 	CDBG("Enter\n");
 
-	//HTC_START, porting flashlight control
+	
 	#ifdef CONFIG_HTC_FLASHLIGHT_COMMON
 	if(htc_flash_main && htc_torch_main)
 	{
@@ -656,14 +657,14 @@ static int32_t msm_flash_high(
 		pr_err("[CAM][FL] Front msm_flash_high, flashlight control is NULL\n");
 
 	#else
-	//HTC_END
+	
 
-	/* Turn off torch triggers */
+	
 	for (i = 0; i < flash_ctrl->torch_num_sources; i++)
 		if (flash_ctrl->torch_trigger[i])
 			led_trigger_event(flash_ctrl->torch_trigger[i], 0);
 
-	/* Turn on flash triggers */
+	
 	for (i = 0; i < flash_ctrl->flash_num_sources; i++) {
 		if (flash_ctrl->flash_trigger[i]) {
 			max_current = flash_ctrl->flash_max_current[i];
@@ -684,9 +685,9 @@ static int32_t msm_flash_high(
 	if (flash_ctrl->switch_trigger)
 		led_trigger_event(flash_ctrl->switch_trigger, 1);
 
-	//HTC_START, porting flashlight control
+	
 	#endif
-	//HTC_END
+	
 
 	return 0;
 }
@@ -720,7 +721,6 @@ static int32_t msm_flash_config(struct msm_flash_ctrl_t *flash_ctrl,
 
 	mutex_lock(flash_ctrl->flash_mutex);
 
-//	CDBG("Enter %s type %d\n", __func__, flash_data->cfg_type);
 
 	switch (flash_data->cfg_type) {
 	case CFG_FLASH_INIT:
@@ -753,7 +753,6 @@ static int32_t msm_flash_config(struct msm_flash_ctrl_t *flash_ctrl,
 
 	mutex_unlock(flash_ctrl->flash_mutex);
 
-//	CDBG("Exit %s type %d\n", __func__, flash_data->cfg_type);
 
 	return rc;
 }
@@ -764,7 +763,6 @@ static long msm_flash_subdev_ioctl(struct v4l2_subdev *sd,
 	struct msm_flash_ctrl_t *fctrl = NULL;
 	void __user *argp = (void __user *)arg;
 
-//	CDBG("Enter\n");
 
 	if (!sd) {
 		pr_err("sd NULL\n");
@@ -795,7 +793,6 @@ static long msm_flash_subdev_ioctl(struct v4l2_subdev *sd,
 		pr_err_ratelimited("invalid cmd %d\n", cmd);
 		return -ENOIOCTLCMD;
 	}
-//	CDBG("Exit\n");
 }
 
 static struct v4l2_subdev_core_ops msm_flash_subdev_core_ops = {
@@ -878,7 +875,7 @@ static int32_t msm_flash_get_pmic_source_info(
 			CDBG("default trigger %s\n",
 				fctrl->flash_trigger_name[i]);
 
-			/* Read operational-current */
+			
 			rc = of_property_read_u32(flash_src_node,
 				"qcom,current",
 				&fctrl->flash_op_current[i]);
@@ -888,7 +885,7 @@ static int32_t msm_flash_get_pmic_source_info(
 				continue;
 			}
 
-			/* Read max-current */
+			
 			rc = of_property_read_u32(flash_src_node,
 				"qcom,max-current",
 				&fctrl->flash_max_current[i]);
@@ -898,14 +895,14 @@ static int32_t msm_flash_get_pmic_source_info(
 				continue;
 			}
 
-			/* Read max-duration */
+			
 			rc = of_property_read_u32(flash_src_node,
 				"qcom,duration",
 				&fctrl->flash_max_duration[i]);
 			if (rc < 0) {
 				pr_err("duration: read failed\n");
 				of_node_put(flash_src_node);
-				/* Non-fatal; this property is optional */
+				
 			}
 
 			of_node_put(flash_src_node);
@@ -958,7 +955,7 @@ static int32_t msm_flash_get_pmic_source_info(
 			CDBG("default trigger %s\n",
 				fctrl->torch_trigger_name[i]);
 
-			/* Read operational-current */
+			
 			rc = of_property_read_u32(torch_src_node,
 				"qcom,current",
 				&fctrl->torch_op_current[i]);
@@ -968,7 +965,7 @@ static int32_t msm_flash_get_pmic_source_info(
 				continue;
 			}
 
-			/* Read max-current */
+			
 			rc = of_property_read_u32(torch_src_node,
 				"qcom,max-current",
 				&fctrl->torch_max_current[i]);
@@ -1008,7 +1005,7 @@ static int32_t msm_flash_get_dt_data(struct device_node *of_node,
 		return -EINVAL;
 	}
 
-	/* Read the sub device */
+	
 	rc = of_property_read_u32(of_node, "cell-index", &fctrl->pdev->id);
 	if (rc < 0) {
 		pr_err("failed rc %d\n", rc);
@@ -1019,20 +1016,20 @@ static int32_t msm_flash_get_dt_data(struct device_node *of_node,
 
 	fctrl->flash_driver_type = FLASH_DRIVER_DEFAULT;
 
-	/* Read the CCI master. Use M0 if not available in the node */
+	
 	rc = of_property_read_u32(of_node, "qcom,cci-master",
 		&fctrl->cci_i2c_master);
 	CDBG("%s qcom,cci-master %d, rc %d\n", __func__, fctrl->cci_i2c_master,
 		rc);
 	if (rc < 0) {
-		/* Set default master 0 */
+		
 		fctrl->cci_i2c_master = MASTER_0;
 		rc = 0;
 	} else {
 		fctrl->flash_driver_type = FLASH_DRIVER_I2C;
 	}
 
-	/* Read the flash and torch source info from device tree node */
+	
 	rc = msm_flash_get_pmic_source_info(of_node, fctrl);
 	if (rc < 0) {
 		pr_err("%s:%d msm_flash_get_pmic_source_info failed rc %d\n",
@@ -1040,7 +1037,7 @@ static int32_t msm_flash_get_dt_data(struct device_node *of_node,
 		return rc;
 	}
 
-	/* Read the gpio information from device tree */
+	
 	rc = msm_sensor_driver_get_gpio_data(
 		&(fctrl->power_info.gpio_conf), of_node);
 	if (rc < 0) {
@@ -1070,7 +1067,6 @@ static long msm_flash_subdev_do_ioctl(
 	struct msm_flash_init_info_t32 flash_init_info32;
 	struct msm_flash_init_info_t flash_init_info;
 
-//	CDBG("Enter");
 
 	if (!file || !arg) {
 		pr_err("%s:failed NULL parameter\n", __func__);
@@ -1128,7 +1124,6 @@ static long msm_flash_subdev_do_ioctl(
 		u32->flash_current[i] = flash_data.flash_current[i];
 		u32->flash_duration[i] = flash_data.flash_duration[i];
 	}
-//	CDBG("Exit");
 	return rc;
 }
 
@@ -1185,7 +1180,7 @@ static int32_t msm_flash_platform_probe(struct platform_device *pdev)
 	cci_client->cci_subdev = msm_cci_get_subdev();
 	cci_client->cci_i2c_master = flash_ctrl->cci_i2c_master;
 
-	/* Initialize sub device */
+	
 	v4l2_subdev_init(&flash_ctrl->msm_sd.sd, &msm_flash_subdev_ops);
 	v4l2_set_subdevdata(&flash_ctrl->msm_sd.sd, flash_ctrl);
 
@@ -1227,7 +1222,6 @@ static struct platform_driver msm_flash_platform_driver = {
 	},
 };
 
-//HTC_START
 #ifdef HTC_CAM_FEATURE_FLASH_RESTRICTION
 static uint32_t led_ril_status_value;
 static uint32_t led_wimax_status_value;
@@ -1291,7 +1285,7 @@ static ssize_t led_hotspot_status_set(struct device *dev,
 {
 	uint32_t tmp = 0;
 
-	tmp = buf[0] - 0x30; /* only get the first char */
+	tmp = buf[0] - 0x30; 
 
 	led_hotspot_status_value = tmp;
 	pr_info("[CAM][FL] led_hotspot_status_value = %d\n", led_hotspot_status_value);
@@ -1410,15 +1404,13 @@ error:
 	return ret;
 
 }
-#endif //HTC_CAM_FEATURE_FLASH_RESTRICTION
-//HTC_END
+#endif 
 
 static int __init msm_flash_init_module(void)
 {
 	int32_t rc = 0;
 	CDBG("Enter\n");
 	rc = platform_driver_register(&msm_flash_platform_driver);
-//HTC_START, HTC_CAM_FEATURE_FLASH_RESTRICTION
 #ifdef HTC_CAM_FEATURE_FLASH_RESTRICTION
 	if (!rc)
 	{
@@ -1426,8 +1418,7 @@ static int __init msm_flash_init_module(void)
 		pr_info("%s:%d rc %d\n", __func__, __LINE__, rc);
 		return rc;
 	}
-#endif //HTC_CAM_FEATURE_FLASH_RESTRICTION
-//HTC_END, HTC_CAM_FEATURE_FLASH_RESTRICTION
+#endif 
 	if (rc)
 		pr_err("platform probe for flash failed");
 

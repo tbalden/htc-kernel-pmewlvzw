@@ -101,6 +101,7 @@ struct ohio_data {
 	enum pr_change pr_change;
 	struct usb_typec_fwu_notifier *usbc_fwu_notifier;
 	struct dual_role_phy_instance *ohio_dual_role_instance;
+	struct power_supply *batt_psy;
 	uint fw_version;
 	int need_start_host;
 	int emarker_flag;
@@ -571,7 +572,48 @@ bool ohio_is_connected(void)
 }
 EXPORT_SYMBOL(ohio_is_connected);
 
-/* ohio power status, sync with interface and cable detection thread */
+void notify_batt_cc_change(u8 cc_status)
+{
+	struct ohio_data *data = NULL;
+	union power_supply_propval batt_prop;
+
+	if(ohio_client)
+		data = i2c_get_clientdata(ohio_client);
+	else
+		return;
+
+	switch (cc_status) {
+	case 0x04:		
+		batt_prop.intval = utccDefault;
+		break;
+	case 0x40:
+		batt_prop.intval = utccDefault;
+		break;
+	case 0x08:		
+		batt_prop.intval = utcc1p5A;
+		break;
+	case 0x80:
+		batt_prop.intval = utcc1p5A;
+		break;
+	case 0x0c:		
+		batt_prop.intval = utcc3p0A;
+		break;
+	case 0xc0:
+		batt_prop.intval = utcc3p0A;
+		break;
+	default:
+		return;
+	}
+
+
+	if (data->batt_psy && data->batt_psy->set_property) {
+		data->batt_psy->set_property(
+			data->batt_psy, POWER_SUPPLY_PROP_TYPEC_SINK_CURRENT,
+			&batt_prop);
+	}
+}
+
+
 inline unsigned char OhioReadReg(unsigned char RegAddr)
 {
 	int ret = 0;
@@ -1074,6 +1116,8 @@ static int __maybe_unused ohio_system_init(void)
 void cable_disconnect(void *data)
 {
 	struct ohio_data *ohio = data;
+	union power_supply_propval batt_prop;
+
 	cancel_delayed_work(&ohio->drole_work);
 	oc_enable = 0;
 	ohio->DFP_mode = 0;
@@ -1093,6 +1137,14 @@ void cable_disconnect(void *data)
 #ifdef SUP_VBUS_CTL
 	gpio_set_value(ohio->pdata->gpio_vbus_ctrl, 0);
 #endif
+
+	if (ohio->batt_psy && ohio->batt_psy->set_property) {
+		batt_prop.intval = utccNone;
+		ohio->batt_psy->set_property(
+			ohio->batt_psy, POWER_SUPPLY_PROP_TYPEC_SINK_CURRENT,
+			&batt_prop);
+	}
+
 	ohio_hardware_disable_vconn();
 	ohio_hardware_powerdown();
 	//ohio_clean_state_machine();
@@ -2457,6 +2509,8 @@ static int ohio_i2c_probe(struct i2c_client *client,
 	struct ohio_platform_data *pdata;
 	int ret = 0;
 
+	struct power_supply *batt_psy;
+
 	pr_info("%s start\n", __func__);
 
 	/*++ 2015/12/14, USB Team, PCN00048 ++*/
@@ -2465,7 +2519,13 @@ static int ohio_i2c_probe(struct i2c_client *client,
 		pr_info("%s skip ANX7418 driver probe on %s mode\n", __func__, htc_get_bootmode());
 		goto exit;
 	}
-	/*-- 2015/12/14, USB Team, PCN00048 --*/
+	
+
+	batt_psy = power_supply_get_by_name("battery");
+	if (!batt_psy) {
+		pr_err("battery supply not found, deferring probe\n");
+		return -EPROBE_DEFER;
+	}
 
 	if (!i2c_check_functionality(client->adapter,
 	I2C_FUNC_SMBUS_I2C_BLOCK)) {
@@ -2517,6 +2577,7 @@ static int ohio_i2c_probe(struct i2c_client *client,
 	ohio_client->addr = (OHIO_SLAVE_I2C_ADDR >> 1);
 
 	atomic_set(&ohio_power_status, 0);
+	ohio->batt_psy = batt_psy;
 
 	mutex_init(&ohio->lock);
 	mutex_init(&ohio->drole_lock);

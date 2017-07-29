@@ -61,8 +61,8 @@
 
 #define RPC_TIMEOUT	(5 * HZ)
 #define BALIGN		128
-#define NUM_CHANNELS	3		/*1 compute 1 cpz 1 mdsp*/
-#define NUM_SESSIONS	8		/*8 compute*/
+#define NUM_CHANNELS	3		
+#define NUM_SESSIONS	8		
 
 #define IS_CACHE_ALIGNED(x) (((x) & ((L1_CACHE_BYTES)-1)) == 0)
 
@@ -612,7 +612,7 @@ static int fastrpc_buf_alloc(struct fastrpc_file *fl, ssize_t size,
 	if (err)
 		goto bail;
 
-	/* find the smallest buffer that fits in the cache */
+	
 	spin_lock(&fl->hlock);
 	hlist_for_each_entry_safe(buf, n, &fl->bufs, hn) {
 		if (buf->size >= size && (!fr || fr->size > buf->size))
@@ -637,7 +637,7 @@ static int fastrpc_buf_alloc(struct fastrpc_file *fl, ssize_t size,
 	buf->virt = dma_alloc_coherent(fl->sctx->dev, buf->size,
 				       (void *)&buf->phys, GFP_KERNEL);
 	if (IS_ERR_OR_NULL(buf->virt)) {
-		/* free cache and retry */
+		
 		fastrpc_buf_list_free(fl);
 		buf->virt = dma_alloc_coherent(fl->sctx->dev, buf->size,
 					       (void *)&buf->phys, GFP_KERNEL);
@@ -699,16 +699,16 @@ static int overlap_ptr_cmp(const void *a, const void *b)
 {
 	struct overlap *pa = *((struct overlap **)a);
 	struct overlap *pb = *((struct overlap **)b);
-	/* sort with lowest starting buffer first */
+	
 	int st = CMP(pa->start, pb->start);
-	/* sort with highest ending buffer first */
+	
 	int ed = CMP(pb->end, pa->end);
 	return st == 0 ? ed : st;
 }
 
-static void context_build_overlap(struct smq_invoke_ctx *ctx)
+static int context_build_overlap(struct smq_invoke_ctx *ctx)
 {
-	int i;
+	int i, err = 0;
 	remote_arg_t *lpra = ctx->lpra;
 	int inbufs = REMOTE_SCALARS_INBUFS(ctx->sc);
 	int outbufs = REMOTE_SCALARS_OUTBUFS(ctx->sc);
@@ -717,6 +717,11 @@ static void context_build_overlap(struct smq_invoke_ctx *ctx)
 	for (i = 0; i < nbufs; ++i) {
 		ctx->overs[i].start = (uintptr_t)lpra[i].buf.pv;
 		ctx->overs[i].end = ctx->overs[i].start + lpra[i].buf.len;
+		if (lpra[i].buf.len) {
+			VERIFY(err, ctx->overs[i].end > ctx->overs[i].start);
+			if (err)
+				goto bail;
+		}
 		ctx->overs[i].raix = i;
 		ctx->overps[i] = &ctx->overs[i];
 	}
@@ -742,6 +747,8 @@ static void context_build_overlap(struct smq_invoke_ctx *ctx)
 			max = *ctx->overps[i];
 		}
 	}
+bail:
+	return err;
 }
 
 #define K_COPY_FROM_USER(err, kernel, dst, src, size) \
@@ -805,8 +812,11 @@ static int context_alloc(struct fastrpc_file *fl, uint32_t kernel,
 			goto bail;
 	}
 	ctx->sc = invoke->sc;
-	if (bufs)
-		context_build_overlap(ctx);
+	if (bufs) {
+		VERIFY(err, 0 == context_build_overlap(ctx));
+		if (err)
+			goto bail;
+	}
 	ctx->retval = -1;
 	ctx->pid = current->pid;
 	ctx->tgid = current->tgid;
@@ -830,7 +840,7 @@ static void context_save_interrupted(struct smq_invoke_ctx *ctx)
 	hlist_del_init(&ctx->hn);
 	hlist_add_head(&ctx->hn, &clst->interrupted);
 	spin_unlock(&ctx->fl->hlock);
-	/* free the cache on power collapse */
+	
 	fastrpc_buf_list_free(ctx->fl);
 }
 
@@ -954,7 +964,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 	int err = 0;
 	int mflags = 0;
 
-	/* calculate size of the metadata */
+	
 	rpra = 0;
 	list = smq_invoke_buf_start(rpra, sc);
 	pages = smq_phy_page_start(sc, list);
@@ -969,9 +979,10 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		ipage += 1;
 	}
 	metalen = copylen = (ssize_t)&ipage[0];
-	/* calculate len requreed for copying */
+	
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
+		uintptr_t mstart, mend;
 		ssize_t len = lpra[i].buf.len;
 		if (!len)
 			continue;
@@ -979,17 +990,25 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 			continue;
 		if (ctx->overps[oix]->offset == 0)
 			copylen = ALIGN(copylen, BALIGN);
-		copylen += ctx->overps[oix]->mend - ctx->overps[oix]->mstart;
+		mstart = ctx->overps[oix]->mstart;
+		mend = ctx->overps[oix]->mend;
+		VERIFY(err, (mend - mstart) <= LONG_MAX);
+		if (err)
+			goto bail;
+		copylen += mend - mstart;
+		VERIFY(err, copylen >= 0);
+		if (err)
+			goto bail;
 	}
 	ctx->used = copylen;
 
-	/* allocate new buffer */
+	
 	if (copylen) {
 		VERIFY(err, !fastrpc_buf_alloc(ctx->fl, copylen, &ctx->buf));
 		if (err)
 			goto bail;
 	}
-	/* copy metadata */
+	
 	rpra = ctx->buf->virt;
 	ctx->rpra = rpra;
 	list = smq_invoke_buf_start(rpra, sc);
@@ -1006,7 +1025,7 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		list[i].pgidx = ipage - pages;
 		ipage++;
 	}
-	/* map ion buffers */
+	
 	for (i = 0; i < inbufs + outbufs; ++i) {
 		struct fastrpc_mmap *map = ctx->maps[i];
 		uint64_t buf = ptr_to_uint64(lpra[i].buf.pv);
@@ -1039,12 +1058,12 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 		}
 		rpra[i].buf.pv = buf;
 	}
-	/* copy non ion buffers */
+	
 	rlen = copylen - metalen;
 	for (oix = 0; oix < inbufs + outbufs; ++oix) {
 		int i = ctx->overps[oix]->raix;
 		struct fastrpc_mmap *map = ctx->maps[i];
-		int mlen = ctx->overps[oix]->mend - ctx->overps[oix]->mstart;
+		ssize_t mlen = ctx->overps[oix]->mend - ctx->overps[oix]->mstart;
 		uint64_t buf;
 		ssize_t len = lpra[i].buf.len;
 		if (!len)

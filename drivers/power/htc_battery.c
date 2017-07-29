@@ -2631,7 +2631,31 @@ bool htc_battery_get_pd_type(int *curr)
 	*curr = g_pd_current;
 	return g_is_pd_charger;
 }
-#endif //CONFIG_HTC_BATT_PCN0020
+#endif 
+
+#ifdef CONFIG_HTC_BATT_PCN0023
+bool htc_battery_is_pd_detected(void)
+{
+	return g_is_pd_charger;
+}
+
+int htc_battery_get_pd_current(void)
+{
+	if (g_is_pd_charger)
+		return g_pd_current;
+	else
+		return 0;
+}
+
+int htc_battery_get_pd_vbus(int *vbus)
+{
+	if (g_is_pd_charger) {
+		*vbus = g_pd_voltage;
+		return 0;
+	} else
+		return -EINVAL;
+}
+#endif 
 
 bool htc_battery_get_discharging_reason(void)
 {

@@ -30,10 +30,7 @@ DHDOFILES = aiutils.o siutils.o sbutils.o bcmutils.o bcmwifi_channels.o \
 
 obj-$(CONFIG_BCMDHD) += bcmdhd.o
 bcmdhd-objs += $(DHDOFILES)
-ifneq ($(CONFIG_WIRELESS_EXT),)
-bcmdhd-objs += wl_iw.o
-DHDCFLAGS += -DSOFTAP -DWL_WIRELESS_EXT -DUSE_IW
-endif
+
 ifneq ($(CONFIG_CFG80211),)
 bcmdhd-objs += wl_cfg80211.o wl_cfgp2p.o wl_linux_mon.o dhd_cfg80211.o wl_cfg_btcoex.o
 DHDCFLAGS += -DWL_CFG80211 -DWL_CFG80211_STA_EVENT -DWL_ENABLE_P2P_IF
@@ -147,7 +144,6 @@ DHDCFLAGS += -DBCMWAPI_WPI -DBCMWAPI_WAI
 ifdef HTC_CFLAG_DEBUG
 DHDCFLAGS += -DHTC_DEBUG_FLAG
 DHDCFLAGS += -DDHD_TRACE_WAKE_LOCK
-DHDCFLAGS += -DTX_STUCK_DETECTION
 endif
 
 DHDCFLAGS += -DCUSTOM_RSDB_MODE=0

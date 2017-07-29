@@ -27,10 +27,6 @@ config BCM4359
 	tristate "BCM4359 support"
 	depends on BCMDHD
 
-config BCM4359_WAKELOCK_DIVISION
-	tristate "BCM4359 wakelock division for proper sleep"
-	depends on BCM4359
-
 config BCMDHD_FW_PATH
 	depends on BCMDHD
 	string "Firmware path"
@@ -44,14 +40,6 @@ config BCMDHD_NVRAM_PATH
 	default "/system/etc/wifi/bcmdhd.cal"
 	---help---
 	  Path to the calibration file.
-
-config BCMDHD_WEXT
-	bool "Enable WEXT support"
-	depends on BCMDHD && CFG80211 = n
-	select WIRELESS_EXT
-	select WEXT_PRIV
-	help
-	  Enables WEXT support
 
 config BCMDHD_VENDOR_EXT
 	bool "Enable CFG80211 vendor extension suppport"
