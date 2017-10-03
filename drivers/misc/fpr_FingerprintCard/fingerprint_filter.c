@@ -36,6 +36,15 @@ static int vib_strength = VIB_STRENGTH;
 #ifdef CONFIG_FB
 	static int screen_on = 1;
 	struct notifier_block *fb_notifier;
+
+int input_is_screen_on(void) {
+	return screen_on;
+}
+EXPORT_SYMBOL(input_is_screen_on);
+
+extern void set_notification_booster(int value);
+extern int get_notification_booster(void);
+
 #endif
 
 // value used to signal that HOME button release event should be synced as well in home button func work if it was not interrupted.
@@ -305,7 +314,11 @@ static bool fpf_input_filter(struct input_handle *handle,
 	return true;
 }
 
-
+// this callback allows registration of FP vibration, and tweaking of length...
+int register_fp_vibration(void) {
+	return vib_strength;
+}
+EXPORT_SYMBOL(register_fp_vibration);
 
 static void fpf_input_disconnect(struct input_handle *handle)
 {
@@ -430,6 +443,35 @@ static ssize_t vib_strength_dump(struct device *dev,
 static DEVICE_ATTR(vib_strength, (S_IWUSR|S_IRUGO),
 	vib_strength_show, vib_strength_dump);
 
+// -------------------- notification booster
+static ssize_t notification_booster_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", get_notification_booster());
+}
+
+static ssize_t notification_booster_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 100)
+		input = 0;
+
+	set_notification_booster(input);
+
+	return count;
+}
+
+static DEVICE_ATTR(notification_booster, (S_IWUSR|S_IRUGO),
+	notification_booster_show, notification_booster_dump);
+// --------------------------------------------------
+
 static struct kobject *fpf_kobj;
 
 
@@ -535,6 +577,10 @@ static int __init fpf_init(void)
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_fpf.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for fpf\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_notification_booster.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for notif booster\n", __func__);
 
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_fpf_dt_wait_period.attr);
 	if (rc)

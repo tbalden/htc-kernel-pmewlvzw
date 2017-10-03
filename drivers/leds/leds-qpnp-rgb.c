@@ -748,7 +748,10 @@ static unsigned int MAX_DIFF = 200;
 
 #define FINGERPRINT_VIB_TIME_EXCEPTION 40
 
-void register_haptic(int value)
+// callback to register fingerprint vibration
+extern int register_fp_vibration(void);
+
+int register_haptic(int value)
 {
 	unsigned int diff_jiffies = jiffies - last_haptic_jiffies;
 	last_haptic_jiffies = jiffies;
@@ -756,9 +759,12 @@ void register_haptic(int value)
 
 //	if this exceptional time is used, it means, fingerprint scanner vibrated with proxomity sensor detection on
 //	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
-	if (value == FINGERPRINT_VIB_TIME_EXCEPTION) return;
+	if (value == FINGERPRINT_VIB_TIME_EXCEPTION) {
+		int vib_strength = register_fp_vibration();
+		if (vib_strength > 0 && vib_strength<=FINGERPRINT_VIB_TIME_EXCEPTION*2) return vib_strength/2; else return vib_strength>0?FINGERPRINT_VIB_TIME_EXCEPTION:0;
+	}
 
-	if (screen_on || bln_switch == 0) return;
+	if (screen_on || bln_switch == 0) return value;
 	if (last_value == value) {
 		if (diff_jiffies < MAX_DIFF) {
 			if (value <= 200) {
@@ -770,6 +776,7 @@ void register_haptic(int value)
 		}
 	}
 	last_value = value;
+	return value;
 }
 
 EXPORT_SYMBOL(register_haptic);

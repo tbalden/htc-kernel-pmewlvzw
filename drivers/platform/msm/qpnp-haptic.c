@@ -681,6 +681,11 @@ static int qpnp_hap_play_mode_config(struct qpnp_hap *hap)
 	return 0;
 }
 
+#if 1
+static u64 stored_vmax_mv = 0;
+#endif
+
+/* configuration api for max volatge */
 static int qpnp_hap_vmax_config(struct qpnp_hap *hap)
 {
 	u8 reg = 0;
@@ -1206,6 +1211,9 @@ static ssize_t qpnp_hap_voltage_level_store(struct device *dev,
 	input = simple_strtoul(buf, NULL, 10);
 	hap->vmax_mv = input;
 
+#if 1
+	stored_vmax_mv = hap->vmax_mv;
+#endif
 	rc = qpnp_hap_vmax_config(hap);
 	if (rc < 0)
 		VIB_ERR_LOG("qpnp_hap_vmax_config set failed(%d)", rc);
@@ -1601,8 +1609,41 @@ static int qpnp_hap_set(struct qpnp_hap *hap, int on)
 	return rc;
 }
 
-extern void register_haptic(int value);
+#if 1
 
+#define VMAX_MV_NOTIFICATION QPNP_HAP_VMAX_MAX_MV-200
+#define MIN_TD_VALUE_NOTIFICATION 100
+// sense framework based values, 1000 for call, 500 for alarm
+#define MIN_TD_VALUE_NOTIFICATION_CALL 1000
+#define MIN_TD_VALUE_NOTIFICATION_ALARM 500
+
+static int notification_booster = 2;
+static int suspend_booster = 0;
+static int vmax_needs_reset = 0;
+static int alarm_value_counter = 0;
+static int last_value = 0;
+static unsigned long last_alarm_value_jiffies = 0;
+
+void set_suspend_booster(int value) {
+	suspend_booster = !!value;
+}
+EXPORT_SYMBOL(set_suspend_booster);
+
+void set_notification_booster(int value) {
+	notification_booster = value;
+}
+EXPORT_SYMBOL(set_notification_booster);
+int get_notification_booster(void) {
+	return notification_booster;
+}
+EXPORT_SYMBOL(get_notification_booster);
+
+extern int register_haptic(int value);
+extern int input_is_screen_on(void);
+int skip_register_haptic = 0;
+#endif
+
+/* enable interface from timed output class */
 static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 {
 	u8 current_set = LONG_DURATION;
@@ -1626,7 +1667,66 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 	} else {
 		VIB_INFO_LOG("en=%d\n", value);
 #if 1
-		register_haptic(value);
+		if (!skip_register_haptic) {
+			value = register_haptic(value);
+			VIB_INFO_LOG("new en=%d\n", value);
+		}
+
+		// if booster, and screen is off, or call or alarm value for timed device, then we may need a boosting...
+		if (!suspend_booster && notification_booster && (!input_is_screen_on() || value == MIN_TD_VALUE_NOTIFICATION_CALL || value == MIN_TD_VALUE_NOTIFICATION_ALARM) ) {
+			if (value>=MIN_TD_VALUE_NOTIFICATION) {
+				// detect repeating alarm... if it's not repeating frequently, then it can be some other apps vibration with its length value
+				if (input_is_screen_on() && value == MIN_TD_VALUE_NOTIFICATION_ALARM) {
+					VIB_INFO_LOG("alarm counting #1\n");
+					// if last vibration was not the same length, no repetition, reset counter and goto reset voltage...
+					if (last_value != value) {
+						VIB_INFO_LOG("alarm counting #2\n");
+						alarm_value_counter = 0;
+						goto reset;
+					} else {
+						if (value == MIN_TD_VALUE_NOTIFICATION_ALARM) {
+							unsigned int diff_jiffies = jiffies - last_alarm_value_jiffies;
+							last_alarm_value_jiffies = jiffies;
+							// if time difference is short enough...
+							VIB_INFO_LOG("alarm counting #3 diff jiffies %u\n",diff_jiffies);
+							if (diff_jiffies < 107 && diff_jiffies > 97) { // exact time matching to be precise...
+								//... raise counter
+								alarm_value_counter++;
+								// if not reaching yet enough repetition goto reset yet...
+								VIB_INFO_LOG("alarm counting #4 counter %d\n",alarm_value_counter);
+								if (alarm_value_counter <= 1) goto reset;
+								// otherwise will go into boosting...
+							} else {
+								// too much apart in time...not repetition, reset counter and go to reset voltage...
+								VIB_INFO_LOG("alarm counting #5\n");
+								alarm_value_counter = 0;
+								goto reset;
+							}
+						}
+					}
+				} else {
+					// not screen on, or not alarm, reset alarm repetition counter...
+					alarm_value_counter = 0;
+				}
+				if (!vmax_needs_reset) {
+					u32 new_val = stored_vmax_mv * (notification_booster+1);
+					if (new_val > VMAX_MV_NOTIFICATION) new_val = VMAX_MV_NOTIFICATION;
+					if (stored_vmax_mv > new_val) { goto skip_reset; } // stored value is higher than boosted notif MV then use stored in the end...
+					hap->vmax_mv = new_val;
+					qpnp_hap_vmax_config(hap);
+					vmax_needs_reset = 1;
+				}
+				goto skip_reset; // this time skip reset part!
+			}
+		}
+reset:
+		if (vmax_needs_reset) {
+			hap->vmax_mv = stored_vmax_mv;
+			qpnp_hap_vmax_config(hap);
+			vmax_needs_reset = 0;
+		}
+skip_reset:
+		last_value = value;
 #endif
 		value = (value > hap->timeout_ms ?
 				 hap->timeout_ms : value);
@@ -1644,6 +1744,42 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 	schedule_work(&hap->work);
 }
 
+
+void set_vibrate(int value)
+{
+	qpnp_hap_td_enable(&ghap->timed_dev, value);
+}
+
+#if 1
+
+void boosted_vib(int time) {
+	u32 current_vmax_mv = ghap->vmax_mv;
+	int rc;
+	int counter = 1;
+	int voltage_step = 0;
+
+	while (counter-->0) {
+		ghap->vmax_mv = QPNP_HAP_VMAX_MAX_MV - voltage_step;
+		voltage_step += 800; // decrease voltage by each buzz..
+		rc = qpnp_hap_vmax_config(ghap);
+
+		// buzz...
+		skip_register_haptic = 1;
+		set_vibrate(time);
+		skip_register_haptic = 0;
+		msleep(time);
+
+		// wait a bit
+		msleep(time/2);
+	}
+	ghap->vmax_mv = current_vmax_mv;
+	rc = qpnp_hap_vmax_config(ghap);
+}
+EXPORT_SYMBOL(boosted_vib);
+#endif
+
+
+/* play pwm bytes */
 int qpnp_hap_play_byte(u8 data, bool on)
 {
 	struct qpnp_hap *hap = ghap;
@@ -1910,7 +2046,10 @@ static int qpnp_hap_config(struct qpnp_hap *hap)
 	if (rc)
 		return rc;
 
-	
+#if 1
+	stored_vmax_mv = hap->vmax_mv;
+#endif
+	/* Configure the VMAX register */
 	rc = qpnp_hap_vmax_config(hap);
 	if (rc)
 		return rc;
