@@ -32,15 +32,16 @@
 
 #include "mci/mcimcp.h"
 #include "mci/mcifc.h"
-#include "mci/mcinq.h"		
-#include "mci/mcitime.h"	
+#include "mci/mcinq.h"		/* SID_MCP */
+#include "mci/mcitime.h"	/* struct mcp_time */
 
-#include "platform.h"		
+#include "platform.h"		/* IRQ number */
 #include "main.h"
 #include "fastcall.h"
 #include "logging.h"
 #include "mcp.h"
 
+/* respond timeout for MCP notification, in secs */
 #define MCP_TIMEOUT		10
 #define MCP_RETRIES		5
 #define MCP_NF_QUEUE_SZ		8
@@ -50,51 +51,51 @@ static const struct {
 	unsigned int index;
 	const char *msg;
 } status_map[] = {
-	
+	/**< MobiCore control flags */
 	{ MC_EXT_INFO_ID_FLAGS, "flags"},
-	
+	/**< MobiCore halt condition code */
 	{ MC_EXT_INFO_ID_HALT_CODE, "haltCode"},
-	
+	/**< MobiCore halt condition instruction pointer */
 	{ MC_EXT_INFO_ID_HALT_IP, "haltIp"},
-	
+	/**< MobiCore fault counter */
 	{ MC_EXT_INFO_ID_FAULT_CNT, "faultRec.cnt"},
-	
+	/**< MobiCore last fault cause */
 	{ MC_EXT_INFO_ID_FAULT_CAUSE, "faultRec.cause"},
-	
+	/**< MobiCore last fault meta */
 	{ MC_EXT_INFO_ID_FAULT_META, "faultRec.meta"},
-	
+	/**< MobiCore last fault threadid */
 	{ MC_EXT_INFO_ID_FAULT_THREAD, "faultRec.thread"},
-	
+	/**< MobiCore last fault instruction pointer */
 	{ MC_EXT_INFO_ID_FAULT_IP, "faultRec.ip"},
-	
+	/**< MobiCore last fault stack pointer */
 	{ MC_EXT_INFO_ID_FAULT_SP, "faultRec.sp"},
-	
+	/**< MobiCore last fault ARM arch information */
 	{ MC_EXT_INFO_ID_FAULT_ARCH_DFSR, "faultRec.arch.dfsr"},
-	
+	/**< MobiCore last fault ARM arch information */
 	{ MC_EXT_INFO_ID_FAULT_ARCH_ADFSR, "faultRec.arch.adfsr"},
-	
+	/**< MobiCore last fault ARM arch information */
 	{ MC_EXT_INFO_ID_FAULT_ARCH_DFAR, "faultRec.arch.dfar"},
-	
+	/**< MobiCore last fault ARM arch information */
 	{ MC_EXT_INFO_ID_FAULT_ARCH_IFSR, "faultRec.arch.ifsr"},
-	
+	/**< MobiCore last fault ARM arch information */
 	{ MC_EXT_INFO_ID_FAULT_ARCH_AIFSR, "faultRec.arch.aifsr"},
-	
+	/**< MobiCore last fault ARM arch information */
 	{ MC_EXT_INFO_ID_FAULT_ARCH_IFAR, "faultRec.arch.ifar"},
-	
+	/**< MobiCore configured by Daemon via fc_init flag */
 	{ MC_EXT_INFO_ID_MC_CONFIGURED, "mcData.flags"},
-	
+	/**< MobiCore exception handler last partner */
 	{ MC_EXT_INFO_ID_MC_EXC_PARTNER, "mcExcep.partner"},
-	
+	/**< MobiCore exception handler last peer */
 	{ MC_EXT_INFO_ID_MC_EXC_IPCPEER, "mcExcep.peer"},
-	
+	/**< MobiCore exception handler last IPC message */
 	{ MC_EXT_INFO_ID_MC_EXC_IPCMSG, "mcExcep.cause"},
-	
+	/**< MobiCore exception handler last IPC data */
 	{MC_EXT_INFO_ID_MC_EXC_IPCDATA, "mcExcep.meta"},
 };
 
 static struct mcp_context {
-	struct mutex buffer_lock;	
-	struct mutex queue_lock;	
+	struct mutex buffer_lock;	/* Lock on SWd communication buffer */
+	struct mutex queue_lock;	/* Lock for MCP messages */
 	struct mcp_buffer *mcp_buffer;
 	struct completion complete;
 	struct task_struct *irq_bh_thread;
@@ -104,7 +105,7 @@ static struct mcp_context {
 	int irq;
 	int (*scheduler_cb)(enum mcp_scheduler_commands);
 	void (*crashhandler_cb)(void);
-	
+	/* MobiCore MCI information */
 	unsigned int order;
 	union {
 		void		*base;
@@ -113,39 +114,44 @@ static struct mcp_context {
 			struct notification_queue *rx;
 		} nq;
 	};
+	/*
+	 * This notifications list is to be used to queue notifications when the
+	 * notification queue overflows, so no session gets its notification
+	 * lost, especially MCP.
+	 */
 	struct mutex		notifications_mutex;
 	struct list_head	notifications;
-	struct mcp_session	mcp_session;	
-	
+	struct mcp_session	mcp_session;	/* Pseudo session for MCP */
+	/* Unexpected notification (during MCP open) */
 	struct mutex		unexp_notif_mutex;
 	struct notification	unexp_notif;
-	
+	/* Sessions */
 	struct mutex		sessions_lock;
 	struct list_head	sessions;
-	
+	/* Dump buffer */
 	struct kasnprintf_buf	dump;
-	
+	/* Time */
 	struct mcp_time		*time;
-	
+	/* Wait timeout */
 	u32			timeout;
-	
+	/* Log of last MCP commands */
 #define MCP_LOG_SIZE 256
-	struct mutex		last_mcp_cmds_mutex; 
+	struct mutex		last_mcp_cmds_mutex; /* Log protection */
 	struct mcp_command_info {
-		u64			cpu_clk;	
-		pid_t			pid;		
-		enum cmd_id		id;		
+		u64			cpu_clk;	/* Kernel time */
+		pid_t			pid;		/* Caller PID */
+		enum cmd_id		id;		/* MCP command ID */
 		u32			session_id;
 		char			uuid_str[34];
 		enum state {
-			UNUSED,		
-			PENDING,	
-			SENT,		
-			COMPLETE,	
-			FAILED,		
-		}			state;	
-		enum mcp_result		result;	
-		int			errno;	
+			UNUSED,		/* Unused slot */
+			PENDING,	/* Previous command in progress */
+			SENT,		/* Waiting for response */
+			COMPLETE,	/* Got result */
+			FAILED,		/* Something went wrong */
+		}			state;	/* Command processing state */
+		enum mcp_result		result;	/* Command result */
+		int			errno;	/* Return code */
 	}				last_mcp_cmds[MCP_LOG_SIZE];
 	int				last_mcp_cmds_index;
 } mcp_ctx;
@@ -189,7 +195,7 @@ static inline void mark_mcp_dead(void)
 
 	mcp_ctx.mcp_dead = true;
 	complete(&mcp_ctx.complete);
-	
+	/* Signal all potential waiters that SWd is going away */
 	list_for_each_entry(session, &mcp_ctx.sessions, list)
 		complete(&session->completion);
 }
@@ -254,7 +260,7 @@ static void mcp_dump_mobicore_status(void)
 		}
 	}
 
-	
+	/* construct UUID string */
 	for (i = 0; i < 4; i++) {
 		u32 info;
 		size_t j;
@@ -290,7 +296,7 @@ static void mcp_dump_mobicore_status(void)
 void mcp_session_init(struct mcp_session *session, bool is_gp,
 		      const struct identity *identity)
 {
-	
+	/* close_work is initialized by the caller */
 	INIT_LIST_HEAD(&session->list);
 	INIT_LIST_HEAD(&session->notifications_list);
 	mutex_init(&session->notif_wait_lock);
@@ -312,6 +318,10 @@ static inline bool mcp_session_isrunning(struct mcp_session *session)
 	return ret;
 }
 
+/*
+ * session remains valid thanks to the upper layers reference counters, but the
+ * SWd session may have died, in which case we are informed.
+ */
 int mcp_session_waitnotif(struct mcp_session *session, s32 timeout,
 			  bool silent_expiry)
 {
@@ -341,11 +351,11 @@ int mcp_session_waitnotif(struct mcp_session *session, s32 timeout,
 		ret = wait_for_completion_interruptible_timeout(
 			&session->completion, timeout * HZ / 1000);
 		if (ret < 0)
-			
+			/* Interrupted */
 			goto end;
 
 		if (!ret) {
-			
+			/* Timed out */
 			ret = -ETIME;
 			goto end;
 		}
@@ -463,23 +473,31 @@ static inline int wait_mcp_notification(void)
 	unsigned long timeout = msecs_to_jiffies(mcp_ctx.timeout * 1000);
 	int try;
 
+	/*
+	 * Total timeout is mcp_ctx.timeout * MCP_RETRIES, but we check for
+	 * a crash to try and terminate before then if things go wrong.
+	 */
 	for (try = 1; try <= MCP_RETRIES; try++) {
 		u32 status;
 		int ret;
 
+		/*
+		* Wait non-interruptible to keep MCP synchronised even if caller
+		* is interrupted by signal.
+		*/
 		ret = wait_for_completion_timeout(&mcp_ctx.complete, timeout);
 		if (ret > 0)
 			return 0;
 
 		mc_dev_err("No answer after %ds\n", mcp_ctx.timeout * try);
 
-		
+		/* If SWd halted, exit now */
 		if (!mc_fc_info(MC_EXT_INFO_ID_MCI_VERSION, &status, NULL) &&
 		    (status == MC_STATUS_HALT))
 			break;
 	}
 
-	
+	/* TEE halted or dead: dump status and SMC log */
 	mark_mcp_dead();
 	mcp_dump_mobicore_status();
 
@@ -487,7 +505,7 @@ static inline int wait_mcp_notification(void)
 }
 
 static int mcp_cmd(union mcp_message *cmd,
-		   
+		   /* The fields below are for debug purpose only */
 		   u32 in_session_id,
 		   u32 *out_session_id,
 		   struct mc_uuid_t *uuid)
@@ -497,7 +515,7 @@ static int mcp_cmd(union mcp_message *cmd,
 	enum cmd_id cmd_id = cmd->cmd_header.cmd_id;
 	struct mcp_command_info *cmd_info;
 
-	
+	/* Initialize MCP log */
 	mutex_lock(&mcp_ctx.last_mcp_cmds_mutex);
 	cmd_info = &mcp_ctx.last_mcp_cmds[mcp_ctx.last_mcp_cmds_index];
 	cmd_info->cpu_clk = local_clock();
@@ -506,7 +524,7 @@ static int mcp_cmd(union mcp_message *cmd,
 	cmd_info->id = cmd_id;
 	cmd_info->session_id = in_session_id;
 	if (uuid) {
-		
+		/* display UUID because it's an openSession cmd */
 		size_t i;
 
 		cmd_info->uuid_str[0] = ' ';
@@ -529,15 +547,15 @@ static int mcp_cmd(union mcp_message *cmd,
 	if (mcp_ctx.mcp_dead)
 		goto out;
 
-	
+	/* Copy message to MCP buffer */
 	memcpy(msg, cmd, sizeof(*msg));
 
-	
+	/* Poke TEE */
 	ret = mcp_notify(&mcp_ctx.mcp_session);
 	if (ret)
 		goto out;
 
-	
+	/* Update MCP log */
 	mutex_lock(&mcp_ctx.last_mcp_cmds_mutex);
 	cmd_info->state = SENT;
 	mutex_unlock(&mcp_ctx.last_mcp_cmds_mutex);
@@ -545,7 +563,7 @@ static int mcp_cmd(union mcp_message *cmd,
 	if (ret)
 		goto out;
 
-	
+	/* Check response ID */
 	if (msg->rsp_header.rsp_id != (cmd_id | FLAG_RESPONSE)) {
 		mc_dev_err("MCP command got invalid response (0x%X)\n",
 			   msg->rsp_header.rsp_id);
@@ -553,7 +571,7 @@ static int mcp_cmd(union mcp_message *cmd,
 		goto out;
 	}
 
-	
+	/* Convert result */
 	switch (msg->rsp_header.result) {
 	case MC_MCP_RET_OK:
 		err = 0;
@@ -586,11 +604,11 @@ static int mcp_cmd(union mcp_message *cmd,
 		err = -EPERM;
 	}
 
-	
+	/* Copy response back to caller struct */
 	memcpy(cmd, msg, sizeof(*cmd));
 
 out:
-	
+	/* Update MCP log */
 	mutex_lock(&mcp_ctx.last_mcp_cmds_mutex);
 	if (ret) {
 		cmd_info->state = FAILED;
@@ -599,7 +617,7 @@ out:
 		cmd_info->state = COMPLETE;
 		cmd_info->result = msg->rsp_header.result;
 		cmd_info->errno = -err;
-		
+		/* For open session: get SID */
 		if (!err && out_session_id)
 			cmd_info->session_id = *out_session_id;
 	}
@@ -625,7 +643,7 @@ int mcp_get_version(struct mc_version_info *version_info)
 {
 	static struct mc_version_info static_version_info;
 
-	
+	/* If cache empty, get version from the SWd and cache it */
 	if (!static_version_info.version_nwd) {
 		u32 version = MC_VERSION(MCDRVMODULEAPI_VERSION_MAJOR,
 					 MCDRVMODULEAPI_VERSION_MINOR);
@@ -640,10 +658,14 @@ int mcp_get_version(struct mc_version_info *version_info)
 
 		memcpy(&static_version_info, &cmd.rsp_get_version.version_info,
 		       sizeof(static_version_info));
+		/*
+		 * The CMP version is meaningless in this case, and is replaced
+		 * by the driver's own version.
+		 */
 		static_version_info.version_nwd = version;
 	}
 
-	
+	/* Copy cached version */
 	memcpy(version_info, &static_version_info, sizeof(*version_info));
 	return 0;
 }
@@ -669,12 +691,12 @@ int mcp_load_check(const struct tee_object *obj,
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.cmd_header.cmd_id = MC_MCP_CMD_CHECK_LOAD_TA;
-	
+	/* Data */
 	cmd.cmd_check_load.wsm_data_type = map->type;
 	cmd.cmd_check_load.adr_load_data = map->phys_addr;
 	cmd.cmd_check_load.ofs_load_data = map->offset;
 	cmd.cmd_check_load.len_load_data = map->length;
-	
+	/* Header */
 	header = (union mclf_header *)(obj->data + obj->header_length);
 	cmd.cmd_check_load.uuid = header->mclf_header_v2.uuid;
 	return mcp_cmd(&cmd, 0, NULL, &cmd.cmd_check_load.uuid);
@@ -692,12 +714,12 @@ int mcp_open_session(struct mcp_session *session,
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.cmd_header.cmd_id = MC_MCP_CMD_OPEN_SESSION;
-	
+	/* Data */
 	cmd.cmd_open.wsm_data_type = map->type;
 	cmd.cmd_open.adr_load_data = map->phys_addr;
 	cmd.cmd_open.ofs_load_data = map->offset;
 	cmd.cmd_open.len_load_data = map->length;
-	
+	/* Buffer */
 	if (tci_map) {
 		cmd.cmd_open.wsmtype_tci = tci_map->type;
 		cmd.cmd_open.adr_tci_buffer = tci_map->phys_addr;
@@ -706,13 +728,13 @@ int mcp_open_session(struct mcp_session *session,
 	} else {
 		cmd.cmd_open.wsmtype_tci = WSM_INVALID;
 	}
-	
+	/* Header */
 	header = (union mclf_header *)(obj->data + obj->header_length);
 	cmd.cmd_open.uuid = header->mclf_header_v2.uuid;
 	cmd.cmd_open.is_gpta = session->is_gp;
-	
+	/* Reset unexpected notification */
 	mutex_lock(&local_mutex);
-	mcp_ctx.unexp_notif.session_id = SID_MCP;	
+	mcp_ctx.unexp_notif.session_id = SID_MCP;	/* Cannot be */
 	if (!g_ctx.f_client_login) {
 		memcpy(&cmd.cmd_open.tl_header, header,
 		       sizeof(cmd.cmd_open.tl_header));
@@ -722,19 +744,19 @@ int mcp_open_session(struct mcp_session *session,
 			cmd.cmd_open.cmd_open_data.identity = session->identity;
 	}
 
-	
+	/* Send MCP open command */
 	ret = mcp_cmd(&cmd, 0, &cmd.rsp_open.session_id, &cmd.cmd_open.uuid);
-	
+	/* Make sure we have a valid session ID */
 	if (!ret && !cmd.rsp_open.session_id)
 		ret = -EBADE;
 
 	if (!ret) {
 		session->id = cmd.rsp_open.session_id;
-		
+		/* Add to list of sessions */
 		mutex_lock(&mcp_ctx.sessions_lock);
 		list_add_tail(&session->list, &mcp_ctx.sessions);
 		mutex_unlock(&mcp_ctx.sessions_lock);
-		
+		/* Check for spurious notification */
 		mutex_lock(&mcp_ctx.unexp_notif_mutex);
 		if (mcp_ctx.unexp_notif.session_id == session->id) {
 			mutex_lock(&session->exit_code_lock);
@@ -750,25 +772,37 @@ int mcp_open_session(struct mcp_session *session,
 	return ret;
 }
 
+/*
+ * Legacy and GP TAs close differently:
+ * - GP TAs always send a notification with payload, whether on close or crash
+ * - Legacy TAs only send a notification with payload on crash
+ * - GP TAs may take time to close, and we get -EAGAIN back from mcp_cmd
+ * - Legacy TAs always close when asked, unless they are driver in which case
+ *   they just don't close at all
+ */
 int mcp_close_session(struct mcp_session *session)
 {
 	union mcp_message cmd;
 	int ret;
 
-	
+	/* state is either MCP_SESSION_RUNNING or MCP_SESSION_CLOSING_GP */
 	mutex_lock(&mcp_ctx.sessions_lock);
 	if (session->state == MCP_SESSION_RUNNING)
 		session->state = MCP_SESSION_CLOSE_REQUESTED;
 
 	mutex_unlock(&mcp_ctx.sessions_lock);
-	
+	/* Signal a potential waiter that SWd session is going away */
 	complete(&session->completion);
-	
+	/* Send MCP command */
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.cmd_header.cmd_id = MC_MCP_CMD_CLOSE_SESSION;
 	cmd.cmd_close.session_id = session->id;
 	ret = mcp_cmd(&cmd, session->id, NULL, NULL);
 	mutex_lock(&mcp_ctx.sessions_lock);
+	/*
+	 * The GP TA may already have sent its exit code, in which case the
+	 * state has also been changed to MCP_SESSION_CLOSE_NOTIFIED.
+	 */
 	if (!ret) {
 		session->state = MCP_SESSION_CLOSED;
 		list_del(&session->list);
@@ -777,12 +811,12 @@ int mcp_close_session(struct mcp_session *session)
 		mutex_unlock(&mcp_ctx.notifications_mutex);
 	} else if (ret == -EAGAIN) {
 		if (session->state == MCP_SESSION_CLOSE_NOTIFIED)
-			
+			/* GP TA already closed */
 			schedule_work(&session->close_work);
 
 		session->state = MCP_SESSION_CLOSING_GP;
 	} else {
-		
+		/* Something is not right, assume session is still running */
 		session->state = MCP_SESSION_CLOSE_FAILED;
 	}
 	mutex_unlock(&mcp_ctx.sessions_lock);
@@ -791,6 +825,9 @@ int mcp_close_session(struct mcp_session *session)
 	return ret;
 }
 
+/*
+ * Session is to be removed from NWd records as SWd is dead
+ */
 void mcp_kill_session(struct mcp_session *session)
 {
 	mutex_lock(&mcp_ctx.sessions_lock);
@@ -841,7 +878,7 @@ int mcp_multimap(u32 session_id, struct mcp_buffer_map *maps)
 	int ret = 0;
 	u32 i;
 
-	
+	/* Prepare command */
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.cmd_header.cmd_id = MC_MCP_CMD_MULTIMAP;
 	cmd.cmd_multimap.session_id = session_id;
@@ -856,7 +893,7 @@ int mcp_multimap(u32 session_id, struct mcp_buffer_map *maps)
 	if (ret)
 		return ret;
 
-	
+	/* Return secure virtual addresses */
 	map = maps;
 	for (i = 0; i < MC_MAP_MAX; i++, map++)
 		map->secure_va = cmd.rsp_multimap.secure_va[i];
@@ -962,7 +999,7 @@ int mcp_notify(struct mcp_session *session)
 	else
 		mc_dev_devel("notify %x", session->id);
 
-	
+	/* Notify TEE */
 	if (!list_empty(&mcp_ctx.notifications) || notif_queue_full()) {
 		if (!list_empty(&session->notifications_list)) {
 			ret = -EAGAIN;
@@ -1022,26 +1059,32 @@ static inline void handle_session_notif(u32 session_id, u32 exit_code)
 	}
 
 	if (session) {
-		
+		/* TA has terminated */
 		if (exit_code) {
 			mc_dev_devel("exit code %d for session %x state %d",
 				     session_id, exit_code, session->state);
-			
+			/* Update exit code, or not */
 			mutex_lock(&session->exit_code_lock);
+			/*
+			 * In GP, the only way to recover the sessions exit code
+			 * is to call TEEC_InvokeCommand which will notify. But
+			 * notifying a dead session would change the exit code
+			 * to ERR_SID_NOT_ACTIVE, hence the check below.
+			 */
 			if (!session->is_gp || !session->exit_code ||
 			    (exit_code != ERR_SID_NOT_ACTIVE))
 				session->exit_code = exit_code;
 
 			mutex_unlock(&session->exit_code_lock);
 
-			
+			/* Update state or schedule close worker */
 			if (session->state == MCP_SESSION_CLOSE_REQUESTED)
 				session->state = MCP_SESSION_CLOSE_NOTIFIED;
 			else if (session->state == MCP_SESSION_CLOSING_GP)
 				schedule_work(&session->close_work);
 		}
 
-		
+		/* Unblock waiter */
 		mutex_lock(&mcp_ctx.notifications_mutex);
 		session->notif_state = MCP_NOTIF_RECEIVED;
 		mutex_unlock(&mcp_ctx.notifications_mutex);
@@ -1049,7 +1092,7 @@ static inline void handle_session_notif(u32 session_id, u32 exit_code)
 	}
 	mutex_unlock(&mcp_ctx.sessions_lock);
 
-	
+	/* Unknown session, probably being started */
 	if (!session) {
 		mutex_lock(&mcp_ctx.unexp_notif_mutex);
 		mcp_ctx.unexp_notif.session_id = session_id;
@@ -1065,15 +1108,23 @@ static int irq_bh_worker(void *arg)
 	while (mcp_ctx.irq_bh_active) {
 		wait_for_completion(&mcp_ctx.irq_bh_complete);
 
-		
+		/* Deal with all pending notifications in one go */
 		while ((rx->hdr.write_cnt - rx->hdr.read_cnt) > 0) {
 			struct notification nf;
 
 			nf = rx->notification[
 				rx->hdr.read_cnt % rx->hdr.queue_size];
 
+			/*
+			* Ensure read_cnt writing happens after buffer read
+			* We want a ARM dmb() / ARM64 dmb(sy) here
+			*/
 			smp_mb();
 			rx->hdr.read_cnt++;
+			/*
+			* Ensure read_cnt writing finishes before reader
+			* We want a ARM dsb() / ARM64 dsb(sy) here
+			*/
 			rmb();
 
 			if (nf.session_id == SID_MCP)
@@ -1082,15 +1133,27 @@ static int irq_bh_worker(void *arg)
 				handle_session_notif(nf.session_id, nf.payload);
 		}
 
+		/*
+		* Finished processing notifications. It does not matter whether
+		* there actually were any notification or not.  S-SIQs can also
+		* be triggered by an SWd driver which was waiting for a FIQ.
+		* In this case the S-SIQ tells NWd that SWd is no longer idle
+		* an will need scheduling again.
+		*/
 		if (mcp_ctx.scheduler_cb)
 			mcp_ctx.scheduler_cb(MCP_NSIQ);
 	}
 	return 0;
 }
 
+/*
+ * This function represents the interrupt function of the mcDrvModule.
+ * It signals by incrementing of an event counter and the start of the read
+ * waiting queue, the read function a interrupt has occurred.
+ */
 static irqreturn_t irq_handler(int intr, void *arg)
 {
-	
+	/* wake up thread to continue handling this interrupt */
 	complete(&mcp_ctx.irq_bh_complete);
 	return IRQ_HANDLED;
 }
@@ -1112,7 +1175,7 @@ int mcp_start(void)
 	int ret;
 	struct irq_data *irq_d;
 
-	
+	/* Make sure we have an interrupt number before going on */
 #if defined(CONFIG_OF)
 	mcp_ctx.irq = irq_of_parse_and_map(g_ctx.mcd->of_node, 0);
 #endif
@@ -1126,7 +1189,7 @@ int mcp_start(void)
 		return -EINVAL;
 	}
 
-	
+	/* Call the INIT fastcall to setup shared buffers */
 	ret = mc_fc_init(virt_to_phys(mcp_ctx.base),
 			 (uintptr_t)mcp_ctx.mcp_buffer -
 				(uintptr_t)mcp_ctx.base,
@@ -1134,7 +1197,7 @@ int mcp_start(void)
 	if (ret)
 		return ret;
 
-	
+	/* Set initialization values */
 #if defined(MC_INTR_SSIQ_SWD)
 	mcp_ctx.mcp_buffer->message.init_values.flags |= MC_IV_FLAG_IRQ;
 	mcp_ctx.mcp_buffer->message.init_values.irq = MC_INTR_SSIQ_SWD;
@@ -1147,11 +1210,15 @@ int mcp_start(void)
 		(u32)((uintptr_t)mcp_ctx.time - (uintptr_t)mcp_ctx.base);
 	mcp_ctx.mcp_buffer->message.init_values.time_len =
 			sizeof(*mcp_ctx.time);
-	
+	/* First empty N-SIQ to setup of the MCI structure */
 	ret = mc_fc_nsiq();
 	if (ret)
 		return ret;
 
+	/*
+	 * Wait until the TEE state switches to MC_STATUS_INITIALIZED
+	 * It is assumed that it always switches state at some point
+	 */
 	do {
 		u32 status = 0;
 		u32 timeslot;
@@ -1162,7 +1229,7 @@ int mcp_start(void)
 
 		switch (status) {
 		case MC_STATUS_NOT_INITIALIZED:
-			
+			/* Switch to the TEE to give it more CPU time. */
 			ret = EAGAIN;
 			for (timeslot = 0; timeslot < 10; timeslot++) {
 				int tmp_ret = mc_fc_yield();
@@ -1171,7 +1238,7 @@ int mcp_start(void)
 					return tmp_ret;
 			}
 
-			
+			/* No need to loop like mad */
 			if (ret == EAGAIN)
 				usleep_range(100, 500);
 
@@ -1184,13 +1251,13 @@ int mcp_start(void)
 			mc_dev_devel("ready\n");
 			break;
 		default:
-			
+			/* MC_STATUS_BAD_INIT or anything else */
 			mc_dev_err("MCI init failed, state 0x%x\n", status);
 			return -EIO;
 		}
 	} while (ret == EAGAIN);
 
-	
+	/* Set up S-SIQ interrupt handler and its bottom-half */
 	mcp_ctx.irq_bh_active = true;
 	mcp_ctx.irq_bh_thread = kthread_run(irq_bh_worker, NULL, "tee_irq_bh");
 	if (IS_ERR(mcp_ctx.irq_bh_thread)) {
@@ -1219,7 +1286,7 @@ int mcp_init(void)
 	mutex_init(&mcp_ctx.queue_lock);
 	init_completion(&mcp_ctx.complete);
 	init_completion(&mcp_ctx.irq_bh_complete);
-	
+	/* Setup notification queue mutex */
 	mutex_init(&mcp_ctx.notifications_mutex);
 	INIT_LIST_HEAD(&mcp_ctx.notifications);
 	mcp_session_init(&mcp_ctx.mcp_session, false, NULL);
@@ -1229,7 +1296,7 @@ int mcp_init(void)
 	mutex_init(&mcp_ctx.sessions_lock);
 	mutex_init(&mcp_ctx.last_mcp_cmds_mutex);
 
-	
+	/* NQ_NUM_ELEMS must be power of 2 */
 	q_len = ALIGN(2 * (sizeof(struct notification_queue_header) +
 			   NQ_NUM_ELEMS * sizeof(struct notification)), 4);
 	if (q_len + sizeof(*mcp_ctx.time) + sizeof(*mcp_ctx.mcp_buffer) >
@@ -1318,7 +1385,7 @@ int mcp_debug_sessions(struct kasnprintf_buf *buf)
 	struct mcp_session *session;
 	int ret;
 
-	
+	/* Header */
 	ret = kasnprintf(buf, "%4s %4s %4s %-15s %-11s\n",
 			 "ID", "type", "ec", "state", "notif state");
 	if (ret < 0)
@@ -1374,7 +1441,7 @@ int mcp_debug_mcpcmds(struct kasnprintf_buf *buf)
 	struct mcp_command_info *cmd_info;
 	int i, ret = 0;
 
-	
+	/* Initialize MCP log */
 	mutex_lock(&mcp_ctx.last_mcp_cmds_mutex);
 	ret = kasnprintf(buf, "%20s %5s %-13s %4s %-8s %6s %5s %s\n",
 			 "CPU clock", "PID", "command", "S-ID",
@@ -1384,14 +1451,14 @@ int mcp_debug_mcpcmds(struct kasnprintf_buf *buf)
 
 	cmd_info = &mcp_ctx.last_mcp_cmds[mcp_ctx.last_mcp_cmds_index];
 	if (cmd_info->state != UNUSED)
-		
+		/* Buffer has wrapped around, dump end (oldest records) */
 		for (i = mcp_ctx.last_mcp_cmds_index; i < MCP_LOG_SIZE; i++) {
 			ret = show_mcp_log_entry(buf, cmd_info++);
 			if (ret < 0)
 				goto out;
 		}
 
-	
+	/* Dump first records */
 	cmd_info = &mcp_ctx.last_mcp_cmds[0];
 	for (i = 0; i < mcp_ctx.last_mcp_cmds_index; i++) {
 		ret = show_mcp_log_entry(buf, cmd_info++);

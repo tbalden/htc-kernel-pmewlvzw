@@ -12,11 +12,11 @@
  * GNU General Public License for more details.
  */
 
-#include "platform.h"	
+#include "platform.h"	/* MC_BL_NOTIFIER */
 
 #ifdef MC_BL_NOTIFIER
 #include "main.h"
-#include "scheduler.h" 
+#include "scheduler.h" /* SWd suspend/resume commands */
 #include "pm.h"
 #include <asm/bL_switcher.h>
 
@@ -65,4 +65,4 @@ void mc_pm_stop(void)
 	unregister_bL_swicher_notifier(&pm_ctx.bl_swicher_notifier);
 }
 
-#endif 
+#endif /* MC_BL_NOTIFIER */

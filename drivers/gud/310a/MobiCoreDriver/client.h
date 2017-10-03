@@ -16,28 +16,29 @@
 #define _CLIENT_H_
 
 #include <linux/list.h>
-#include <linux/sched.h>	
+#include <linux/sched.h>	/* TASK_COMM_LEN */
 
 struct tee_object;
 
 struct tee_client {
-	
+	/* PID of task that opened the device, 0 if kernel */
 	pid_t			pid;
-	
+	/* Command for task*/
 	char			comm[TASK_COMM_LEN];
-	
+	/* Number of references kept to this object */
 	struct kref		kref;
-	
+	/* List of contiguous buffers allocated by mcMallocWsm for the client */
 	struct list_head	cbufs;
-	struct mutex		cbufs_lock;	
-	
+	struct mutex		cbufs_lock;	/* lock for the cbufs list */
+	/* List of TA sessions opened by this client */
 	struct list_head	sessions;
 	struct list_head	closing_sessions;
-	struct mutex		sessions_lock;	
-	
+	struct mutex		sessions_lock;	/* sessions list + closing */
+	/* The list entry to attach to "ctx.clients" list */
 	struct list_head	list;
 };
 
+/* Client */
 struct tee_client *client_create(bool is_from_kernel);
 static inline void client_get(struct tee_client *client)
 {
@@ -48,8 +49,10 @@ void client_put(struct tee_client *client);
 bool client_has_sessions(struct tee_client *client);
 void client_close(struct tee_client *client);
 
+/* All clients */
 void clients_kill_sessions(void);
 
+/* Session */
 int client_open_session(struct tee_client *client, u32 *session_id,
 			const struct mc_uuid_t *uuid, uintptr_t tci,
 			size_t tci_len, bool is_gp_uuid,
@@ -72,10 +75,12 @@ int client_map_session_wsms(struct tee_client *client, u32 session_id,
 int client_unmap_session_wsms(struct tee_client *client, u32 session_id,
 			      const struct mc_ioctl_buffer *bufs);
 
+/* Contiguous buffer */
 int client_cbuf_create(struct tee_client *client, u32 len, uintptr_t *addr,
 		       struct vm_area_struct *vmarea);
 int client_cbuf_free(struct tee_client *client, uintptr_t addr);
 
+/* MMU */
 struct cbuf;
 
 struct tee_mmu *client_mmu_create(struct tee_client *client, uintptr_t buf,
@@ -83,8 +88,10 @@ struct tee_mmu *client_mmu_create(struct tee_client *client, uintptr_t buf,
 void client_mmu_free(struct tee_client *client, uintptr_t buf,
 		     struct tee_mmu *mmu, struct cbuf *cbuf);
 
+/* Global */
 void client_init(void);
 
+/* Debug */
 int clients_debug_structs(struct kasnprintf_buf *buf);
 
-#endif 
+#endif /* _CLIENT_H_ */

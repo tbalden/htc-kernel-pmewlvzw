@@ -14,12 +14,15 @@
 #ifndef _MC_PLATFORM_H_
 #define _MC_PLATFORM_H_
 
+/* MobiCore Interrupt for Qualcomm (DT IRQ has priority if present) */
 #define MC_INTR_SSIQ	280
 
+/* Use SMC for fastcalls */
 #define MC_SMC_FASTCALL
 
 #include <linux/types.h>
 
+/*--------------- Implementation -------------- */
 #include <soc/qcom/scm.h>
 #include <soc/qcom/qseecomi.h>
 
@@ -39,6 +42,7 @@
 			TZ_SYSCALL_PARAM_TYPE_BUF_RW, \
 			TZ_SYSCALL_PARAM_TYPE_VAL)
 
+/* from following file */
 #define SCM_SVC_MOBICORE		250
 #define SCM_CMD_MOBICORE		1
 
@@ -76,16 +80,28 @@ static inline int smc_fastcall(void *fc_generic, size_t size)
 			fc_generic, size);
 }
 
+/* Should be defined for all TZBSPv4 platform common flag */
 #ifndef CONFIG_TRUSTONIC_TEE_LPAE
 #define CONFIG_TRUSTONIC_TEE_LPAE
 #endif
 
+/*
+ * Perform crypto clock enable/disable
+ * of clocks
+ *     "bus_clk"
+ *     "core_clk"
+ *     "iface_clk"
+ */
 #define MC_CRYPTO_CLOCK_MANAGEMENT
 #define MC_CRYPTO_CLOCK_CORESRC_PROPNAME "qcom,ce-opp-freq"
 #define MC_CLOCK_CORESRC_DEFAULTRATE 100000000
 
+/*
+ * Perform clock enable/disable for clock  "core_clk_src"
+ */
 #define MC_DEVICE_PROPNAME "qcom,mcd"
 
+/* All TZBSPv4 targets are using AARCH32_FC flag */
 #define MC_AARCH32_FC
 
-#endif 
+#endif /* _MC_PLATFORM_H_ */

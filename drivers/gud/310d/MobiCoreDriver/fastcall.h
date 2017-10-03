@@ -15,6 +15,7 @@
 #ifndef _TBASE_FASTCALL_H_
 #define _TBASE_FASTCALL_H_
 
+/* Use the arch_extension sec pseudo op before switching to secure world */
 #if defined(__GNUC__) && \
 	defined(__GNUC_MINOR__) && \
 	defined(__GNUC_PATCHLEVEL__) && \
@@ -36,4 +37,4 @@ void mc_fastcall_exit(void);
 
 int mc_fastcall_debug_smclog(struct kasnprintf_buf *buf);
 
-#endif 
+#endif /* _TBASE_FASTCALL_H_ */

@@ -183,18 +183,6 @@ static void pcm_afe_process_tx_pkt(uint32_t opcode,
 			switch (event) {
 			case AFE_EVENT_RTPORT_START: {
 				prtd->dsp_cnt = 0;
-				/* Calculate poll time.
-				 * Split steps to avoid overflow.
-				 * Poll time-time corresponding to one period
-				 * in bytes.
-				 * (Samplerate * channelcount * format) =
-				 * bytes in 1 sec.
-				 * Poll time =
-				 *	(period bytes / bytes in one sec) *
-				 *	 1000000 micro seconds.
-				 * Multiplication by 1000000 is done in two
-				 * steps to keep the accuracy of poll time.
-				 */
 				if (prtd->mmap_flag) {
 					period_bytes = ((uint64_t)(
 						(snd_pcm_lib_period_bytes(
@@ -278,14 +266,6 @@ static void pcm_afe_process_rx_pkt(uint32_t opcode,
 		switch (event) {
 		case AFE_EVENT_RTPORT_START: {
 			prtd->dsp_cnt = 0;
-			/* Calculate poll time. Split steps to avoid overflow.
-			 * Poll time-time corresponding to one period in bytes.
-			 * (Samplerate * channelcount * format)=bytes in 1 sec.
-			 * Poll time =  (period bytes / bytes in one sec) *
-			 * 1000000 micro seconds.
-			 * Multiplication by 1000000 is done in two steps to
-			 * keep the accuracy of poll time.
-			 */
 			if (prtd->mmap_flag) {
 				period_bytes = ((uint64_t)(
 					(snd_pcm_lib_period_bytes(
@@ -303,7 +283,7 @@ static void pcm_afe_process_rx_pkt(uint32_t opcode,
 				if (!mem_map_handle)
 					pr_err("%s:mem_map_handle is NULL\n",
 							 __func__);
-				/* Do initial read to start transfer */
+				
 				afe_rt_proxy_port_read((prtd->dma_addr +
 					(prtd->dsp_cnt *
 					snd_pcm_lib_period_bytes(
@@ -408,7 +388,6 @@ static int msm_afe_capture_prepare(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-/* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 16000, 48000
 };
@@ -468,7 +447,7 @@ static int msm_afe_open(struct snd_pcm_substream *substream)
 				&constraints_sample_rates);
 	if (ret < 0)
 		pr_err("snd_pcm_hw_constraint_list failed\n");
-	/* Ensure that buffer size is a multiple of period size */
+	
 	ret = snd_pcm_hw_constraint_integer(runtime,
 					    SNDRV_PCM_HW_PARAM_PERIODS);
 	if (ret < 0)
@@ -684,6 +663,7 @@ done:
 	mutex_unlock(&prtd->lock);
 	prtd->prepared--;
 	kfree(prtd);
+	runtime->private_data = NULL;
 	return 0;
 }
 static int msm_afe_prepare(struct snd_pcm_substream *substream)
@@ -782,11 +762,9 @@ static int msm_afe_hw_params(struct snd_pcm_substream *substream,
 
 	if (rc < 0) {
 		pr_err("Audio Start: Buffer Allocation failed rc = %d\n", rc);
-//HTC_AUD_START
 #ifdef CONFIG_HTC_DEBUG_DSP
 		BUG();
 #endif
-//HTC_AUD_END
 		mutex_unlock(&prtd->lock);
 		return -ENOMEM;
 	}

@@ -34,4 +34,4 @@ extern struct tui_dci_msg_t *dci;
 extern struct tlc_tui_response_t g_user_rsp;
 extern uint64_t g_ion_phys[MAX_BUFFER_NUMBER];
 extern uint32_t g_ion_size[MAX_BUFFER_NUMBER];
-#endif 
+#endif /* TLCTUI_H_ */

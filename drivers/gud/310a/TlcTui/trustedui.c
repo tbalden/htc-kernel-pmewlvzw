@@ -12,6 +12,10 @@
  * GNU General Public License for more details.
  */
 
+/**
+ * File            : trustedui.c
+ * Created         : 26-02-2010
+ */
 
 #include <linux/spinlock.h>
 #include <linux/module.h>
