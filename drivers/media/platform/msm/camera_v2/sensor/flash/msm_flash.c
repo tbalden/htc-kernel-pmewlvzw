@@ -20,6 +20,14 @@
 #include "msm_cci.h"
 #include <linux/htc_flashlight.h>
 
+#ifndef CONFIG_LEDS_QPNP_BUTTON_BLINK
+#define CONFIG_LEDS_QPNP_BUTTON_BLINK
+#endif
+
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+#include <linux/alarmtimer.h>
+#endif
+
 #undef CDBG
 #define CDBG(fmt, args...) pr_info("[CAM][FL]"fmt, ##args)
 
@@ -27,6 +35,18 @@
 #define HTC_CAM_FEATURE_FLASH_RESTRICTION
 
 DEFINE_MSM_MUTEX(msm_flash_mutex);
+
+#if 1
+static int init_done = 0;
+static struct alarm flash_blink_rtc;
+static struct alarm vib_rtc;
+static struct work_struct flash_blink_work;
+static struct work_struct flash_start_blink_work;
+static struct work_struct flash_stop_blink_work;
+static struct workqueue_struct *flash_blink_workqueue;
+static struct workqueue_struct *flash_start_blink_workqueue;
+static struct workqueue_struct *flash_stop_blink_workqueue;
+#endif
 
 static struct v4l2_file_operations msm_flash_v4l2_subdev_fops;
 static struct led_trigger *torch_trigger;
@@ -90,6 +110,378 @@ static struct led_classdev msm_torch_led[MAX_LED_TRIGGERS] = {
 		.brightness	= LED_OFF,
 	},
 };
+
+#if 1
+
+static int currently_torch_mode = 0;
+static int currently_blinking = 0;
+
+#define DEFAULT_BLINK_NUMBER 0
+#define DEFAULT_BLINK_WAIT_SEC 2
+#define DEFAULT_WAIT_INC 1
+#define DEFAULT_WAIT_INC_MAX 4
+
+// default switches
+static int flash_blink_on  = 1;
+static int flash_blink_number = DEFAULT_BLINK_NUMBER;
+static int flash_blink_wait_sec = DEFAULT_BLINK_WAIT_SEC;
+static int flash_blink_wait_inc = DEFAULT_WAIT_INC;
+static int flash_blink_wait_inc_max = DEFAULT_WAIT_INC_MAX;
+static int haptic_mode = 1; // 0 - always blink, 1 - only blink with haptic vibration notifications
+
+// dim mode switches
+static int dim_mode = 1; // 0 - no , 1 - darker dim flash, 2 - fully off dim
+static int dim_use_period = 1; // 0 - don't use dimming period hours, 1 - use hours, dim only between them
+static int dim_start_hour = 22; // start hour
+static int dim_end_hour = 6; // end hour
+
+
+void set_flash_blink_on(int value) {
+	flash_blink_on = !!value;
+}
+EXPORT_SYMBOL(set_flash_blink_on);
+int get_flash_blink_on(void) {
+	return flash_blink_on;
+}
+EXPORT_SYMBOL(get_flash_blink_on);
+
+void set_flash_blink_number(int value) {
+	flash_blink_number = value%51; // max 50
+}
+EXPORT_SYMBOL(set_flash_blink_number);
+int get_flash_blink_number(void) {
+	return flash_blink_number;
+}
+EXPORT_SYMBOL(get_flash_blink_number);
+
+void set_flash_blink_wait_sec(int value) {
+	flash_blink_wait_sec = max(1,value%11); // min 1/max 10
+}
+EXPORT_SYMBOL(set_flash_blink_wait_sec);
+int get_flash_blink_wait_sec(void) {
+	return flash_blink_wait_sec;
+}
+EXPORT_SYMBOL(get_flash_blink_wait_sec);
+
+void set_flash_blink_wait_inc(int value) {
+	flash_blink_wait_inc = !!value;
+}
+EXPORT_SYMBOL(set_flash_blink_wait_inc);
+int get_flash_blink_wait_inc(void) {
+	return flash_blink_wait_inc;
+}
+EXPORT_SYMBOL(get_flash_blink_wait_inc);
+
+void set_flash_blink_wait_inc_max(int value) {
+	flash_blink_wait_inc_max = max(1,value%9); // min 1/max 8
+}
+EXPORT_SYMBOL(set_flash_blink_wait_inc_max);
+int get_flash_blink_wait_inc_max(void) {
+	return flash_blink_wait_inc_max;
+}
+EXPORT_SYMBOL(get_flash_blink_wait_inc_max);
+
+
+void set_flash_haptic_mode(int value) {
+	haptic_mode = !!value;
+}
+EXPORT_SYMBOL(set_flash_haptic_mode);
+int get_flash_haptic_mode(void) {
+	return haptic_mode;
+}
+EXPORT_SYMBOL(get_flash_haptic_mode);
+
+void set_flash_dim_mode(int value) {
+	dim_mode = value%3; // 0/1/2
+}
+EXPORT_SYMBOL(set_flash_dim_mode);
+int get_flash_dim_mode(void) {
+	return dim_mode;
+}
+EXPORT_SYMBOL(get_flash_dim_mode);
+
+void set_flash_dim_use_period(int value) {
+	dim_use_period = !!value;
+}
+EXPORT_SYMBOL(set_flash_dim_use_period);
+int get_flash_dim_use_period(void) {
+	return dim_use_period;
+}
+EXPORT_SYMBOL(get_flash_dim_use_period);
+
+void set_flash_dim_period_hours(int startValue, int endValue) {
+	dim_start_hour = startValue;
+	dim_end_hour = endValue;
+}
+EXPORT_SYMBOL(set_flash_dim_period_hours);
+void get_flash_dim_period_hours(int *r) {
+//	int r[2] = {dim_start_hour, dim_end_hour};
+	r[0] = dim_start_hour;
+	r[1] = dim_end_hour;
+}
+EXPORT_SYMBOL(get_flash_dim_period_hours);
+
+
+
+
+static int current_blink_num = 0;
+static int interrupt_retime = 0;
+static DEFINE_MUTEX(flash_blink_lock);
+
+
+int get_hour_of_day(void) {
+	struct timespec ts;
+	unsigned long local_time;
+	getnstimeofday(&ts);
+	local_time = (u32)(ts.tv_sec - (sys_tz.tz_minuteswest * 60));
+	return (local_time / 3600) % (24);
+}
+
+int is_dim_blink_needed(void)
+{
+	int hour = get_hour_of_day();
+	int in_dim_period = 0;
+
+	if (!dim_mode) return 0;
+
+	pr_info("%s hour %d\n",__func__,hour);
+	in_dim_period = (dim_use_period && ( (dim_start_hour>dim_end_hour && ( (hour<24 && hour>=dim_start_hour) || (hour>=0 && hour<dim_end_hour) )) || (dim_start_hour<dim_end_hour && hour>=dim_start_hour && hour<dim_end_hour)));
+
+	if (dim_mode && (!dim_use_period || (dim_use_period && in_dim_period))) return dim_mode;
+	return 0;
+}
+
+#define DEFAULT_VIB_SLOW 15
+#define DEFAULT_VIB_LENGTH 250
+
+// on off:
+static int vib_notification_reminder = 1;
+// how oftern vib
+static int vib_notification_slowness = DEFAULT_VIB_SLOW;
+// how long vibration motor should be on for one reminder buzz...
+static int vib_notification_length = DEFAULT_VIB_LENGTH;
+
+void set_vib_notification_reminder(int value) {
+	vib_notification_reminder = !!value;
+}
+EXPORT_SYMBOL(set_vib_notification_reminder);
+int get_vib_notification_reminder(void) {
+	return vib_notification_reminder;
+}
+EXPORT_SYMBOL(get_vib_notification_reminder);
+void set_vib_notification_slowness(int value) {
+	vib_notification_slowness = value%30;
+}
+EXPORT_SYMBOL(set_vib_notification_slowness);
+int get_vib_notification_slowness(void) {
+	return vib_notification_slowness;
+}
+EXPORT_SYMBOL(get_vib_notification_slowness);
+void set_vib_notification_length(int value) {
+	vib_notification_length = value%500;
+}
+EXPORT_SYMBOL(set_vib_notification_length);
+int get_vib_notification_length(void) {
+	return vib_notification_length;
+}
+EXPORT_SYMBOL(get_vib_notification_length);
+
+
+extern void boosted_vib(int time);
+
+#define DIM_USEC 1
+
+void do_flash_blink(void) {
+	ktime_t wakeup_time;
+	ktime_t wakeup_time_vib;
+	ktime_t curr_time = { .tv64 = 0 };
+	int count = 0;
+	int limit = 5;
+	int dim = 0;
+
+	pr_info("%s flash_blink\n",__func__);
+	if (currently_torch_mode || interrupt_retime) return;
+
+	dim = is_dim_blink_needed();
+	pr_info("%s dim %d\n",__func__,dim);
+
+	if (dim==2) {
+		currently_blinking = 0;
+		goto exit;
+	}
+
+	htc_flash_main(0,0);
+
+	if (flash_blink_wait_inc && !dim) {
+		// while in the first fast paced periodicity, don't do that much of flashing in one blink...
+		if (current_blink_num < 16) limit = 2;
+		if (current_blink_num > 30) limit = 4;
+		if (current_blink_num > 40) limit = 5;
+	}
+
+	limit -= dim * 2;
+
+	while (count++<limit) {
+	htc_torch_main(150,0);  // [o] [ ]
+	udelay(3 - dim * DIM_USEC);
+	htc_torch_main(0,0);	// [ ] [ ]
+	udelay(15000);
+
+	htc_torch_main(0,150);  // [ ] [o]
+	udelay(3 - dim * DIM_USEC);
+	htc_torch_main(0,0);	// [ ] [ ]
+	udelay(15000);
+
+	if (!dim) {
+		htc_torch_main(150,0);  // [o] [ ]
+		udelay(3 - dim * DIM_USEC);
+		htc_torch_main(0,0);	// [ ] [ ]
+		udelay(15000);
+
+		htc_torch_main(0,150);  // [ ] [o]
+		udelay(3 - dim * DIM_USEC);
+		htc_torch_main(0,0);	// [ ] [ ]
+		udelay(15000);
+
+		htc_torch_main(150,0);  // [o] [ ]
+		udelay(3 - dim * DIM_USEC);
+		htc_torch_main(0,0);	// [ ] [ ]
+		if (count==1) {
+			udelay(15000);
+		}
+	}
+	}
+
+	if (vib_notification_reminder && current_blink_num % vib_notification_slowness == (vib_notification_slowness - 1)) {
+		wakeup_time_vib = ktime_add_us(curr_time,
+			(1 * 1000LL * 1000LL)); // msec to usec 
+		// call vibration from a real time alarm thread, otherwise it can get stuck vibrating
+		alarm_cancel(&vib_rtc); // stop pending alarm...
+		alarm_start_relative(&vib_rtc, wakeup_time_vib); // start new...
+	}
+
+	mutex_lock(&flash_blink_lock);
+	pr_info("%s flash_blink lock\n",__func__);
+	// make sure this part is running in a few cycles, as blocking the lock will block vibrator driver resulting in kernel freeze and panic
+
+	if ( (flash_blink_number > 0 && current_blink_num > flash_blink_number) || interrupt_retime) {
+		currently_blinking = 0;
+		goto exit;
+	}
+	current_blink_num++;
+
+	wakeup_time = ktime_add_us(curr_time,
+		( (flash_blink_wait_sec + min(max(((current_blink_num-10)/6),0),flash_blink_wait_inc_max) * flash_blink_wait_inc) * 1000LL * 1000LL)); // msec to usec 
+
+	alarm_cancel(&flash_blink_rtc); // stop pending alarm...
+	alarm_start_relative(&flash_blink_rtc, wakeup_time); // start new...
+
+	pr_info("%s: Current Time tv_sec: %ld, Alarm set to tv_sec: %ld\n",
+		__func__,
+                    ktime_to_timeval(curr_time).tv_sec,
+                    ktime_to_timeval(wakeup_time).tv_sec);
+
+exit:
+	mutex_unlock(&flash_blink_lock);
+	pr_info("%s flash_blink unlock\n",__func__);
+
+}
+
+static void flash_start_blink_work_func(struct work_struct *work)
+{
+	pr_info("%s flash_blink\n",__func__);
+	mutex_lock(&flash_blink_lock);
+	pr_info("%s flash_blink lock\n",__func__);
+
+	interrupt_retime = 0;
+	if (currently_blinking) {
+		// already blinking, check if we should go back with blink num count to a faster pace...
+		if (current_blink_num>8) {
+			// if started blinking already over a lot of blinks, move back to the beginning, 
+			// to shorter periodicity...
+			current_blink_num = 5;
+		} // otherwise if only a few blinks yet, don't reset count...
+		mutex_unlock(&flash_blink_lock);
+		pr_info("%s flash_blink unlock\n",__func__);
+	}
+	if (!currently_blinking) {
+		currently_blinking = 1;
+		current_blink_num = 0;
+		mutex_unlock(&flash_blink_lock);
+		queue_work(flash_blink_workqueue, &flash_blink_work);
+//		do_flash_blink();
+		pr_info("%s flash_blink unlock\n",__func__);
+	}
+}
+
+static void flash_stop_blink_work_func(struct work_struct *work)
+{
+	pr_info("%s flash_blink\n",__func__);
+	mutex_lock(&flash_blink_lock);
+	pr_info("%s flash_blink lock\n",__func__);
+
+	if (!flash_blink_on && !currently_blinking) goto exit;
+	if (currently_torch_mode) goto exit;
+	currently_blinking = 0;
+	htc_torch_main(0,0);
+	interrupt_retime = 1;
+	alarm_cancel(&flash_blink_rtc); // stop pending alarm...
+exit:
+	mutex_unlock(&flash_blink_lock);
+	pr_info("%s flash_blink unlock\n",__func__);
+}
+
+void flash_blink(bool haptic) {
+	pr_info("%s flash_blink\n",__func__);
+	// is flash blink on?
+	if (!flash_blink_on) return;
+	// if not a haptic notificcation and haptic blink mode on, do not do blinking...
+	if (!haptic && haptic_mode) return;
+	// if torch i on, don't blink
+	if (currently_torch_mode) return;
+
+	if (init_done) {
+		queue_work(flash_start_blink_workqueue, &flash_start_blink_work);
+	}
+}
+EXPORT_SYMBOL(flash_blink);
+
+static void flash_blink_work_func(struct work_struct *work)
+{
+	pr_info("%s flash_blink\n",__func__);
+	do_flash_blink();
+}
+
+extern void set_vibrate(int value);
+
+static enum alarmtimer_restart vib_rtc_callback(struct alarm *al, ktime_t now)
+{
+	pr_info("%s flash_blink\n",__func__);
+	set_vibrate(vib_notification_length);
+	return ALARMTIMER_NORESTART;
+}
+
+
+static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_t now)
+{
+	pr_info("%s flash_blink\n",__func__);
+	if (!interrupt_retime) {
+		queue_work(flash_blink_workqueue, &flash_blink_work);
+//		do_flash_blink();
+	}
+	return ALARMTIMER_NORESTART;
+}
+
+
+void flash_stop_blink(void) {
+	pr_info("%s flash_blink\n",__func__);
+	if (init_done) {
+		queue_work(flash_stop_blink_workqueue, &flash_stop_blink_work);
+	}
+}
+EXPORT_SYMBOL(flash_stop_blink);
+
+#endif
 
 static int32_t msm_torch_create_classdev(struct platform_device *pdev,
 				void *data)
@@ -434,6 +826,10 @@ static int32_t msm_flash_off(struct msm_flash_ctrl_t *flash_ctrl,
 	#endif
 	
 	CDBG("Exit\n");
+#if 1
+	currently_blinking = 0;
+	currently_torch_mode = 0;
+#endif
 	return 0;
 }
 
@@ -649,6 +1045,10 @@ static int32_t msm_flash_low(
 	
 
 	CDBG("Exit\n");
+#if 1
+	currently_blinking = 0;
+	currently_torch_mode = 1;
+#endif
 	return 0;
 }
 
@@ -1452,11 +1852,25 @@ static int __init msm_flash_init_module(void)
 	{
 		rc = msm_led_trigger_sysfs_init();
 		pr_info("%s:%d rc %d\n", __func__, __LINE__, rc);
+#if 1
+		alarm_init(&flash_blink_rtc, ALARM_REALTIME,
+			flash_blink_rtc_callback);
+		alarm_init(&vib_rtc, ALARM_REALTIME,
+			vib_rtc_callback);
+		flash_blink_workqueue = alloc_workqueue("flash_blink", WQ_HIGHPRI, 1);
+		flash_start_blink_workqueue = alloc_workqueue("flash_start_blink", WQ_HIGHPRI, 1);
+		flash_stop_blink_workqueue = alloc_workqueue("flash_stop_blink", WQ_HIGHPRI, 1);
+		INIT_WORK(&flash_blink_work, flash_blink_work_func);
+		INIT_WORK(&flash_start_blink_work, flash_start_blink_work_func);
+		INIT_WORK(&flash_stop_blink_work, flash_stop_blink_work_func);
+		init_done = 1;
+#endif
 		return rc;
 	}
 #endif 
 	if (rc)
 		pr_err("platform probe for flash failed");
+
 
 	return rc;
 }

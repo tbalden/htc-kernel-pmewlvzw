@@ -20,8 +20,14 @@ MODULE_DESCRIPTION(DRIVER_DESCRIPTION);
 MODULE_VERSION(DRIVER_VERSION);
 MODULE_LICENSE("GPL");
 
+#ifdef CONFIG_HZ_300
+#define JIFFY_MUL 3
+#else
+#define JIFFY_MUL 1
+#endif
+
 #define fpf_PWRKEY_DUR          60
-#define FUNC_CYCLE_DUR          9
+#define FUNC_CYCLE_DUR          9 + JIFFY_MUL
 #define VIB_STRENGTH		20
 
 static int fpf_switch = 2;
@@ -90,7 +96,8 @@ static void fpf_input_event(struct input_handle *handle, unsigned int type,
 }
 
 static int input_dev_filter(struct input_dev *dev) {
-	if (strstr(dev->name, "fpc1020")) {
+	if (strstr(dev->name, "fpc1020") ||
+		strstr(dev->name, "gpio")) {
 		return 0;
 	} else {
 		return 1;
@@ -227,6 +234,12 @@ static void fpf_home_button_func_trigger(void) {
         return;
 }
 
+static unsigned long last_vol_key_1_timestamp = 0;
+static unsigned long last_vol_key_2_timestamp = 0;
+static unsigned long last_vol_keys_start = 0;
+
+extern void register_double_volume_key_press(int long_press);
+
 /*
     filter will work on FP card events.
     if screen is not on it will work on powering it on when needed (except when Button released start (button press) was started while screen was still on: powering_down_with_fingerprint_still_pressed = 1)
@@ -247,9 +260,40 @@ static bool fpf_input_filter(struct input_handle *handle,
 	if (type != EV_KEY)
 		return false;
 
+	if (type == EV_KEY) {
+		pr_info("%s ts_input key %d %d %d\n",__func__,type,code,value);
+	}
+
+	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 1) {
+		last_vol_keys_start = jiffies;
+		goto skip_ts;
+	}
+	if (type == EV_KEY && code == KEY_VOLUMEDOWN && value == 1) {
+		last_vol_keys_start = jiffies;
+		goto skip_ts;
+	}
+
+
+	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 0) {
+		last_vol_key_1_timestamp = jiffies;
+		if (last_vol_key_1_timestamp - last_vol_key_2_timestamp < 7 * JIFFY_MUL) {
+			unsigned int start_diff = jiffies - last_vol_keys_start;
+			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
+		}
+		goto skip_ts;
+	}
+	if (type == EV_KEY && code == KEY_VOLUMEDOWN && value == 0) {
+		last_vol_key_2_timestamp = jiffies;
+		if (last_vol_key_2_timestamp - last_vol_key_1_timestamp < 7 * JIFFY_MUL) {
+			unsigned int start_diff = jiffies - last_vol_keys_start;
+			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
+		}
+		goto skip_ts;
+	}
+
 	if (code == KEY_WAKEUP) {
 		pr_debug("fpf - wakeup %d %d \n",code,value);
-	}            
+	  
 
 	if (fpf_switch == 2) {
 	//standalone kernel mode. double tap means switch off
@@ -312,6 +356,9 @@ static bool fpf_input_filter(struct input_handle *handle,
 		}
 	}
 	return true;
+	}
+skip_ts:
+	return false;
 }
 
 // this callback allows registration of FP vibration, and tweaking of length...
