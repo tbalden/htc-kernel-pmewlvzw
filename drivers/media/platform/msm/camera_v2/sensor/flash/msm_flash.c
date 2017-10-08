@@ -323,28 +323,28 @@ void do_flash_blink(void) {
 
 	while (count++<limit) {
 	htc_torch_main(150,0);  // [o] [ ]
-	udelay(3 - dim * DIM_USEC);
+	udelay(5 - dim * DIM_USEC);
 	htc_torch_main(0,0);	// [ ] [ ]
 	udelay(15000);
 
 	htc_torch_main(0,150);  // [ ] [o]
-	udelay(3 - dim * DIM_USEC);
+	udelay(5 - dim * DIM_USEC);
 	htc_torch_main(0,0);	// [ ] [ ]
 	udelay(15000);
 
 	if (!dim) {
 		htc_torch_main(150,0);  // [o] [ ]
-		udelay(3 - dim * DIM_USEC);
+		udelay(5 - dim * DIM_USEC);
 		htc_torch_main(0,0);	// [ ] [ ]
 		udelay(15000);
 
 		htc_torch_main(0,150);  // [ ] [o]
-		udelay(3 - dim * DIM_USEC);
+		udelay(5 - dim * DIM_USEC);
 		htc_torch_main(0,0);	// [ ] [ ]
 		udelay(15000);
 
 		htc_torch_main(150,0);  // [o] [ ]
-		udelay(3 - dim * DIM_USEC);
+		udelay(5 - dim * DIM_USEC);
 		htc_torch_main(0,0);	// [ ] [ ]
 		if (count==1) {
 			udelay(15000);
