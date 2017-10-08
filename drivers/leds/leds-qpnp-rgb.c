@@ -370,6 +370,7 @@ static DEFINE_MUTEX(blinkstopworklock);
 static DEFINE_MUTEX(blinkworklock);
 static struct alarm blinkstopfunc_rtc;
 static struct alarm vibrate_rtc;
+static struct alarm double_double_vol_rtc;
 
 #define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	110
 #define VIRTUAL_RAMP_SETP_TIME_DOUBLE_BLINK_SLOW	90
@@ -794,7 +795,28 @@ EXPORT_SYMBOL(register_haptic);
 
 static enum alarmtimer_restart vibrate_rtc_callback(struct alarm *al, ktime_t now)
 {
-	set_vibrate(234);
+	if (lights_down_divider == 1) { 
+		set_vibrate(111);
+	} else {
+		set_vibrate(234);
+	}
+	return ALARMTIMER_NORESTART;
+}
+
+// vib notification reminder
+extern void set_vib_notification_reminder(int value);
+extern int get_vib_notification_reminder(void);
+extern void set_vib_notification_slowness(int value);
+extern int get_vib_notification_slowness(void);
+extern void set_vib_notification_length(int value);
+extern int get_vib_notification_length(void);
+
+static int double_double_vol_check_running = 0;
+static enum alarmtimer_restart double_double_vol_rtc_callback(struct alarm *al, ktime_t now)
+{
+	double_double_vol_check_running = 0;
+	if (lights_down_divider==1 && !get_vib_notification_reminder()) {lights_down_divider = 16; set_vibrate(451);} else {lights_down_divider = 1;set_vibrate(101);}
+	set_vib_notification_reminder(0);
 	return ALARMTIMER_NORESTART;
 }
 
@@ -814,7 +836,28 @@ void register_double_volume_key_press(int long_press) {
 		alarm_start_relative(&vibrate_rtc, wakeup_time); // start new...
 	} else {
 		set_suspend_booster(0);
-		if (lights_down_divider==1) {lights_down_divider = 16; set_vibrate(451);} else {lights_down_divider = 1;set_vibrate(101);}
+		if (!double_double_vol_check_running) {
+			ktime_t wakeup_time;
+			ktime_t curr_time = { .tv64 = 0 };
+			wakeup_time = ktime_add_us(curr_time,
+				(400 * 1000LL)); // msec to usec
+			// start double double check alarm timer... if it is not canceled, then it will switch between low/full light modes...
+			double_double_vol_check_running = 1;
+			alarm_cancel(&double_double_vol_rtc); // stop pending alarm...
+			alarm_start_relative(&double_double_vol_rtc, wakeup_time); // start new...
+		} else {
+			ktime_t wakeup_time;
+			ktime_t curr_time = { .tv64 = 0 };
+			wakeup_time = ktime_add_us(curr_time,
+				(200 * 1000LL)); // msec to usec
+			// double press on time...switch full light mode and vib notification reminder on
+			alarm_cancel(&double_double_vol_rtc); // stop pending alarm...
+			double_double_vol_check_running = 0;
+			set_vib_notification_reminder(1);
+			lights_down_divider = 1;set_vibrate(110);
+			alarm_cancel(&vibrate_rtc); // stop pending alarm...
+			alarm_start_relative(&vibrate_rtc, wakeup_time); // start new...vibrate a second one...
+		}
 	}
 }
 EXPORT_SYMBOL(register_double_volume_key_press);
@@ -2609,6 +2652,90 @@ EXPORT_SYMBOL(set_led_touch_solution);
 #endif
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+// --- vib notification reminder
+static ssize_t vib_notification_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", get_vib_notification_reminder());
+}
+
+static ssize_t vib_notification_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 1)
+            input = 1;
+
+	set_vib_notification_reminder(input);
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_vib_notification, (S_IWUSR|S_IRUGO),
+      vib_notification_show, vib_notification_dump);
+
+
+static ssize_t vib_notification_slowness_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", get_vib_notification_slowness());
+}
+
+static ssize_t vib_notification_slowness_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 5 || input > 30)
+            input = 15;
+
+      set_vib_notification_slowness(input);
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_vib_notification_slowness, (S_IWUSR|S_IRUGO),
+      vib_notification_slowness_show, vib_notification_slowness_dump);
+
+
+static ssize_t vib_notification_length_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", get_vib_notification_length());
+}
+
+static ssize_t vib_notification_length_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 1 || input > 500)
+            input = 300;
+
+	set_vib_notification_length(input);
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_vib_notification_length, (S_IWUSR|S_IRUGO),
+      vib_notification_length_show, vib_notification_length_dump);
+
 
 
 // pulse on/off settings
@@ -4402,6 +4529,9 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_dim_use_period);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_dim_period_start_hour);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_dim_period_end_hour);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_vib_notification);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_vib_notification_slowness);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_vib_notification_length);
 #endif
 				rc = device_create_file(led->cdev.dev, &dev_attr_set_color_ID);
 				if (rc < 0) {
@@ -4422,6 +4552,8 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 					blinkstop_rtc_callback);
 				alarm_init(&vibrate_rtc, ALARM_REALTIME,
 					vibrate_rtc_callback);
+				alarm_init(&double_double_vol_rtc, ALARM_REALTIME,
+					double_double_vol_rtc_callback);
 #endif
 			}
 		}
