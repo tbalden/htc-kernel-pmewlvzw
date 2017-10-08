@@ -255,7 +255,7 @@ int is_dim_blink_needed(void)
 #define DEFAULT_VIB_LENGTH 250
 
 // on off:
-static int vib_notification_reminder = 1;
+static int vib_notification_reminder = 0;
 // how oftern vib
 static int vib_notification_slowness = DEFAULT_VIB_SLOW;
 // how long vibration motor should be on for one reminder buzz...
