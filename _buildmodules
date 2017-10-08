@@ -1,0 +1,4 @@
+TOOL=/home/android/10/toolchain/aarch64-linux-android-4.9
+mkdir -p out
+make ARCH=arm64 CROSS_COMPILE=$TOOL/bin/aarch64-linux-android- O=out msm_defconfig 
+make ARCH=arm64 CROSS_COMPILE=$TOOL/bin/aarch64-linux-android- O=out -j16
