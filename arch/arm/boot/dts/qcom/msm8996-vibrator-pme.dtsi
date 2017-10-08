@@ -13,7 +13,7 @@
 			qcom,actuator-type = "lra";
 			qcom,wave-shape = "sine";
 			// 2828
-			qcom,vmax-mv = <1628>;
+			qcom,vmax-mv = <1328>;
 			qcom,ilim-ma = <800>;
 			qcom,sc-deb-cycles = <8>;
 			qcom,int-pwm-freq-khz = <505>;
