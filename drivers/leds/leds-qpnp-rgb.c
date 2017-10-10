@@ -754,6 +754,7 @@ static unsigned int last_value = 0;
 static unsigned int MAX_DIFF = 200;
 
 #define FINGERPRINT_VIB_TIME_EXCEPTION 40
+#define FINGERPRINT_VIB_TIME_EXCEPTION_AOSP 30
 
 // callback to register fingerprint vibration
 extern int register_fp_vibration(void);
@@ -766,7 +767,7 @@ int register_haptic(int value)
 
 //	if this exceptional time is used, it means, fingerprint scanner vibrated with proxomity sensor detection on
 //	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
-	if (value == FINGERPRINT_VIB_TIME_EXCEPTION) {
+	if (value == FINGERPRINT_VIB_TIME_EXCEPTION || value == FINGERPRINT_VIB_TIME_EXCEPTION_AOSP) {
 		int vib_strength = register_fp_vibration();
 		if (vib_strength > 0 && vib_strength<=FINGERPRINT_VIB_TIME_EXCEPTION*2) return vib_strength/2; else return vib_strength>0?FINGERPRINT_VIB_TIME_EXCEPTION:0;
 	}
@@ -2940,6 +2941,19 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 
 		lut_short_blink = lut_fade;
 	}
+	if (led->id == QPNP_ID_RGB_RED && pulse_rgb_blink == 1) {
+		int lut_fade [] = {0, 0, 10 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
+		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
+
+		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
+		lut_params.start_idx = AMBER_SHORT_LUT_START;
+		lut_params.idx_len = PULSE_LUT_LEN;
+		lut_params.ramp_step_ms = 64;
+		lut_params.lut_pause_hi = 0;
+		lut_params.lut_pause_lo = 1500;
+
+		lut_short_blink = lut_fade;
+	}
 #endif
 
 	led->rgb_cfg->pwm_cfg->lut_params = lut_params;
@@ -3001,6 +3015,39 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 			break;
 	}
 	lut_long_blink[0] = pwm_coefficient;
+
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	if (pulse_rgb_blink == 0) {
+		lut_long_blink[0] = lut_long_blink[0] / (rgb_coeff_divider * lights_down_divider);
+	}
+	if (led->id == QPNP_ID_RGB_GREEN && pulse_rgb_blink == 1) {
+		int lut_fade [] = {0, 0, 10 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
+		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
+
+		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
+		lut_params.start_idx = GREEN_SHORT_LUT_START;
+		lut_params.idx_len = PULSE_LUT_LEN;
+		lut_params.ramp_step_ms = 64;
+		lut_params.lut_pause_hi = 0;
+		lut_params.lut_pause_lo = 2500;
+
+		lut_long_blink = lut_fade;
+	}
+	if (led->id == QPNP_ID_RGB_RED && pulse_rgb_blink == 1) {
+		int lut_fade [] = {0, 0, 10 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
+		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
+
+		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
+		lut_params.start_idx = AMBER_SHORT_LUT_START;
+		lut_params.idx_len = PULSE_LUT_LEN;
+		lut_params.ramp_step_ms = 64;
+		lut_params.lut_pause_hi = 0;
+		lut_params.lut_pause_lo = 2500;
+
+		lut_long_blink = lut_fade;
+	}
+#endif
+
 	led->rgb_cfg->pwm_cfg->lut_params = lut_params;
 
 	rc = pwm_lut_config(led->rgb_cfg->pwm_cfg->pwm_dev,
@@ -3021,11 +3068,10 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if (bln_switch) {
-		if (charging || lights_down_divider==1) {
-			qpnp_buttonled_blink(1);
-		}
+	if ( bln_switch && (((!charging && lights_down_divider==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
+		qpnp_buttonled_blink(1);
 	}
+	// call flash blink for flashlight notif if lights_down mode (>1) is not active...
 	if (lights_down_divider==1 && !screen_on) {
 		flash_blink(false);
 	}
