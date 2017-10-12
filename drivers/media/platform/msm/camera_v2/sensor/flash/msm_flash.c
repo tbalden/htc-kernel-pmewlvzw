@@ -289,14 +289,25 @@ EXPORT_SYMBOL(get_vib_notification_length);
 
 extern void boosted_vib(int time);
 
-#define DIM_USEC 1
+#define DIM_USEC 2
+
+void precise_delay(int usec) {
+	ktime_t start, end;
+	s64 diff;
+	start = ktime_get();
+	while (1) {
+		end = ktime_get();
+		diff = ktime_to_us(ktime_sub(end, start));
+		if (diff>=usec) return;
+	}
+}
 
 void do_flash_blink(void) {
 	ktime_t wakeup_time;
 	ktime_t wakeup_time_vib;
 	ktime_t curr_time = { .tv64 = 0 };
 	int count = 0;
-	int limit = 5;
+	int limit = 4;
 	int dim = 0;
 
 	pr_info("%s flash_blink\n",__func__);
@@ -323,31 +334,31 @@ void do_flash_blink(void) {
 
 	while (count++<limit) {
 	htc_torch_main(150,0);  // [o] [ ]
-	udelay(5 - dim * DIM_USEC);
+	precise_delay(41 - dim * DIM_USEC);
 	htc_torch_main(0,0);	// [ ] [ ]
-	udelay(15000);
+	precise_delay(27000);
 
 	htc_torch_main(0,150);  // [ ] [o]
-	udelay(5 - dim * DIM_USEC);
+	precise_delay(41 - dim * DIM_USEC);
 	htc_torch_main(0,0);	// [ ] [ ]
-	udelay(15000);
+	precise_delay(27000);
 
 	if (!dim) {
 		htc_torch_main(150,0);  // [o] [ ]
-		udelay(5 - dim * DIM_USEC);
+		precise_delay(41 - dim * DIM_USEC);
 		htc_torch_main(0,0);	// [ ] [ ]
-		udelay(15000);
+		precise_delay(27000);
 
 		htc_torch_main(0,150);  // [ ] [o]
-		udelay(5 - dim * DIM_USEC);
+		precise_delay(41 - dim * DIM_USEC);
 		htc_torch_main(0,0);	// [ ] [ ]
-		udelay(15000);
+		precise_delay(27000);
 
 		htc_torch_main(150,0);  // [o] [ ]
-		udelay(5 - dim * DIM_USEC);
+		precise_delay(41 - dim * DIM_USEC);
 		htc_torch_main(0,0);	// [ ] [ ]
 		if (count==1) {
-			udelay(15000);
+			precise_delay(27000);
 		}
 	}
 	}
