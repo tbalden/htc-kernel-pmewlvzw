@@ -295,9 +295,16 @@ static int flashlight_turn_off(void);
 
 int pmi8994_flash_mode(int, int);
 int pmi8994_torch_mode(int, int);
+#if 1
+int pmi8994_torch_mode_2(int, int, bool);
+#endif
 
 int (*htc_flash_main)(int led1, int led2);
 int (*htc_torch_main)(int led1, int led2);
+#if 1
+static DEFINE_MUTEX(torch_sync_lock);
+int (*htc_torch_main_sync)(int led1, int led2, bool);
+#endif
 
 static int flash_regulator_enable(struct qpnp_flash_led *, struct flash_node_data *, bool);
 
@@ -1304,6 +1311,7 @@ error_regulator_enable:
 	return rc;
 }
 
+
 static void qpnp_flash_led_work(struct work_struct *work)
 {
 	struct flash_node_data *flash_node = container_of(work,
@@ -2067,8 +2075,23 @@ error_enable_gpio:
 	return;
 }
 
+#if 1
+static void qpnp_flash_led_brightness_set_2(struct led_classdev *led_cdev,
+						enum led_brightness value, bool sync);
+
+static void qpnp_flash_led_brightness_set(struct led_classdev *led_cdev,
+						enum led_brightness value) 
+{
+	qpnp_flash_led_brightness_set_2(led_cdev, value, false);
+}
+
+static void qpnp_flash_led_brightness_set_2(struct led_classdev *led_cdev,
+						enum led_brightness value, bool sync)
+#endif
+#if 0
 static void qpnp_flash_led_brightness_set(struct led_classdev *led_cdev,
 						enum led_brightness value)
+#endif
 {
 	struct flash_node_data *flash_node;
 	struct qpnp_flash_led *led;
@@ -2132,8 +2155,15 @@ static void qpnp_flash_led_brightness_set(struct led_classdev *led_cdev,
 			value = FLASH_LED_MIN_CURRENT_MA;
 		flash_node->prgm_current = value;
 	}
-
+#if 1
+	if (sync) {
+		qpnp_flash_led_work(&flash_node->work);
+	} else {
+#endif
 	queue_work(led->ordered_workq, &flash_node->work);
+#if 1
+	}
+#endif
 
 	return;
 }
@@ -2182,40 +2212,93 @@ int pmi8994_flash_mode(int led0_curr, int led1_curr)
 
 	return 0;
 }
+#if 1
+int pmi8994_torch_mode_2(int led0_curr, int led1_curr, bool sync);
 
+int pmi8994_torch_mode(int led0_curr, int led1_curr) {
+	return pmi8994_torch_mode_2(led0_curr,led1_curr, false);
+}
+
+int pmi8994_torch_mode_2(int led0_curr, int led1_curr, bool sync)
+#endif
+#if 0
 int pmi8994_torch_mode(int led0_curr, int led1_curr)
+#endif
 {
 	FLT_INFO_LOG("%s: camera torch current %d+%d.\n", __func__, led0_curr, led1_curr);
 
+#if 1
+	mutex_lock(&torch_sync_lock);
+#endif
 	if ((led0_curr < 0) || (led1_curr < 0)) {
 		FLT_INFO_LOG("%s: input current value are not valid!!\n", __func__);
+#if 1
+		mutex_unlock(&torch_sync_lock);
+#endif
 		return 0;
 	} else if (led0_curr == 0 && led1_curr == 0) {
+#if 1
+		if (!sync) // only lock if async queue used...otherwise work func will deadlock with same lock
+#endif
 		mutex_lock(&this_led->flash_led_lock);
+#if 1
+		qpnp_flash_led_brightness_set_2(&this_led->flash_node[this_led->num_leds - 1].cdev, 0, sync);
+#endif
+#if 0
 		qpnp_flash_led_brightness_set(&this_led->flash_node[this_led->num_leds - 1].cdev, 0);
+#endif
+#if 1
+		if (!sync) // only lock if async queue used...otherwise work func will deadlock with same lock
+#endif
 		mutex_unlock(&this_led->flash_led_lock);
+#if 1
+		mutex_unlock(&torch_sync_lock);
+#endif
 		return 0;
 	}
 
+#if 1
+		if (!sync) // only lock if async queue used...otherwise work func will deadlock with same lock
+#endif
 	mutex_lock(&this_led->flash_led_lock);
 
 	if (this_led->torch_led_node[0] >= 0) {
 		this_led->flash_node[this_led->torch_led_node[0]].flash_on = true;
+#if 1
+		qpnp_flash_led_brightness_set_2(&this_led->flash_node[this_led->torch_led_node[0]].cdev, led0_curr, sync);
+#endif
+#if 0
 		qpnp_flash_led_brightness_set(&this_led->flash_node[this_led->torch_led_node[0]].cdev, led0_curr);
+#endif
 	} else
 		FLT_INFO_LOG("%s: torch_led_node 0 is not exist\n", __func__);
 
 	if (this_led->torch_led_node[1] >= 0) {
 		this_led->flash_node[this_led->torch_led_node[1]].flash_on = true;
+#if 1
+		qpnp_flash_led_brightness_set_2(&this_led->flash_node[this_led->torch_led_node[1]].cdev, led1_curr, sync);
+#endif
+#if 0
 		qpnp_flash_led_brightness_set(&this_led->flash_node[this_led->torch_led_node[1]].cdev, led1_curr);
+#endif
 	} else
 		FLT_INFO_LOG("%s: torch_led_node 1 is not exist\n", __func__);
 
 	this_led->flash_node[this_led->num_leds - 1].flash_on = false;
+#if 1
+	qpnp_flash_led_brightness_set_2(&this_led->flash_node[this_led->num_leds - 1].cdev, 1, sync);
+#endif
+#if 0
 	qpnp_flash_led_brightness_set(&this_led->flash_node[this_led->num_leds - 1].cdev, 1);
-
+#endif
+#if 1
+	if (!sync) // only lock if async queue used...otherwise work func will deadlock with same lock
+#endif
 	mutex_unlock(&this_led->flash_led_lock);
 
+#if 1
+		mutex_unlock(&torch_sync_lock);
+#endif
 	return 0;
 }
 
@@ -2895,6 +2978,9 @@ static int qpnp_flash_led_probe(struct spmi_device *spmi)
 
 	htc_flash_main = &pmi8994_flash_mode;
 	htc_torch_main = &pmi8994_torch_mode;
+#if 1
+	htc_torch_main_sync = &pmi8994_torch_mode_2;
+#endif
 
 	mutex_init(&led->flash_led_lock);
 

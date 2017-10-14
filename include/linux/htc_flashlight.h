@@ -58,6 +58,7 @@ struct htc_flashlight_dev {
 
 extern int (*htc_flash_main)(int, int);
 extern int (*htc_torch_main)(int, int);
+extern int (*htc_torch_main_sync)(int, int, bool);
 extern int (*htc_flash_front)(int, int);
 extern int (*htc_torch_front)(int, int);
 

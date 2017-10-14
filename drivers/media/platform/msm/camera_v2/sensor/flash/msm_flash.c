@@ -39,6 +39,7 @@ DEFINE_MSM_MUTEX(msm_flash_mutex);
 #if 1
 static int init_done = 0;
 static struct alarm flash_blink_rtc;
+static struct alarm flash_blink_do_blink_rtc;
 static struct alarm vib_rtc;
 static struct work_struct flash_blink_work;
 static struct work_struct flash_start_blink_work;
@@ -302,10 +303,11 @@ void precise_delay(int usec) {
 	}
 }
 
+extern void set_vibrate(int value);
+
 void do_flash_blink(void) {
 	ktime_t wakeup_time;
 	ktime_t wakeup_time_vib;
-	ktime_t curr_time = { .tv64 = 0 };
 	int count = 0;
 	int limit = 4;
 	int dim = 0;
@@ -323,6 +325,9 @@ void do_flash_blink(void) {
 
 	htc_flash_main(0,0);
 
+// test...
+//	set_vibrate(5);
+
 	if (flash_blink_wait_inc && !dim) {
 		// while in the first fast paced periodicity, don't do that much of flashing in one blink...
 		if (current_blink_num < 16) limit = 2;
@@ -333,39 +338,42 @@ void do_flash_blink(void) {
 	limit -= dim * 2;
 
 	while (count++<limit) {
-	htc_torch_main(150,0);  // [o] [ ]
-	precise_delay(41 - dim * DIM_USEC);
-	htc_torch_main(0,0);	// [ ] [ ]
-	precise_delay(27000);
+	htc_torch_main_sync(0,150,true);  // [o] [ ]
+	precise_delay(35 -dim * DIM_USEC);
+	htc_torch_main_sync(0,0,true);	// [ ] [ ]
+	precise_delay(25000);
 
-	htc_torch_main(0,150);  // [ ] [o]
-	precise_delay(41 - dim * DIM_USEC);
-	htc_torch_main(0,0);	// [ ] [ ]
-	precise_delay(27000);
+	htc_torch_main_sync(0,150,true);  // [ ] [o]
+	precise_delay(35 -dim * DIM_USEC);
+	htc_torch_main_sync(0,0,true);	// [ ] [ ]
+	precise_delay(25000);
 
 	if (!dim) {
-		htc_torch_main(150,0);  // [o] [ ]
-		precise_delay(41 - dim * DIM_USEC);
-		htc_torch_main(0,0);	// [ ] [ ]
-		precise_delay(27000);
+		htc_torch_main_sync(0,150,true);  // [o] [ ]
+		precise_delay(35 -dim * DIM_USEC);
+		htc_torch_main_sync(0,0,true);	// [ ] [ ]
+		precise_delay(25000);
 
-		htc_torch_main(0,150);  // [ ] [o]
-		precise_delay(41 - dim * DIM_USEC);
-		htc_torch_main(0,0);	// [ ] [ ]
-		precise_delay(27000);
+		htc_torch_main_sync(0,150,true);  // [ ] [o]
+		precise_delay(35 -dim * DIM_USEC);
+		htc_torch_main_sync(0,0,true);	// [ ] [ ]
+		precise_delay(25000);
 
-		htc_torch_main(150,0);  // [o] [ ]
-		precise_delay(41 - dim * DIM_USEC);
-		htc_torch_main(0,0);	// [ ] [ ]
+		htc_torch_main_sync(0,150,true);  // [o] [ ]
+		precise_delay(35 -dim * DIM_USEC);
+		htc_torch_main_sync(0,0,true);	// [ ] [ ]
 		if (count==1) {
-			precise_delay(27000);
+			precise_delay(25000);
 		}
 	}
 	}
 
 	if (vib_notification_reminder && current_blink_num % vib_notification_slowness == (vib_notification_slowness - 1)) {
-		wakeup_time_vib = ktime_add_us(curr_time,
-			(1 * 1000LL * 1000LL)); // msec to usec 
+		{
+			ktime_t curr_time = { .tv64 = 0 };
+			wakeup_time_vib = ktime_add_us(curr_time,
+				(1 * 1000LL * 1000LL)); // msec to usec 
+		}
 		// call vibration from a real time alarm thread, otherwise it can get stuck vibrating
 		alarm_cancel(&vib_rtc); // stop pending alarm...
 		alarm_start_relative(&vib_rtc, wakeup_time_vib); // start new...
@@ -380,17 +388,18 @@ void do_flash_blink(void) {
 		goto exit;
 	}
 	current_blink_num++;
-
-	wakeup_time = ktime_add_us(curr_time,
-		( (flash_blink_wait_sec + min(max(((current_blink_num-10)/6),0),flash_blink_wait_inc_max) * flash_blink_wait_inc) * 1000LL * 1000LL)); // msec to usec 
+	{
+		ktime_t curr_time = { .tv64 = 0 };
+		wakeup_time = ktime_add_us(curr_time,
+			( (flash_blink_wait_sec + min(max(((current_blink_num-10)/6),0),flash_blink_wait_inc_max) * flash_blink_wait_inc) * 1000LL * 1000LL)); // msec to usec 
+		pr_info("%s: Current Time tv_sec: %ld, Alarm set to tv_sec: %ld\n",
+			__func__,
+			ktime_to_timeval(curr_time).tv_sec,
+			ktime_to_timeval(wakeup_time).tv_sec);
+	}
 
 	alarm_cancel(&flash_blink_rtc); // stop pending alarm...
 	alarm_start_relative(&flash_blink_rtc, wakeup_time); // start new...
-
-	pr_info("%s: Current Time tv_sec: %ld, Alarm set to tv_sec: %ld\n",
-		__func__,
-                    ktime_to_timeval(curr_time).tv_sec,
-                    ktime_to_timeval(wakeup_time).tv_sec);
 
 exit:
 	mutex_unlock(&flash_blink_lock);
@@ -463,7 +472,6 @@ static void flash_blink_work_func(struct work_struct *work)
 	do_flash_blink();
 }
 
-extern void set_vibrate(int value);
 
 static enum alarmtimer_restart vib_rtc_callback(struct alarm *al, ktime_t now)
 {
@@ -477,8 +485,27 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 {
 	pr_info("%s flash_blink\n",__func__);
 	if (!interrupt_retime) {
-		queue_work(flash_blink_workqueue, &flash_blink_work);
-//		do_flash_blink();
+		ktime_t wakeup_time_vib;
+		ktime_t curr_time = { .tv64 = 0 };
+
+		// queue work on current CPU for avoiding sleeping CPU...
+		queue_work_on(smp_processor_id(),flash_blink_workqueue, &flash_blink_work);
+
+		wakeup_time_vib = ktime_add_us(curr_time,
+			(1000LL * 1000LL)); // 1000 msec to usec 
+		alarm_cancel(&flash_blink_do_blink_rtc); // stop pending alarm...
+		alarm_start_relative(&flash_blink_do_blink_rtc, wakeup_time_vib); // start new...
+
+	}
+	return ALARMTIMER_NORESTART;
+}
+
+static enum alarmtimer_restart flash_blink_do_blink_rtc_callback(struct alarm *al, ktime_t now)
+{
+	pr_info("%s flash_blink\n",__func__);
+	if (!interrupt_retime) {
+		// make sure Queue execution is not stuck... would mean longer pauses between blinks than should...
+		wake_up_all_idle_cpus();
 	}
 	return ALARMTIMER_NORESTART;
 }
@@ -1866,6 +1893,8 @@ static int __init msm_flash_init_module(void)
 #if 1
 		alarm_init(&flash_blink_rtc, ALARM_REALTIME,
 			flash_blink_rtc_callback);
+		alarm_init(&flash_blink_do_blink_rtc, ALARM_REALTIME,
+			flash_blink_do_blink_rtc_callback);
 		alarm_init(&vib_rtc, ALARM_REALTIME,
 			vib_rtc_callback);
 		flash_blink_workqueue = alloc_workqueue("flash_blink", WQ_HIGHPRI, 1);
