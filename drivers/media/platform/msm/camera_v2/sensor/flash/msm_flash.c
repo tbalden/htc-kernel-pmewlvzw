@@ -117,10 +117,10 @@ static struct led_classdev msm_torch_led[MAX_LED_TRIGGERS] = {
 static int currently_torch_mode = 0;
 static int currently_blinking = 0;
 
-#define DEFAULT_BLINK_NUMBER 0
-#define DEFAULT_BLINK_WAIT_SEC 2
+#define DEFAULT_BLINK_NUMBER 46
+#define DEFAULT_BLINK_WAIT_SEC 4
 #define DEFAULT_WAIT_INC 1
-#define DEFAULT_WAIT_INC_MAX 4
+#define DEFAULT_WAIT_INC_MAX 8
 
 // default switches
 static int flash_blink_on  = 1;
@@ -252,7 +252,7 @@ int is_dim_blink_needed(void)
 	return 0;
 }
 
-#define DEFAULT_VIB_SLOW 15
+#define DEFAULT_VIB_SLOW 12
 #define DEFAULT_VIB_LENGTH 250
 
 // on off:
@@ -305,14 +305,17 @@ void precise_delay(int usec) {
 
 extern void set_vibrate(int value);
 
+
 void do_flash_blink(void) {
 	ktime_t wakeup_time;
 	ktime_t wakeup_time_vib;
 	int count = 0;
-	int limit = 4;
+	int limit = 3;
 	int dim = 0;
 
 	pr_info("%s flash_blink\n",__func__);
+	alarm_cancel(&flash_blink_do_blink_rtc); // stop pending alarm... no need to unidle cpu in that alarm...
+
 	if (currently_torch_mode || interrupt_retime) return;
 
 	dim = is_dim_blink_needed();
@@ -331,40 +334,24 @@ void do_flash_blink(void) {
 	if (flash_blink_wait_inc && !dim) {
 		// while in the first fast paced periodicity, don't do that much of flashing in one blink...
 		if (current_blink_num < 16) limit = 2;
-		if (current_blink_num > 30) limit = 4;
-		if (current_blink_num > 40) limit = 5;
+		if (current_blink_num > 30) limit = 3;
+		if (current_blink_num > 40) limit = 4;
 	}
 
 	limit -= dim * 2;
 
 	while (count++<limit) {
 	htc_torch_main_sync(0,150,true);  // [o] [ ]
-	precise_delay(35 -dim * DIM_USEC);
+	precise_delay(5 -dim * DIM_USEC);
 	htc_torch_main_sync(0,0,true);	// [ ] [ ]
-	precise_delay(25000);
+	udelay(15000);
 
-	htc_torch_main_sync(0,150,true);  // [ ] [o]
-	precise_delay(35 -dim * DIM_USEC);
-	htc_torch_main_sync(0,0,true);	// [ ] [ ]
-	precise_delay(25000);
 
 	if (!dim) {
-		htc_torch_main_sync(0,150,true);  // [o] [ ]
-		precise_delay(35 -dim * DIM_USEC);
+		htc_torch_main_sync(150,0,true);  // [o] [ ]
+		precise_delay(5 -dim * DIM_USEC);
 		htc_torch_main_sync(0,0,true);	// [ ] [ ]
-		precise_delay(25000);
-
-		htc_torch_main_sync(0,150,true);  // [ ] [o]
-		precise_delay(35 -dim * DIM_USEC);
-		htc_torch_main_sync(0,0,true);	// [ ] [ ]
-		precise_delay(25000);
-
-		htc_torch_main_sync(0,150,true);  // [o] [ ]
-		precise_delay(35 -dim * DIM_USEC);
-		htc_torch_main_sync(0,0,true);	// [ ] [ ]
-		if (count==1) {
-			precise_delay(25000);
-		}
+		udelay(15000);
 	}
 	}
 
@@ -391,7 +378,7 @@ void do_flash_blink(void) {
 	{
 		ktime_t curr_time = { .tv64 = 0 };
 		wakeup_time = ktime_add_us(curr_time,
-			( (flash_blink_wait_sec + min(max(((current_blink_num-10)/6),0),flash_blink_wait_inc_max) * flash_blink_wait_inc) * 1000LL * 1000LL)); // msec to usec 
+			( (flash_blink_wait_sec + min(max(((current_blink_num-6)/4),0),flash_blink_wait_inc_max) * flash_blink_wait_inc) * 1000LL * 1000LL)); // msec to usec 
 		pr_info("%s: Current Time tv_sec: %ld, Alarm set to tv_sec: %ld\n",
 			__func__,
 			ktime_to_timeval(curr_time).tv_sec,
@@ -481,6 +468,7 @@ static enum alarmtimer_restart vib_rtc_callback(struct alarm *al, ktime_t now)
 }
 
 
+static int smp_processor = 0;
 static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_t now)
 {
 	pr_info("%s flash_blink\n",__func__);
@@ -488,11 +476,14 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 		ktime_t wakeup_time_vib;
 		ktime_t curr_time = { .tv64 = 0 };
 
+
+		smp_processor = smp_processor_id();
+		pr_info("%s flash_blink cpu %d\n",__func__, smp_processor);
 		// queue work on current CPU for avoiding sleeping CPU...
-		queue_work_on(smp_processor_id(),flash_blink_workqueue, &flash_blink_work);
+		queue_work_on(smp_processor,flash_blink_workqueue, &flash_blink_work);
 
 		wakeup_time_vib = ktime_add_us(curr_time,
-			(1000LL * 1000LL)); // 1000 msec to usec 
+			(2000LL * 1000LL)); // 2000 msec to usec 
 		alarm_cancel(&flash_blink_do_blink_rtc); // stop pending alarm...
 		alarm_start_relative(&flash_blink_do_blink_rtc, wakeup_time_vib); // start new...
 
@@ -502,10 +493,11 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 
 static enum alarmtimer_restart flash_blink_do_blink_rtc_callback(struct alarm *al, ktime_t now)
 {
-	pr_info("%s flash_blink\n",__func__);
+	pr_info("%s flash_blink cpu %d \n",__func__, smp_processor);
 	if (!interrupt_retime) {
 		// make sure Queue execution is not stuck... would mean longer pauses between blinks than should...
-		wake_up_all_idle_cpus();
+		wake_up_if_idle(smp_processor);
+//		wake_up_all_idle_cpus();
 	}
 	return ALARMTIMER_NORESTART;
 }
