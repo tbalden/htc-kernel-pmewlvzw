@@ -373,6 +373,20 @@ static struct alarm blinkstopfunc_rtc;
 static struct alarm vibrate_rtc;
 static struct alarm double_double_vol_rtc;
 
+// if aosp interface is used for RGB set, this will be set to 1
+static int aosp_mode = 0;
+// wake_by_user: used for AmbientDisplay detection:
+// this if 1, then device is waken by user. Otherwise no Input device was triggered, so we can deduce that it's an AmibentDisplay wake
+// and therefore if this is 0, Flashlight notification can be triggered, and haptic_blinking also can be stored, so that BLN can be
+// triggered later when screen is self BLANKing / screen off....
+static int wake_by_user = 1;
+
+int input_is_wake_by_user(void)
+{
+	return wake_by_user;
+}
+EXPORT_SYMBOL(input_is_wake_by_user);
+
 #define VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW	110
 #define VIRTUAL_RAMP_SETP_TIME_DOUBLE_BLINK_SLOW	90
 
@@ -386,8 +400,14 @@ static int bln_switch = 1;
 static int bln_speed = BUTTON_BLINK_SPEED_DEFAULT;
 static int bln_number = BUTTON_BLINK_NUMBER_DEFAULT; // infinite = 0
 
+static int screen_on_early = 1;
 static int screen_on = 1;
 static int blinking = 0;
+// haptic_blinking : this is used to follow register_haptic based notif events... when
+// ...AmbientDisplay wakes device (BLN is not possible), but after screen off, BLN is triggered based on this
+// ... in the fb notifier BLANK event part. register_haptic sets it 1, register_input sets it 0 because that will be a user wake...
+// ... also wake_by_user in UNBLANK notification will set it 0:
+static int haptic_blinking = 0; 
 struct qpnp_led_data *buttonled;
 static int charging = 0; // information from OHIO usb driver
 static int charge_level = 0; // information from HTC battery driver
@@ -574,6 +594,8 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 
 	} else {
 		// lights down
+		pr_info("%s haptic_blinking %d\n", __func__, haptic_blinking);
+		haptic_blinking = 0;
 		blinking = 0;
 		if (cancel_alarm) {
 			alarm_cancel(&blinkstopfunc_rtc);
@@ -755,9 +777,24 @@ static unsigned int MAX_DIFF = 200;
 
 #define FINGERPRINT_VIB_TIME_EXCEPTION 40
 #define FINGERPRINT_VIB_TIME_EXCEPTION_AOSP 30
+#define DOUBLETAP_VIB_TIME_EXCEPTION 25
 
 // callback to register fingerprint vibration
 extern int register_fp_vibration(void);
+
+static unsigned long last_input_event = 0;
+void register_input_event(void) {
+//	pr_info("%s self wake: blocking event\n",__func__);
+	wake_by_user = 1;
+	last_input_event = jiffies;
+	if (screen_on_early) {
+		// user must have exited Ambient display by pressing power/touchscreen etc, stop flash blinking!
+		flash_stop_blink();
+		// user is inputing phone, no haptic blinking should trigger BLN when screen off
+		haptic_blinking = 0;
+	}
+}
+EXPORT_SYMBOL(register_input_event);
 
 int register_haptic(int value)
 {
@@ -767,12 +804,13 @@ int register_haptic(int value)
 
 //	if this exceptional time is used, it means, fingerprint scanner vibrated with proxomity sensor detection on
 //	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
-	if (value == FINGERPRINT_VIB_TIME_EXCEPTION || value == FINGERPRINT_VIB_TIME_EXCEPTION_AOSP) {
+	if (value==DOUBLETAP_VIB_TIME_EXCEPTION || value == FINGERPRINT_VIB_TIME_EXCEPTION || value == FINGERPRINT_VIB_TIME_EXCEPTION_AOSP) {
 		int vib_strength = register_fp_vibration();
+		register_input_event(); // to cancel flashing if fingerprint wake which otherwise is not a filtered input even, only vibration...
 		if (vib_strength > 0 && vib_strength<=FINGERPRINT_VIB_TIME_EXCEPTION*2) return vib_strength/2; else return vib_strength>0?FINGERPRINT_VIB_TIME_EXCEPTION:0;
 	}
 
-	if (screen_on) return value;
+	if (screen_on && wake_by_user) return value;
 	if (last_value == value) {
 		if (diff_jiffies < MAX_DIFF) {
 			if (value <= 200) {
@@ -781,6 +819,9 @@ int register_haptic(int value)
 				short_vib_notif = 0;
 			}
 			if ( bln_switch && (((!charging && lights_down_divider==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
+				pr_info("%s haptic_blinking %d\n", __func__, haptic_blinking);
+				// store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
+				haptic_blinking = 1;
 				qpnp_buttonled_blink(1);
 			}
 			// call flash blink for flashlight notif if lights_down mode (>1) is not active...
@@ -885,6 +926,9 @@ void register_charge_level(int level)
 EXPORT_SYMBOL(register_charge_level);
 #endif
 
+// last time qpnp_mpp_set done, which means Virtual keys were set brightnesss, which is a wake not by ambient display, but by user...
+static unsigned long last_vk_wake = 0;
+
 static int qpnp_mpp_set(struct qpnp_led_data *led)
 {
 	int rc;
@@ -896,6 +940,7 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	blinking = 0;
+	last_vk_wake = jiffies;
 #endif
 
 	if(virtual_key_led_ignore_flag)
@@ -1961,7 +2006,7 @@ static ssize_t blink_store(struct device *dev,
 	}
 	if (!blinking) {
 		flash_stop_blink();
-	} else if (lights_down_divider==1 && !screen_on) {
+	} else if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
 #endif
@@ -2980,7 +3025,7 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 		qpnp_buttonled_blink(1);
 	}
 	// call flash blink for flashlight notif if lights_down mode (>1) is not active...
-	if (lights_down_divider==1 && !screen_on) {
+	if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
 #endif
@@ -3072,7 +3117,7 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 		qpnp_buttonled_blink(1);
 	}
 	// call flash blink for flashlight notif if lights_down mode (>1) is not active...
-	if (lights_down_divider==1 && !screen_on) {
+	if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
 #endif
@@ -3450,6 +3495,11 @@ extern int get_flash_blink_on(void);
 extern void set_flash_blink_number(int value);
 extern int get_flash_blink_number(void);
 
+extern void set_flash_blink_bright(int value);
+extern int get_flash_blink_bright(void);
+extern void set_flash_blink_bright_number(int value);
+extern int get_flash_blink_bright_number(void);
+
 extern void set_flash_blink_wait_sec(int value);
 extern int get_flash_blink_wait_sec(void);
 
@@ -3639,6 +3689,33 @@ static ssize_t flash_blink_dump(struct device *dev,
 static DEVICE_ATTR(bln_flash_blink, (S_IWUSR|S_IRUGO),
       flash_blink_show, flash_blink_dump);
 
+static ssize_t flash_blink_bright_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", get_flash_blink_bright());
+}
+
+static ssize_t flash_blink_bright_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 0 || input > 1)
+            input = 1;
+
+	set_flash_blink_bright(input);
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_flash_blink_bright, (S_IWUSR|S_IRUGO),
+      flash_blink_bright_show, flash_blink_bright_dump);
+
 
 static ssize_t flash_blink_number_show(struct device *dev,
             struct device_attribute *attr, char *buf)
@@ -3666,6 +3743,33 @@ static ssize_t flash_blink_number_dump(struct device *dev,
 
 static DEVICE_ATTR(bln_flash_blink_number, (S_IWUSR|S_IRUGO),
       flash_blink_number_show, flash_blink_number_dump);
+
+static ssize_t flash_blink_bright_number_show(struct device *dev,
+            struct device_attribute *attr, char *buf)
+{
+      return snprintf(buf, PAGE_SIZE, "%d\n", get_flash_blink_bright_number());
+}
+
+static ssize_t flash_blink_bright_number_dump(struct device *dev,
+            struct device_attribute *attr, const char *buf, size_t count)
+{
+      int ret;
+      unsigned long input;
+
+      ret = kstrtoul(buf, 0, &input);
+      if (ret < 0)
+            return ret;
+
+      if (input < 1 || input > 10)
+            input = 5;
+
+      set_flash_blink_bright_number(input);
+
+      return count;
+}
+
+static DEVICE_ATTR(bln_flash_blink_bright_number, (S_IWUSR|S_IRUGO),
+      flash_blink_bright_number_show, flash_blink_bright_number_dump);
 
 
 static ssize_t flash_blink_wait_inc_show(struct device *dev,
@@ -3919,7 +4023,7 @@ static ssize_t pm8xxx_led_blink_store(struct device *dev,
 	}
 	if (val==0) {
 		flash_stop_blink();
-	} else if (lights_down_divider==1 && !screen_on) {
+	} else if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
 #endif
@@ -4051,6 +4155,7 @@ static ssize_t led_multi_color_mode_and_lut_params_store(struct device *dev,
 	if (sscanf(buf, "%x %u %u %u", &new_ModeRGB, &ramp_step_ms, &lut_pause_hi, &lut_pause_lo) != 4) {
 		return -EINVAL;
 	}
+	aosp_mode = 1;
 
 	if (update_ModeRGB(led, new_ModeRGB)) return count;
 	multicolor_lut_params.ramp_step_ms = ramp_step_ms;
@@ -4294,14 +4399,18 @@ int check_power_source(void)
 }
 #endif
 
-#ifdef CONFIG_FB
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+static int first_wake = 1;
+#endif
 
+#ifdef CONFIG_FB
 static int fb_notifier_callback(struct notifier_block *self,
                                  unsigned long event, void *data)
 {
     struct fb_event *evdata = data;
     int *blank;
-
+    unsigned int last_vk_wake_diff = jiffies - last_vk_wake;
+    unsigned int last_input_event_diff = jiffies - last_input_event;
     LED_DBG("%s\n", __func__);
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
@@ -4309,10 +4418,19 @@ static int fb_notifier_callback(struct notifier_block *self,
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
-		if (blinking) {
-			qpnp_buttonled_blink(0);
-		}
-		flash_stop_blink();
+		pr_info("%s self wake: wake event EARLY\n",__func__);
+		// if last virtualkey wake was very close, it means that it the user powered screen on.
+		// if it's ambient display, virtual key lights are not set very close to the fb blank events...
+		///// ...also do not care about this if it's not aosp mode
+		wake_by_user = 0;//first_wake || last_vk_wake_diff < 60; // || !aosp_mode;
+		pr_info("%s fb wake_by_user %d diff %u\n",__func__, wake_by_user, last_vk_wake_diff);
+		screen_on_early = 1;
+//		if (wake_by_user) {
+			if (blinking) {
+				qpnp_buttonled_blink(0);
+			}
+//			flash_stop_blink();
+//		}
 		break;
 	}
     }
@@ -4324,8 +4442,16 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_UNBLANK:
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 		screen_on = 1;
+		// check if first wake or other user input directly before this notifier callback, like doubletap wake...
+		wake_by_user = first_wake || last_input_event_diff < 140; // || !aosp_mode;
+		first_wake = 0; // boot up wake over...
+		pr_info("%s self wake: wake event FULL: wake by user result %d diff %u \n",__func__, wake_by_user, last_input_event_diff);
 		LED_ERR("%s on\n", __func__);
-		alarm_cancel(&blinkstopfunc_rtc);
+		if (wake_by_user) {
+			alarm_cancel(&blinkstopfunc_rtc);
+			// user is inputing/waking phone, no haptic blinking should trigger BLN when screen off
+			haptic_blinking = 0;
+		}
 #endif
             break;
 
@@ -4336,7 +4462,12 @@ static int fb_notifier_callback(struct notifier_block *self,
             
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 		screen_on = 0;
+		screen_on_early = 0;
 		LED_ERR("%s off\n", __func__);
+	    if (haptic_blinking) {
+		qpnp_buttonled_blink(1);
+	    } 
+	    else
 #endif
             if(g_led_virtual->cdev.brightness) {
 				g_led_virtual->cdev.brightness = 0;
@@ -4648,6 +4779,8 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_rgb_batt_test);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_blink);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_blink_number);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_blink_bright);
+				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_blink_bright_number);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_blink_wait_sec);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_blink_wait_inc);
 				rc = device_create_file(led->cdev.dev, &dev_attr_bln_flash_blink_wait_inc_max);

@@ -1640,6 +1640,11 @@ EXPORT_SYMBOL(get_notification_booster);
 
 extern int register_haptic(int value);
 extern int input_is_screen_on(void);
+extern int input_is_wake_by_user(void);
+int should_not_boost(void) {
+	if (input_is_screen_on() && input_is_wake_by_user()) return 1;
+	return 0;
+}
 int skip_register_haptic = 0;
 #endif
 
@@ -1673,10 +1678,10 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 		}
 
 		// if booster, and screen is off, or call or alarm value for timed device, then we may need a boosting...
-		if (!suspend_booster && notification_booster && (!input_is_screen_on() || value == MIN_TD_VALUE_NOTIFICATION_CALL || value == MIN_TD_VALUE_NOTIFICATION_ALARM) ) {
+		if (!suspend_booster && notification_booster && (!should_not_boost() || value == MIN_TD_VALUE_NOTIFICATION_CALL || value == MIN_TD_VALUE_NOTIFICATION_ALARM) ) {
 			if (value>=MIN_TD_VALUE_NOTIFICATION) {
 				// detect repeating alarm... if it's not repeating frequently, then it can be some other apps vibration with its length value
-				if (input_is_screen_on() && value == MIN_TD_VALUE_NOTIFICATION_ALARM) {
+				if (should_not_boost() && value == MIN_TD_VALUE_NOTIFICATION_ALARM) {
 					VIB_INFO_LOG("alarm counting #1\n");
 					// if last vibration was not the same length, no repetition, reset counter and goto reset voltage...
 					if (last_value != value) {

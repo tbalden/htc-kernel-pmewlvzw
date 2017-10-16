@@ -30,6 +30,10 @@ MODULE_LICENSE("GPL");
 #define FUNC_CYCLE_DUR          9 + JIFFY_MUL
 #define VIB_STRENGTH		20
 
+// touchscreen input handler input work queue and work
+static struct workqueue_struct *ts_input_wq;
+static struct work_struct ts_input_work;
+
 static int fpf_switch = 2;
 static struct input_dev * fpf_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
@@ -96,8 +100,7 @@ static void fpf_input_event(struct input_handle *handle, unsigned int type,
 }
 
 static int input_dev_filter(struct input_dev *dev) {
-	if (strstr(dev->name, "fpc1020") ||
-		strstr(dev->name, "gpio")) {
+	if (strstr(dev->name, "fpc1020")) {
 		return 0;
 	} else {
 		return 1;
@@ -234,12 +237,17 @@ static void fpf_home_button_func_trigger(void) {
         return;
 }
 
-static unsigned long last_vol_key_1_timestamp = 0;
-static unsigned long last_vol_key_2_timestamp = 0;
-static unsigned long last_vol_keys_start = 0;
-
-extern void register_double_volume_key_press(int long_press);
-
+extern void register_input_event(void);
+void register_fp_wake(void) {
+	pr_info("%s fpf fp wake registered\n",__func__);
+	register_input_event();
+}
+EXPORT_SYMBOL(register_fp_wake);
+void register_fp_irq(void) {
+	pr_info("%s fpf fp tap irq registered\n",__func__);
+	register_input_event();
+}
+EXPORT_SYMBOL(register_fp_irq);
 /*
     filter will work on FP card events.
     if screen is not on it will work on powering it on when needed (except when Button released start (button press) was started while screen was still on: powering_down_with_fingerprint_still_pressed = 1)
@@ -260,40 +268,15 @@ static bool fpf_input_filter(struct input_handle *handle,
 	if (type != EV_KEY)
 		return false;
 
+	register_input_event();
+
 	if (type == EV_KEY) {
-		pr_info("%s ts_input key %d %d %d\n",__func__,type,code,value);
-	}
-
-	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 1) {
-		last_vol_keys_start = jiffies;
-		goto skip_ts;
-	}
-	if (type == EV_KEY && code == KEY_VOLUMEDOWN && value == 1) {
-		last_vol_keys_start = jiffies;
-		goto skip_ts;
-	}
-
-
-	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 0) {
-		last_vol_key_1_timestamp = jiffies;
-		if (last_vol_key_1_timestamp - last_vol_key_2_timestamp < 7 * JIFFY_MUL) {
-			unsigned int start_diff = jiffies - last_vol_keys_start;
-			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
-		}
-		goto skip_ts;
-	}
-	if (type == EV_KEY && code == KEY_VOLUMEDOWN && value == 0) {
-		last_vol_key_2_timestamp = jiffies;
-		if (last_vol_key_2_timestamp - last_vol_key_1_timestamp < 7 * JIFFY_MUL) {
-			unsigned int start_diff = jiffies - last_vol_keys_start;
-			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
-		}
-		goto skip_ts;
+		pr_info("%s fpf_input key %d %d %d\n",__func__,type,code,value);
 	}
 
 	if (code == KEY_WAKEUP) {
 		pr_debug("fpf - wakeup %d %d \n",code,value);
-	  
+
 
 	if (fpf_switch == 2) {
 	//standalone kernel mode. double tap means switch off
@@ -357,7 +340,6 @@ static bool fpf_input_filter(struct input_handle *handle,
 	}
 	return true;
 	}
-skip_ts:
 	return false;
 }
 
@@ -387,6 +369,135 @@ static struct input_handler fpf_input_handler = {
 	.name		= "fpf_inputreq",
 	.id_table	= fpf_ids,
 };
+
+
+
+// ==================================
+// ------------- touch screen handler
+// ==================================
+
+static unsigned long last_vol_key_1_timestamp = 0;
+static unsigned long last_vol_key_2_timestamp = 0;
+static unsigned long last_vol_keys_start = 0;
+
+extern void register_double_volume_key_press(int long_press);
+
+static bool ts_input_filter(struct input_handle *handle,
+                                    unsigned int type, unsigned int code,
+                                    int value)
+{
+#if 1
+
+	register_input_event();
+
+	if (type == EV_KEY) {
+		pr_info("%s ts_input key %d %d %d\n",__func__,type,code,value);
+	}
+
+	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 1) {
+		last_vol_keys_start = jiffies;
+		goto skip_ts;
+	}
+	if (type == EV_KEY && code == KEY_VOLUMEDOWN && value == 1) {
+		last_vol_keys_start = jiffies;
+		goto skip_ts;
+	}
+
+
+	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 0) {
+		last_vol_key_1_timestamp = jiffies;
+		if (last_vol_key_1_timestamp - last_vol_key_2_timestamp < 7 * JIFFY_MUL) {
+			unsigned int start_diff = jiffies - last_vol_keys_start;
+			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
+		}
+		goto skip_ts;
+	}
+	if (type == EV_KEY && code == KEY_VOLUMEDOWN && value == 0) {
+		last_vol_key_2_timestamp = jiffies;
+		if (last_vol_key_2_timestamp - last_vol_key_1_timestamp < 7 * JIFFY_MUL) {
+			unsigned int start_diff = jiffies - last_vol_keys_start;
+			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
+		}
+		goto skip_ts;
+	}
+
+#endif
+skip_ts:
+	if (screen_on) {
+	}
+	return false;
+}
+
+static void ts_input_callback(struct work_struct *unused) {
+	return;
+}
+
+static void ts_input_event(struct input_handle *handle, unsigned int type,
+				unsigned int code, int value) {
+}
+
+static int ts_input_dev_filter(struct input_dev *dev) {
+	if (
+		strstr(dev->name, "synaptics_dsx") ||
+		strstr(dev->name, "max1187x_touchscreen_0") ||
+		strstr(dev->name, "cyttsp") ||
+		strstr(dev->name, "gpio")
+	    ) {
+		return 0;
+	} else {
+		return 1;
+	}
+}
+
+
+static int ts_input_connect(struct input_handler *handler,
+				struct input_dev *dev, const struct input_device_id *id) {
+	struct input_handle *handle;
+	int error;
+
+	if (ts_input_dev_filter(dev))
+		return -ENODEV;
+
+	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
+	if (!handle)
+		return -ENOMEM;
+
+	handle->dev = dev;
+	handle->handler = handler;
+	handle->name = "fpf_ts";
+
+
+	error = input_register_handle(handle);
+
+	error = input_open_device(handle);
+
+	return 0;
+
+}
+
+static void ts_input_disconnect(struct input_handle *handle)
+{
+	input_close_device(handle);
+	input_unregister_handle(handle);
+	kfree(handle);
+}
+
+
+static const struct input_device_id ts_ids[] = {
+	{ .driver_info = 1 },
+	{ },
+};
+
+static struct input_handler ts_input_handler = {
+	.filter		= ts_input_filter,
+	.event		= ts_input_event,
+	.connect	= ts_input_connect,
+	.disconnect	= ts_input_disconnect,
+	.name		= "ts_inputreq",
+	.id_table	= ts_ids,
+};
+
+// ------------------------------------------------------
 
 static ssize_t fpf_dt_wait_period_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -598,6 +709,7 @@ static int __init fpf_init(void)
 		goto err_input_dev;
 	}
 
+	// fpf handler
 	fpf_input_wq = create_workqueue("fpf_iwq");
 	if (!fpf_input_wq) {
 		pr_err("%s: Failed to create workqueue\n", __func__);
@@ -608,6 +720,18 @@ static int __init fpf_init(void)
 	rc = input_register_handler(&fpf_input_handler);
 	if (rc)
 		pr_err("%s: Failed to register fpf_input_handler\n", __func__);
+
+	// ts handler
+	ts_input_wq = create_workqueue("ts_iwq");
+	if (!ts_input_wq) {
+		pr_err("%s: Failed to create workqueue\n", __func__);
+		return -EFAULT;
+	}
+	INIT_WORK(&ts_input_work, ts_input_callback);
+
+	rc = input_register_handler(&ts_input_handler);
+	if (rc)
+		pr_err("%s: Failed to register ts_input_handler\n", __func__);
 
 
 #ifdef CONFIG_FB
