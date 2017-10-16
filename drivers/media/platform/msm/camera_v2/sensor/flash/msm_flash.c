@@ -124,6 +124,8 @@ static int currently_blinking = 0;
 
 // default switches
 static int flash_blink_on  = 1;
+static int flash_blink_bright  = 1; // apply bright flash on each X number
+static int flash_blink_bright_number  = 5; // X number when bright flash should be done
 static int flash_blink_number = DEFAULT_BLINK_NUMBER;
 static int flash_blink_wait_sec = DEFAULT_BLINK_WAIT_SEC;
 static int flash_blink_wait_inc = DEFAULT_WAIT_INC;
@@ -154,6 +156,25 @@ int get_flash_blink_number(void) {
 	return flash_blink_number;
 }
 EXPORT_SYMBOL(get_flash_blink_number);
+
+void set_flash_blink_bright(int value) {
+	flash_blink_bright = !!value;
+}
+EXPORT_SYMBOL(set_flash_blink_bright);
+int get_flash_blink_bright(void) {
+	return flash_blink_bright;
+}
+EXPORT_SYMBOL(get_flash_blink_bright);
+
+void set_flash_blink_bright_number(int value) {
+	flash_blink_bright_number = max(1,value%11); // min 1, max 10
+}
+EXPORT_SYMBOL(set_flash_blink_bright_number);
+int get_flash_blink_bright_number(void) {
+	return flash_blink_bright_number;
+}
+EXPORT_SYMBOL(get_flash_blink_bright_number);
+
 
 void set_flash_blink_wait_sec(int value) {
 	flash_blink_wait_sec = max(1,value%11); // min 1/max 10
@@ -291,6 +312,7 @@ EXPORT_SYMBOL(get_vib_notification_length);
 extern void boosted_vib(int time);
 
 #define DIM_USEC 2
+#define BRIGHT_USEC 1250
 
 void precise_delay(int usec) {
 	ktime_t start, end;
@@ -312,6 +334,7 @@ void do_flash_blink(void) {
 	int count = 0;
 	int limit = 3;
 	int dim = 0;
+	int bright = 0;
 
 	pr_info("%s flash_blink\n",__func__);
 	alarm_cancel(&flash_blink_do_blink_rtc); // stop pending alarm... no need to unidle cpu in that alarm...
@@ -324,6 +347,9 @@ void do_flash_blink(void) {
 	if (dim==2) {
 		currently_blinking = 0;
 		goto exit;
+	}
+	if (dim == 0 && flash_blink_bright && current_blink_num % flash_blink_bright_number == 0) {
+		bright = 1;
 	}
 
 	htc_flash_main(0,0);
@@ -341,15 +367,15 @@ void do_flash_blink(void) {
 	limit -= dim * 2;
 
 	while (count++<limit) {
-	htc_torch_main_sync(0,150,true);  // [o] [ ]
-	precise_delay(5 -dim * DIM_USEC);
+	htc_torch_main_sync(0,150*(bright+1),true);  // [o] [ ]
+	precise_delay(5 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
 	htc_torch_main_sync(0,0,true);	// [ ] [ ]
 	udelay(15000);
 
 
 	if (!dim) {
-		htc_torch_main_sync(150,0,true);  // [o] [ ]
-		precise_delay(5 -dim * DIM_USEC);
+		htc_torch_main_sync(150*(bright+1),0,true);  // [o] [ ]
+		precise_delay(5 -(dim * DIM_USEC) +(bright * BRIGHT_USEC));
 		htc_torch_main_sync(0,0,true);	// [ ] [ ]
 		udelay(15000);
 	}
