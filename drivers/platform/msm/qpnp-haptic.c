@@ -1611,7 +1611,7 @@ static int qpnp_hap_set(struct qpnp_hap *hap, int on)
 
 #if 1
 
-#define VMAX_MV_NOTIFICATION QPNP_HAP_VMAX_MAX_MV-200
+#define VMAX_MV_NOTIFICATION QPNP_HAP_VMAX_MAX_MV
 #define MIN_TD_VALUE_NOTIFICATION 100
 // sense framework based values, 1000 for call, 500 for alarm
 #define MIN_TD_VALUE_NOTIFICATION_CALL 1000
