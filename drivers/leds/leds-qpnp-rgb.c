@@ -383,6 +383,7 @@ static int wake_by_user = 1;
 
 int input_is_wake_by_user(void)
 {
+	pr_info("%s self wake: wake_by_user %d\n",__func__,wake_by_user);
 	return wake_by_user;
 }
 EXPORT_SYMBOL(input_is_wake_by_user);
@@ -427,6 +428,12 @@ extern void flash_blink(bool haptic);
 extern void flash_stop_blink(void);
 extern void set_suspend_booster(int value);
 extern void set_vibrate(int value);
+
+int input_is_charging(void) {
+	return !!charging;
+}
+EXPORT_SYMBOL(input_is_charging);
+
 
 static enum alarmtimer_restart blinkstop_rtc_callback(struct alarm *al, ktime_t now) 
 {
@@ -784,7 +791,7 @@ extern int register_fp_vibration(void);
 
 static unsigned long last_input_event = 0;
 void register_input_event(void) {
-//	pr_info("%s self wake: blocking event\n",__func__);
+//	pr_info("%s self wake: blocking event - wake_by_user\n",__func__);
 	wake_by_user = 1;
 	last_input_event = jiffies;
 	if (screen_on_early) {
