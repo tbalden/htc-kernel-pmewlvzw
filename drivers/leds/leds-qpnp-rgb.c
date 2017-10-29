@@ -4430,15 +4430,12 @@ static int fb_notifier_callback(struct notifier_block *self,
 		// if last virtualkey wake was very close, it means that it the user powered screen on.
 		// if it's ambient display, virtual key lights are not set very close to the fb blank events...
 		///// ...also do not care about this if it's not aosp mode
-		wake_by_user = 0;//first_wake || last_vk_wake_diff < 60; // || !aosp_mode;
+		wake_by_user = 0;
 		pr_info("%s fb wake_by_user %d diff %u\n",__func__, wake_by_user, last_vk_wake_diff);
 		screen_on_early = 1;
-//		if (wake_by_user) {
-			if (blinking) {
-				qpnp_buttonled_blink(0);
-			}
-//			flash_stop_blink();
-//		}
+		if (blinking) {
+			qpnp_buttonled_blink(0);
+		}
 		break;
 	}
     }
@@ -4456,6 +4453,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 		pr_info("%s self wake: wake event FULL: wake by user result %d diff %u \n",__func__, wake_by_user, last_input_event_diff);
 		LED_ERR("%s on\n", __func__);
 		if (wake_by_user) {
+			flash_stop_blink();
 			alarm_cancel(&blinkstopfunc_rtc);
 			// user is inputing/waking phone, no haptic blinking should trigger BLN when screen off
 			haptic_blinking = 0;
