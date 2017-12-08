@@ -34,6 +34,10 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+#endif
+
 int do_truncate(struct dentry *dentry, loff_t length, unsigned int time_attrs,
 	struct file *filp)
 {
@@ -734,6 +738,20 @@ static int do_dentry_open(struct file *f,
 	f->f_flags &= ~(O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC);
 
 	file_ra_state_init(&f->f_ra, f->f_mapping->host->i_mapping);
+#ifdef CONFIG_UCI
+	{
+		const char *name = f->f_path.dentry->d_name.name;
+		bool uci = is_uci_file(name);
+		if (uci) {
+			if (f->f_mode & FMODE_WRITE) {
+				pr_info("%s filp may write, may open... %s\n",__func__,name);
+				notify_uci_file_write_opened(name);
+			} else {
+				pr_info("%s filp not may write, may open... %s  %d\n",__func__,name,f->f_mode);
+			}
+		}
+	}
+#endif
 
 	return 0;
 
@@ -1046,6 +1064,13 @@ SYSCALL_DEFINE2(creat, const char __user *, pathname, umode_t, mode)
 int filp_close(struct file *filp, fl_owner_t id)
 {
 	int retval = 0;
+#ifdef CONFIG_UCI
+	const char *name = filp->f_path.dentry->d_name.name;
+	if (is_uci_file(name)) {
+		pr_info("%s uci filp close uci file %s\n", __func__, name);
+		notify_uci_file_closed(name);
+	}
+#endif
 
 	if (!file_count(filp)) {
 		printk(KERN_ERR "VFS: Close: file count is 0\n");
