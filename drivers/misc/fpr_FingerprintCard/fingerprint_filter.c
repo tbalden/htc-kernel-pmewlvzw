@@ -11,6 +11,10 @@
 #include <linux/fb.h>
 #endif
 
+#include <linux/alarmtimer.h>
+#include <linux/notification/notification.h>
+#include <linux/uci/uci.h>
+
 #define DRIVER_AUTHOR "illes pal <illespal@gmail.com>"
 #define DRIVER_DESCRIPTION "fingerprint_filter driver"
 #define DRIVER_VERSION "1.0"
@@ -34,6 +38,8 @@ MODULE_LICENSE("GPL");
 static struct workqueue_struct *ts_input_wq;
 static struct work_struct ts_input_work;
 
+extern void set_vibrate(int value);
+
 static int fpf_switch = 2;
 static struct input_dev * fpf_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
@@ -42,20 +48,285 @@ static struct workqueue_struct *fpf_input_wq;
 static struct work_struct fpf_input_work;
 extern struct vib_trigger *vib_trigger;
 static int vib_strength = VIB_STRENGTH;
+static int unlock_vib_strength = VIB_STRENGTH;
+
+static unsigned long last_screen_event_timestamp = 0;
+static unsigned int last_screen_off_seconds = 0;
+static unsigned int last_screen_on_seconds = 0;
+
+unsigned int get_global_seconds(void) {
+	struct timespec ts;
+	unsigned int ret = 0;
+	getnstimeofday(&ts);
+	ret = (unsigned int)(ts.tv_sec);
+	return ret;
+}
+
+static int get_fpf_switch(void) {
+	return uci_get_user_property_int_mm("fingerprint_mode", fpf_switch, 0, 2);
+}
+static int get_vib_strength(void) {
+	return uci_get_user_property_int_mm("fp_vib_strength", vib_strength, 0, 90);
+}
+static int get_unlock_vib_strength(void) {
+	return uci_get_user_property_int_mm("fp_unlock_vib_strength", unlock_vib_strength, 0, 90);
+}
 
 #ifdef CONFIG_FB
+	// early screen on flag
 	static int screen_on = 1;
+	static unsigned long last_screen_on_early_time = 0;
+	// full screen on flag
+	static int screen_on_full = 1;
+	static int screen_off_early = 0;
 	struct notifier_block *fb_notifier;
 
 int input_is_screen_on(void) {
 	return screen_on;
 }
 EXPORT_SYMBOL(input_is_screen_on);
+#endif
+
+#define S_MIN_SECS 60
+
+// --- smart notification settings --
+// how many inactive minutes to start trimming some types of notifications' periodicity/length of timeout/repetitions
+// should be set to 0 if smart trim is inactive
+static int smart_trim_inactive_seconds = 6 * S_MIN_SECS;// 6 mins
+// notif settings for trim period
+static int smart_trim_kad = NOTIF_TRIM;
+static int smart_trim_flashlight = NOTIF_TRIM;
+static int smart_trim_vib_reminder = NOTIF_DEFAULT;
+static int smart_trim_notif_booster = NOTIF_DEFAULT;
+static int smart_trim_bln_light = NOTIF_DEFAULT;
+static int smart_trim_pulse_light = NOTIF_DEFAULT;
+
+// how many inactive minutes to start stopping some types of notifications
+// should be set to 0 if smart stop is inactive
+static int smart_stop_inactive_seconds = 60 * S_MIN_SECS; // 60 mins
+// notif settings for stop period
+static int smart_stop_kad = NOTIF_STOP;
+static int smart_stop_flashlight = NOTIF_DIM;
+static int smart_stop_vib_reminder = NOTIF_TRIM;
+static int smart_stop_notif_booster = NOTIF_DEFAULT;
+static int smart_stop_bln_light = NOTIF_TRIM;
+static int smart_stop_pulse_light = NOTIF_DEFAULT;
+
+// how many inactive minutes to start hibarnete (extended stop) some types of notifications
+// should be set to 0 if smart stop is inactive
+static int smart_hibernate_inactive_seconds = 4 * 60 * S_MIN_SECS; // 4 * 60 mins
+// notif settings for hibernate period
+static int smart_hibernate_kad = NOTIF_STOP;
+static int smart_hibernate_flashlight = NOTIF_STOP;
+static int smart_hibernate_vib_reminder = NOTIF_STOP;
+static int smart_hibernate_notif_booster = NOTIF_STOP;
+static int smart_hibernate_bln_light = NOTIF_DIM;
+static int smart_hibernate_pulse_light = NOTIF_DIM;
+
+
+static int smart_silent_mode_stop = 1;
+static int smart_silent_mode_hibernate = 1;
+
+int uci_get_smart_trim_inactive_seconds(void) {
+	return uci_get_user_property_int_mm("smart_trim_inactive_mins", smart_trim_inactive_seconds/60, 0, 2 * 24 * 60)*60;
+}
+int uci_get_smart_stop_inactive_seconds(void) {
+	return uci_get_user_property_int_mm("smart_stop_inactive_mins", smart_stop_inactive_seconds/60, 0, 2 * 24 * 60)*60;
+}
+int uci_get_smart_hibernate_inactive_seconds(void) {
+	return uci_get_user_property_int_mm("smart_hibernate_inactive_mins", smart_hibernate_inactive_seconds/60, 0, 2 * 24 * 60)*60;
+}
+int uci_get_smart_silent_mode_hibernate(void) {
+	return uci_get_user_property_int_mm("smart_silent_mode_hibernate", smart_silent_mode_hibernate, 0, 1);
+}
+int uci_get_smart_silent_mode_stop(void) {
+	return uci_get_user_property_int_mm("smart_silent_mode_stop", smart_silent_mode_stop, 0, 1);
+}
+
+int fpf_silent_mode = 0;
+// KAD should run if in ringing mode... companion app channels the info
+int fpf_ringing = 0;
+/**
+* If an app that is waking screen from sleep like Alarm or Phone, this should be set higher than 0
+* If that happens, KAD should STOP running and no new KAD screen should start till value is back to 0,
+* meaning apps were closed/dismissed. Companion app channels this number.
+*/
+int fpf_screen_waking_app = 0;
+
+int silent_mode_hibernate(void) {
+	if (uci_get_smart_silent_mode_hibernate()) {
+		return fpf_silent_mode;
+	}
+	return 0;
+}
+int silent_mode_stop(void) {
+	if (uci_get_smart_silent_mode_stop()) {
+		return fpf_silent_mode;
+	}
+	return 0;
+}
+
+static int phone_ring_in_silent_mode = 0;
+static int get_phone_ring_in_silent_mode(void) {
+	return uci_get_user_property_int_mm("phone_ring_in_silent_mode", phone_ring_in_silent_mode, 0, 1);
+}
+
+static struct alarm vibrate_rtc;
+static enum alarmtimer_restart vibrate_rtc_callback(struct alarm *al, ktime_t now)
+{
+	pr_info("%s kad\n",__func__);
+	set_vibrate(998);
+	return ALARMTIMER_NORESTART;
+}
+
+
+static int face_down_screen_off = 1;
+static int get_face_down_screen_off(void) {
+	return uci_get_user_property_int_mm("face_down_screen_off", face_down_screen_off, 0, 1);
+}
+
+bool should_screen_off_face_down(int screen_timeout_sec, int face_down);
+static void fpf_pwrtrigger(int vibration, const char caller[]);
+
+
+// register input event alarm timer
+extern void register_input_event(void);
+void stop_kernel_ambient_display(bool interrupt_ongoing);
+
+// register sys uci listener
+void fpf_uci_sys_listener(void) {
+	pr_info("%s uci sys parse happened...\n",__func__);
+	{
+		int silent = uci_get_sys_property_int_mm("silent", 0, 0, 1);
+		int ringing = uci_get_sys_property_int_mm("ringing", 0, 0, 1);
+
+		int face_down = uci_get_sys_property_int_mm("face_down", 0, 0, 1);
+		int screen_timeout_sec = uci_get_sys_property_int_mm("screen_timeout", 15, 0, 600);
+
+		int screen_waking_app = uci_get_sys_property_int("screen_waking_apps", 0);
+		if (screen_waking_app != -EINVAL) fpf_screen_waking_app = screen_waking_app;
+
+		pr_info("%s uci sys silent %d ringing %d face_down %d timeout %d \n",__func__,silent, ringing, face_down, screen_timeout_sec);
+		fpf_silent_mode = silent;
+		if (fpf_silent_mode && ringing && (ringing!=fpf_ringing) && get_phone_ring_in_silent_mode()) {
+			ktime_t wakeup_time;
+			ktime_t curr_time = { .tv64 = 0 };
+			wakeup_time = ktime_add_us(curr_time,
+			    (2 * 1000LL * 1000LL)); // msec to usec
+			alarm_cancel(&vibrate_rtc);
+			alarm_start_relative(&vibrate_rtc, wakeup_time); // start new...
+			set_vibrate(999);
+		} else {
+			if (!ringing) {
+				alarm_cancel(&vibrate_rtc);
+			}
+		}
+		fpf_ringing = ringing;
+		if (screen_on && !ringing) {
+			if (should_screen_off_face_down(screen_timeout_sec, face_down)) {
+				fpf_pwrtrigger(0,__func__);
+			}
+		}
+	}
+	if (fpf_ringing || fpf_screen_waking_app) {
+		register_input_event();
+	}
+}
+
+
+
+static unsigned int smart_last_user_activity_time = 0;
+void smart_set_last_user_activity_time(void) {
+	smart_last_user_activity_time = get_global_seconds();
+}
+EXPORT_SYMBOL(smart_set_last_user_activity_time);
+
+int smart_get_inactivity_time(void) {
+	unsigned int diff = 0;
+	int diff_in_sec = 0;
+	if (smart_last_user_activity_time==0) smart_last_user_activity_time = get_global_seconds();
+	diff = get_global_seconds() - smart_last_user_activity_time;
+	diff_in_sec = diff / 1;
+	pr_info("%s smart_notif - inactivity in sec: %d\n",__func__, diff_in_sec);
+	return diff_in_sec;
+}
+
+
+int smart_get_notification_level(int notif_type) {
+	int diff_in_sec = smart_get_inactivity_time();
+	int ret = NOTIF_DEFAULT;
+	bool trim = uci_get_smart_trim_inactive_seconds() > 0 && diff_in_sec > uci_get_smart_trim_inactive_seconds();
+	bool stop = uci_get_smart_stop_inactive_seconds() > 0 && diff_in_sec > uci_get_smart_stop_inactive_seconds();
+	bool hibr = uci_get_smart_hibernate_inactive_seconds() > 0 && diff_in_sec > uci_get_smart_hibernate_inactive_seconds();
+	if (silent_mode_hibernate()) hibr = true;
+	if (silent_mode_stop()) stop = true;
+	switch (notif_type) {
+		case NOTIF_KAD:
+			ret = hibr?smart_hibernate_kad:(stop?smart_stop_kad:(trim?smart_trim_kad:NOTIF_DEFAULT));
+			break;
+		case NOTIF_FLASHLIGHT:
+			ret = hibr?smart_hibernate_flashlight:(stop?smart_stop_flashlight:(trim?smart_trim_flashlight:NOTIF_DEFAULT));
+			break;
+		case NOTIF_VIB_REMINDER:
+			if ( (hibr?smart_hibernate_flashlight:(stop?smart_stop_flashlight:(trim?smart_trim_flashlight:NOTIF_DEFAULT) )) == NOTIF_STOP ) ret = NOTIF_STOP; else // without flashlight, no reminder possible
+			ret = hibr?smart_hibernate_vib_reminder:(stop?smart_stop_vib_reminder:(trim?smart_trim_vib_reminder:NOTIF_DEFAULT));
+			break;
+		case NOTIF_VIB_BOOSTER:
+			ret = hibr?smart_hibernate_notif_booster:(stop?smart_stop_notif_booster:(trim?smart_trim_notif_booster:NOTIF_DEFAULT));
+			break;
+		case NOTIF_BUTTON_LIGHT:
+			ret = hibr?smart_hibernate_bln_light:(stop?smart_stop_bln_light:(trim?smart_trim_bln_light:NOTIF_DEFAULT));
+			break;
+		case NOTIF_PULSE_LIGHT:
+			ret = hibr?smart_hibernate_pulse_light:(stop?smart_stop_pulse_light:(trim?smart_trim_pulse_light:NOTIF_DEFAULT));
+			break;
+	}
+	pr_info("%s smart_notif - level for type %d is %d -- state trim %d stop %d hibr %d \n",__func__, notif_type, ret, trim,stop,hibr);
+	return ret;
+}
+EXPORT_SYMBOL(smart_get_notification_level);
+
+// /// smart notif ////
+
+
+int last_screen_lock_check_was_false = 0;
+
+
+bool is_screen_locked(void) {
+	int lock_timeout_sec = uci_get_sys_property_int_mm("lock_timeout", 0, 0, 1900);
+	int locked = uci_get_sys_property_int_mm("locked", 1, 0, 1);
+	int time_passed = get_global_seconds() - last_screen_off_seconds;
+
+	pr_info("%s fpf locked; %d lock timeout: %d time passed after blank: %d \n",__func__,locked, lock_timeout_sec, time_passed);
+
+	if (locked) return true;
+
+	if (!last_screen_lock_check_was_false && time_passed>=lock_timeout_sec) {
+		return true;
+	}
+	// screen was just turned but not enough time passed...
+	// ...till next screen off lock_timeout shouldn't be checked, as with screen on, lock timeout obviously won't happen
+	last_screen_lock_check_was_false = 1;
+	return false;
+}
+
+/**
+* tells if currently a facedown event from companion app UCI sys triggering, should at the same time do a screen off as well
+*/
+bool should_screen_off_face_down(int screen_timeout_sec, int face_down) {
+	if (get_face_down_screen_off() && screen_on) {
+		if (smart_get_inactivity_time()<(screen_timeout_sec-3) && face_down) {
+			pr_info("%s face down screen off! \n",__func__);
+			return true;
+		}
+	}
+	return false;
+}
 
 extern void set_notification_booster(int value);
 extern int get_notification_booster(void);
-
-#endif
+extern void set_notification_boost_only_in_pocket(int value);
+extern int get_notification_boost_only_in_pocket(void);
 
 // value used to signal that HOME button release event should be synced as well in home button func work if it was not interrupted.
 static int do_home_button_off_too_in_work_func = 0;
@@ -80,12 +351,14 @@ static void fpf_presspwr(struct work_struct * fpf_presspwr_work) {
 static DECLARE_WORK(fpf_presspwr_work, fpf_presspwr);
 
 static void fpf_vib(void) {
-	vib_trigger_event(vib_trigger, vib_strength);
+	// avoid using squeeze vib length 15...
+	set_vibrate(get_vib_strength()==15?14:get_vib_strength());
 }
 
 /* PowerKey trigger */
-static void fpf_pwrtrigger(int vibration) {
+static void fpf_pwrtrigger(int vibration, const char caller[]) {
 	if (vibration) fpf_vib();
+	pr_info("%s power press - screen_on: %d caller %s\n",__func__, screen_on,caller);
 	schedule_work(&fpf_presspwr_work);
         return;
 }
@@ -161,6 +434,9 @@ static int powering_down_with_fingerprint_still_pressed = 0;
 #define DT_WAIT_PERIOD_BASE_VALUE 12
 #define DT_WAIT_PERIOD_DEFAULT 2
 static int doubletap_wait_period = DT_WAIT_PERIOD_DEFAULT;
+static int get_doubletap_wait_period(void) {
+	return uci_get_user_property_int_mm("fp_doubletap_wait_period", doubletap_wait_period, 0, 9);
+}
 
 /* Home button work func 
 	will start with trying to lock worklock
@@ -183,11 +459,11 @@ static void fpf_home_button_func(struct work_struct * fpf_presspwr_work) {
 	fpf_vib();
 	while (!break_home_button_func_work) {
 		count_cycles++;
-		if (count_cycles > (DT_WAIT_PERIOD_BASE_VALUE + doubletap_wait_period)) {
+		if (count_cycles > (DT_WAIT_PERIOD_BASE_VALUE + get_doubletap_wait_period())) {
 			break;
 		}
 		msleep(FUNC_CYCLE_DUR);
-		pr_debug("fpf %s counting in cycle before KEY_HOME 1 synced: %d / %d cycles \n",__func__, count_cycles, DT_WAIT_PERIOD_BASE_VALUE+doubletap_wait_period);
+		pr_debug("fpf %s counting in cycle before KEY_HOME 1 synced: %d / %d cycles \n",__func__, count_cycles, DT_WAIT_PERIOD_BASE_VALUE+get_doubletap_wait_period());
 	}
 	time_count_done_in_home_button_func_work = 1;
 	if (break_home_button_func_work == 0) {
@@ -228,7 +504,7 @@ static void fpf_home_button_func_trigger(void) {
 			} else { 
 				powering_down_with_fingerprint_still_pressed = 0; 
 			}
-			fpf_pwrtrigger(1);
+			fpf_pwrtrigger(1,__func__);
 			do_home_button_off_too_in_work_func = 0;
 		}
                 return;
@@ -262,23 +538,20 @@ static bool fpf_input_filter(struct input_handle *handle,
                                     unsigned int type, unsigned int code,
                                     int value)
 {
-	// if it's not on, don't filter anything...
-	if (fpf_switch == 0) return false;
-
 	if (type != EV_KEY)
 		return false;
 
 	register_input_event();
 
-	if (type == EV_KEY) {
-		pr_info("%s fpf_input key %d %d %d\n",__func__,type,code,value);
-	}
+	// if it's not on, don't filter anything...
+	if (get_fpf_switch() == 0) return false;
+
 
 	if (code == KEY_WAKEUP) {
 		pr_debug("fpf - wakeup %d %d \n",code,value);
 
 
-	if (fpf_switch == 2) {
+	if (get_fpf_switch() == 2) {
 	//standalone kernel mode. double tap means switch off
 	if (value > 0) {
 		if (!screen_on) {
@@ -324,7 +597,7 @@ static bool fpf_input_filter(struct input_handle *handle,
 		}
 	}
 	}
-	if (fpf_switch == 1) {
+	if (get_fpf_switch() == 1) {
 		// simple home button mode, user space handles behavior
 		if (!screen_on) {
 			return false;
@@ -345,9 +618,15 @@ static bool fpf_input_filter(struct input_handle *handle,
 
 // this callback allows registration of FP vibration, and tweaking of length...
 int register_fp_vibration(void) {
-	return vib_strength;
+	return get_unlock_vib_strength();
 }
 EXPORT_SYMBOL(register_fp_vibration);
+
+
+
+// ==================================
+// ---------------fingerprint handler
+// ==================================
 
 static void fpf_input_disconnect(struct input_handle *handle)
 {
@@ -355,6 +634,7 @@ static void fpf_input_disconnect(struct input_handle *handle)
 	input_unregister_handle(handle);
 	kfree(handle);
 }
+
 
 static const struct input_device_id fpf_ids[] = {
 	{ .driver_info = 1 },
@@ -382,6 +662,12 @@ static unsigned long last_vol_keys_start = 0;
 
 extern void register_double_volume_key_press(int long_press);
 
+static int block_power_key_in_pocket = 0;
+int get_block_power_key_in_pocket(void) {
+	int proximity = uci_get_sys_property_int_mm("proximity", 0, 0, 1);
+	return proximity && uci_get_user_property_int_mm("block_power_key_in_pocket", block_power_key_in_pocket, 0, 1);
+}
+
 static bool ts_input_filter(struct input_handle *handle,
                                     unsigned int type, unsigned int code,
                                     int value)
@@ -392,6 +678,10 @@ static bool ts_input_filter(struct input_handle *handle,
 
 	if (type == EV_KEY) {
 		pr_info("%s ts_input key %d %d %d\n",__func__,type,code,value);
+		if (code == 116 && !screen_on && get_block_power_key_in_pocket()) {
+			pr_info("%s proximity ts_input power key filter\n",__func__);
+			return true;
+		}
 	}
 
 	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 1) {
@@ -408,7 +698,7 @@ static bool ts_input_filter(struct input_handle *handle,
 		last_vol_key_1_timestamp = jiffies;
 		if (last_vol_key_1_timestamp - last_vol_key_2_timestamp < 7 * JIFFY_MUL) {
 			unsigned int start_diff = jiffies - last_vol_keys_start;
-			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
+			register_double_volume_key_press( (start_diff > 50 * JIFFY_MUL) ? ((start_diff > 100 * JIFFY_MUL)?2:1):0 );
 		}
 		goto skip_ts;
 	}
@@ -416,7 +706,7 @@ static bool ts_input_filter(struct input_handle *handle,
 		last_vol_key_2_timestamp = jiffies;
 		if (last_vol_key_2_timestamp - last_vol_key_1_timestamp < 7 * JIFFY_MUL) {
 			unsigned int start_diff = jiffies - last_vol_keys_start;
-			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL);
+			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL ? ((start_diff > 100 * JIFFY_MUL)?2:1):0 );
 		}
 		goto skip_ts;
 	}
@@ -498,6 +788,59 @@ static struct input_handler ts_input_handler = {
 };
 
 // ------------------------------------------------------
+
+
+static ssize_t face_down_screen_off_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", face_down_screen_off);
+}
+
+static ssize_t face_down_screen_off_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 1)
+		input = 0;
+
+	face_down_screen_off = input;
+	return count;
+}
+
+static DEVICE_ATTR(face_down_screen_off, (S_IWUSR|S_IRUGO),
+	face_down_screen_off_show, face_down_screen_off_dump);
+
+static ssize_t block_power_key_in_pocket_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", block_power_key_in_pocket);
+}
+
+static ssize_t block_power_key_in_pocket_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 1)
+		input = 0;
+
+	block_power_key_in_pocket = input;
+	return count;
+}
+
+static DEVICE_ATTR(block_power_key_in_pocket, (S_IWUSR|S_IRUGO),
+	block_power_key_in_pocket_show, block_power_key_in_pocket_dump);
 
 static ssize_t fpf_dt_wait_period_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -601,6 +944,61 @@ static ssize_t vib_strength_dump(struct device *dev,
 static DEVICE_ATTR(vib_strength, (S_IWUSR|S_IRUGO),
 	vib_strength_show, vib_strength_dump);
 
+static ssize_t unlock_vib_strength_show(struct device *dev,
+		 struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", unlock_vib_strength);
+}
+
+static ssize_t unlock_vib_strength_dump(struct device *dev,
+		 struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 90) 
+		input = 20;				
+
+	unlock_vib_strength = input;			
+	
+	return count;
+}
+
+static DEVICE_ATTR(unlock_vib_strength, (S_IWUSR|S_IRUGO),
+	unlock_vib_strength_show, unlock_vib_strength_dump);
+
+
+static ssize_t phone_ring_in_silent_mode_show(struct device *dev,
+		 struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", phone_ring_in_silent_mode);
+}
+
+static ssize_t phone_ring_in_silent_mode_dump(struct device *dev,
+		 struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 1) 
+		input = 0;
+
+	phone_ring_in_silent_mode = input;
+	
+	return count;
+}
+
+static DEVICE_ATTR(phone_ring_in_silent_mode, (S_IWUSR|S_IRUGO),
+	phone_ring_in_silent_mode_show, phone_ring_in_silent_mode_dump);
+
 // -------------------- notification booster
 static ssize_t notification_booster_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -628,7 +1026,177 @@ static ssize_t notification_booster_dump(struct device *dev,
 
 static DEVICE_ATTR(notification_booster, (S_IWUSR|S_IRUGO),
 	notification_booster_show, notification_booster_dump);
+
+static ssize_t notification_boost_only_in_pocket_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", get_notification_boost_only_in_pocket());
+}
+
+static ssize_t notification_boost_only_in_pocket_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 100)
+		input = 0;
+
+	set_notification_boost_only_in_pocket(input);
+
+	return count;
+}
+
+static DEVICE_ATTR(notification_boost_only_in_pocket, (S_IWUSR|S_IRUGO),
+	notification_boost_only_in_pocket_show, notification_boost_only_in_pocket_dump);
 // --------------------------------------------------
+// ------------- smart notification timing ------------------------
+//smart_trim_inactive_seconds
+//smart_stop_inactive_seconds
+//smart_hibernate_inactive_seconds
+static ssize_t smart_silent_mode_hibernate_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", smart_silent_mode_hibernate);
+}
+
+static ssize_t smart_silent_mode_hibernate_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 1)
+		input = 0;
+
+	smart_silent_mode_hibernate = input;
+
+	return count;
+}
+
+static DEVICE_ATTR(smart_silent_mode_hibernate, (S_IWUSR|S_IRUGO),
+	smart_silent_mode_hibernate_show, smart_silent_mode_hibernate_dump);
+
+
+static ssize_t smart_silent_mode_stop_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", smart_silent_mode_stop);
+}
+
+static ssize_t smart_silent_mode_stop_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 1)
+		input = 0;
+
+	smart_silent_mode_stop = input;
+
+	return count;
+}
+
+static DEVICE_ATTR(smart_silent_mode_stop, (S_IWUSR|S_IRUGO),
+	smart_silent_mode_stop_show, smart_silent_mode_stop_dump);
+
+
+static ssize_t smart_trim_inactive_minutes_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", smart_trim_inactive_seconds/60);
+}
+
+static ssize_t smart_trim_inactive_minutes_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 2 * 24 * 60)
+		input = 0;
+
+	smart_trim_inactive_seconds = input * 60;
+
+	return count;
+}
+
+static DEVICE_ATTR(smart_trim_inactive_minutes, (S_IWUSR|S_IRUGO),
+	smart_trim_inactive_minutes_show, smart_trim_inactive_minutes_dump);
+
+
+static ssize_t smart_stop_inactive_minutes_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", smart_stop_inactive_seconds/60);
+}
+
+static ssize_t smart_stop_inactive_minutes_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 2 * 24 * 60)
+		input = 0;
+
+	smart_stop_inactive_seconds = input * 60;
+
+	return count;
+}
+
+static DEVICE_ATTR(smart_stop_inactive_minutes, (S_IWUSR|S_IRUGO),
+	smart_stop_inactive_minutes_show, smart_stop_inactive_minutes_dump);
+
+
+static ssize_t smart_hibernate_inactive_minutes_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", smart_hibernate_inactive_seconds/60);
+}
+
+static ssize_t smart_hibernate_inactive_minutes_dump(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	if (input < 0 || input > 2 * 24 * 60)
+		input = 0;
+
+	smart_hibernate_inactive_seconds = input * 60;
+
+	return count;
+}
+
+static DEVICE_ATTR(smart_hibernate_inactive_minutes, (S_IWUSR|S_IRUGO),
+	smart_hibernate_inactive_minutes_show, smart_hibernate_inactive_minutes_dump);
+
 
 static struct kobject *fpf_kobj;
 
@@ -649,7 +1217,10 @@ static int fb_notifier_callback(struct notifier_block *self,
         switch (*blank) {
         case FB_BLANK_UNBLANK:
 		screen_on = 1;
-		pr_info("fpf screen on -early\n");
+		screen_off_early = 0;
+		last_screen_on_seconds = get_global_seconds();
+		last_screen_on_early_time = jiffies;
+		pr_info("fpf kad screen on -early\n");
             break;
 
         case FB_BLANK_POWERDOWN:
@@ -657,7 +1228,9 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_VSYNC_SUSPEND:
         case FB_BLANK_NORMAL:
 		screen_on = 0;
-		pr_info("fpf screen off -early\n");
+		screen_off_early = 1;
+		//screen_on_full = 0;
+		pr_info("fpf kad screen off -early\n");
             break;
         }
     }
@@ -665,8 +1238,12 @@ static int fb_notifier_callback(struct notifier_block *self,
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
+		{
 		screen_on = 1;
+		screen_on_full = 1;
+		last_screen_event_timestamp = jiffies;
 		pr_info("fpf screen on\n");
+		}
             break;
 
         case FB_BLANK_POWERDOWN:
@@ -674,7 +1251,11 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_VSYNC_SUSPEND:
         case FB_BLANK_NORMAL:
 		screen_on = 0;
-		pr_info("fpf screen off\n");
+		screen_on_full = 0;
+		last_screen_event_timestamp = jiffies;
+		last_screen_off_seconds = get_global_seconds();
+		last_screen_lock_check_was_false = 0;
+		pr_info("fpf kad screen off\n");
             break;
         }
     }
@@ -753,6 +1334,18 @@ static int __init fpf_init(void)
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for notif booster\n", __func__);
 
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_notification_boost_only_in_pocket.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for notif boost only in pocket\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_block_power_key_in_pocket.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for block_power_key_in_pocket\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_face_down_screen_off.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for face_down_screen_off\n", __func__);
+
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_fpf_dt_wait_period.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for fpf_dt_wait_period\n", __func__);
@@ -765,6 +1358,38 @@ static int __init fpf_init(void)
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for vib_strength\n", __func__);
 
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_unlock_vib_strength.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for unlock_vib_strength\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_phone_ring_in_silent_mode.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for phone_ring_in_silent_mode\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_smart_trim_inactive_minutes.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for smart_trim_inactive_minutes\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_smart_silent_mode_hibernate.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for smart_silent_mode_hibernate\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_smart_silent_mode_stop.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for smart_silent_mode_stop\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_smart_stop_inactive_minutes.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for smart_stop_inactive_minutes\n", __func__);
+
+	rc = sysfs_create_file(fpf_kobj, &dev_attr_smart_hibernate_inactive_minutes.attr);
+	if (rc)
+		pr_err("%s: sysfs_create_file failed for smart_hibernate_inactive_minutes\n", __func__);
+
+	alarm_init(&vibrate_rtc, ALARM_REALTIME,
+		vibrate_rtc_callback);
+	uci_add_sys_listener(fpf_uci_sys_listener);
+	smart_last_user_activity_time = get_global_seconds();
 err_input_dev:
 	input_free_device(fpf_pwrdev);
 

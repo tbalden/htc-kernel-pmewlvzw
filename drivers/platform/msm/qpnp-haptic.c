@@ -28,6 +28,11 @@
 #include <linux/vibtrig.h>
 #include <linux/spinlock.h>
 
+#if 1
+#include <linux/notification/notification.h>
+#include <linux/uci/uci.h>
+#endif
+
 #define VIB_DBG_LOG(fmt, ...) \
 		printk(KERN_DEBUG "[VIB][DBG] " fmt, ##__VA_ARGS__)
 #define VIB_INFO_LOG(fmt, ...) \
@@ -1618,11 +1623,49 @@ static int qpnp_hap_set(struct qpnp_hap *hap, int on)
 #define MIN_TD_VALUE_NOTIFICATION_ALARM 500
 
 static int notification_booster = 2;
+static int vibration_power_set = 0;
+static int vibration_power_percentage = 40;
+
 static int suspend_booster = 0;
-static int vmax_needs_reset = 0;
+static int vmax_needs_reset = 1;
 static int alarm_value_counter = 0;
 static int last_value = 0;
 static unsigned long last_alarm_value_jiffies = 0;
+
+int uci_get_notification_booster(void) {
+	return uci_get_user_property_int_mm("notification_booster", notification_booster,0,100);
+}
+
+int uci_get_vibration_power_percentage(void) {
+	return uci_get_user_property_int_mm("vibration_power_percentage", vibration_power_percentage,0,100);
+}
+int uci_get_vibration_power_set(void) {
+	return uci_get_user_property_int_mm("vibration_power_set", vibration_power_set,0,1);
+}
+// register user uci listener
+void haptic_uci_user_listener(void) {
+	pr_info("%s uci user parse happened...\n",__func__);
+	vmax_needs_reset = 1;
+}
+
+static int boost_only_in_pocket = 1;
+static bool face_down_hr = false;
+static bool proximity = false;
+static bool in_pocket = false;
+
+int uci_get_boost_only_in_pocket(void) {
+	return uci_get_user_property_int_mm("boost_only_in_pocket", boost_only_in_pocket, 0, 1);
+}
+
+// register sys uci listener
+void haptic_uci_sys_listener(void) {
+	pr_info("%s [VIB] uci sys parse happened...\n",__func__);
+	proximity = !!uci_get_sys_property_int_mm("proximity", 1,0,1);
+	face_down_hr = !!uci_get_sys_property_int_mm("face_down_hr", 0,0,1);
+	// check if perfectly horizontal facedown is not true, and in proximity 
+	// ...(so it's supposedly not on table, but in pocket) then in_pocket = true
+	in_pocket = !face_down_hr && proximity;
+}
 
 void set_suspend_booster(int value) {
 	suspend_booster = !!value;
@@ -1637,15 +1680,37 @@ int get_notification_booster(void) {
 	return notification_booster;
 }
 EXPORT_SYMBOL(get_notification_booster);
+void set_notification_boost_only_in_pocket(int value) {
+	boost_only_in_pocket = value;
+}
+EXPORT_SYMBOL(set_notification_boost_only_in_pocket);
+int get_notification_boost_only_in_pocket(void) {
+	return boost_only_in_pocket;
+}
+EXPORT_SYMBOL(get_notification_boost_only_in_pocket);
 
 extern int register_haptic(int value);
 extern int input_is_screen_on(void);
 extern int input_is_wake_by_user(void);
 int should_not_boost(void) {
+	int l_boost_only_in_pocket = uci_get_boost_only_in_pocket();
 	if (input_is_screen_on() && input_is_wake_by_user()) return 1;
-	return 0;
+	if ((l_boost_only_in_pocket && in_pocket) || !l_boost_only_in_pocket) return 0;
+	return 1;
 }
 int skip_register_haptic = 0;
+
+static int smart_get_boost_on(void) {
+	int level = smart_get_notification_level(NOTIF_VIB_BOOSTER);
+	int ret = !suspend_booster && uci_get_notification_booster();
+	if (level != NOTIF_DEFAULT) {
+		ret = 0; // should suspend boosting if not DEFAULT level
+	}
+	pr_info("%s smart_notif =========== level: %d  notif vib should boost %d \n",__func__, level, ret);
+	return ret;
+}
+
+
 #endif
 
 /* enable interface from timed output class */
@@ -1678,7 +1743,7 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 		}
 
 		// if booster, and screen is off, or call or alarm value for timed device, then we may need a boosting...
-		if (!suspend_booster && notification_booster && (!should_not_boost() || value == MIN_TD_VALUE_NOTIFICATION_CALL || value == MIN_TD_VALUE_NOTIFICATION_ALARM) ) {
+		if (smart_get_boost_on() && (!should_not_boost() || value == MIN_TD_VALUE_NOTIFICATION_CALL || value == MIN_TD_VALUE_NOTIFICATION_ALARM) ) {
 			if (value>=MIN_TD_VALUE_NOTIFICATION) {
 				// detect repeating alarm... if it's not repeating frequently, then it can be some other apps vibration with its length value
 				if (should_not_boost() && value == MIN_TD_VALUE_NOTIFICATION_ALARM) {
@@ -1714,7 +1779,7 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 					alarm_value_counter = 0;
 				}
 				if (!vmax_needs_reset) {
-					u32 new_val = stored_vmax_mv * (notification_booster+1);
+					u32 new_val = stored_vmax_mv * (uci_get_notification_booster()+1);
 					if (new_val > VMAX_MV_NOTIFICATION) new_val = VMAX_MV_NOTIFICATION;
 					if (stored_vmax_mv > new_val) { goto skip_reset; } // stored value is higher than boosted notif MV then use stored in the end...
 					hap->vmax_mv = new_val;
@@ -1726,7 +1791,13 @@ static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
 		}
 reset:
 		if (vmax_needs_reset) {
-			hap->vmax_mv = stored_vmax_mv;
+			int power_perc = uci_get_vibration_power_percentage();
+			int power_set = uci_get_vibration_power_set();
+			if (power_set) {
+				hap->vmax_mv = (QPNP_HAP_VMAX_MAX_MV * power_perc) / 100;
+			} else {
+				hap->vmax_mv = stored_vmax_mv;
+			}
 			qpnp_hap_vmax_config(hap);
 			vmax_needs_reset = 0;
 		}
@@ -2675,6 +2746,10 @@ static int qpnp_haptic_probe(struct spmi_device *spmi)
 
 	VIB_INFO_LOG("%s: --, play_mode=%d\n", __func__, hap->play_mode);
 
+#ifdef CONFIG_UCI
+	uci_add_user_listener(haptic_uci_user_listener);
+	uci_add_sys_listener(haptic_uci_sys_listener);
+#endif
 	return 0;
 
 sysfs_fail:

@@ -35,6 +35,8 @@
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 #include <linux/alarmtimer.h>
+#include <linux/notification/notification.h>
+#include <linux/uci/uci.h>
 #endif
 
 #define LED_TRIGGER_DEFAULT		"none"
@@ -421,6 +423,28 @@ static int pulse_rgb_blink = 1;  // 0 - normal stock blinking / 1 - pulsating
 static int rgb_coeff_divider = 1; // value between 1 - 20
 static int bln_coeff_divider = 2; // value between 1 - 20
 
+static int get_bln_switch(void) {
+	return uci_get_user_property_int_mm("bln", bln_switch, 0, 1);
+}
+static int get_bln_number(void) {
+	return uci_get_user_property_int_mm("bln_number", bln_number, 0, 50);
+}
+static int get_bln_light_level(void) {
+	return uci_get_user_property_int_mm("bln_light_level", bln_coeff_divider-1, 0, 20)+1;
+}
+static int get_bln_speed(void) {
+	return uci_get_user_property_int_mm("bln_speed", bln_speed, 0, 9);
+}
+static int get_bln_rgb_blink_light_level(void) {
+	return uci_get_user_property_int_mm("bln_rgb_light_level", rgb_coeff_divider-1, 0, 20)+1;
+}
+static int get_bln_pulse_rgb_blink(void) {
+	return uci_get_user_property_int_mm("bln_rgb_pulse", pulse_rgb_blink, 0, 1);
+}
+static int get_bln_rgb_batt_colored(void) {
+	return uci_get_user_property_int_mm("bln_rgb_batt_colored", colored_charge_level, 0, 1);
+}
+
 static int qpnp_buttonled_blink_with_alarm(int on,int cancel_alarm);
 static int qpnp_buttonled_blink(int on);
 
@@ -434,6 +458,25 @@ int input_is_charging(void) {
 }
 EXPORT_SYMBOL(input_is_charging);
 
+// smart automation
+static int smart_get_pulse_dimming(void) {
+	int ret = lights_down_divider;
+	int level = smart_get_notification_level(NOTIF_PULSE_LIGHT);
+	if (level==NOTIF_DIM) {
+		ret = 16; // should DIM!
+	}
+	pr_info("%s smart_notif =========== level: %d  pulse_dimming %d \n",__func__, level, ret);
+	return ret;
+}
+static int smart_get_button_dimming(void) {
+	int ret = lights_down_divider;
+	int level = smart_get_notification_level(NOTIF_BUTTON_LIGHT);
+	if (level==NOTIF_DIM) {
+		ret = 16; // should DIM!
+	}
+	pr_info("%s smart_notif =========== level: %d  buttonlight_dimming %d \n",__func__, level, ret);
+	return ret;
+}
 
 static enum alarmtimer_restart blinkstop_rtc_callback(struct alarm *al, ktime_t now) 
 {
@@ -463,17 +506,17 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 	u8 val;
 	int virtual_key_lut_table_stop[1] = {0};
 	int virtual_key_lut_table_blink[VIRTUAL_LUT_LEN] = {
-		0/(bln_coeff_divider * lights_down_divider),10/(bln_coeff_divider * lights_down_divider),
-		20/(bln_coeff_divider * lights_down_divider),40/(bln_coeff_divider * lights_down_divider),
-		50/(bln_coeff_divider * lights_down_divider),60/(bln_coeff_divider * lights_down_divider),
-		70/(bln_coeff_divider * lights_down_divider),80/(bln_coeff_divider * lights_down_divider),
-		90/(bln_coeff_divider * lights_down_divider),100/(bln_coeff_divider * lights_down_divider)};
+		0/(get_bln_light_level() * smart_get_button_dimming()),10/(get_bln_light_level() * smart_get_button_dimming()),
+		20/(get_bln_light_level() * smart_get_button_dimming()),40/(get_bln_light_level() * smart_get_button_dimming()),
+		50/(get_bln_light_level() * smart_get_button_dimming()),60/(get_bln_light_level() * smart_get_button_dimming()),
+		70/(get_bln_light_level() * smart_get_button_dimming()),80/(get_bln_light_level() * smart_get_button_dimming()),
+		90/(get_bln_light_level() * smart_get_button_dimming()),100/(get_bln_light_level() * smart_get_button_dimming())};
 	int virtual_key_lut_table_double_blink[VIRTUAL_LUT_LEN] = {
-		0/(bln_coeff_divider * lights_down_divider),10/(bln_coeff_divider * lights_down_divider),
-		30/(bln_coeff_divider * lights_down_divider),60/(bln_coeff_divider * lights_down_divider),
-		80/(bln_coeff_divider * lights_down_divider),100/(bln_coeff_divider * lights_down_divider),
-		80/(bln_coeff_divider * lights_down_divider),50/(bln_coeff_divider * lights_down_divider),
-		30/(bln_coeff_divider * lights_down_divider),10/(bln_coeff_divider * lights_down_divider)};
+		0/(get_bln_light_level() * smart_get_button_dimming()),10/(get_bln_light_level() * smart_get_button_dimming()),
+		30/(get_bln_light_level() * smart_get_button_dimming()),60/(get_bln_light_level() * smart_get_button_dimming()),
+		80/(get_bln_light_level() * smart_get_button_dimming()),100/(get_bln_light_level() * smart_get_button_dimming()),
+		80/(get_bln_light_level() * smart_get_button_dimming()),50/(get_bln_light_level() * smart_get_button_dimming()),
+		30/(get_bln_light_level() * smart_get_button_dimming()),10/(get_bln_light_level() * smart_get_button_dimming())};
 
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, blink_brightness, led->status);
 
@@ -539,11 +582,11 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 		if (led->mpp_cfg->pwm_mode == LPG_MODE) {
 
 			int pause_hi = 20;
-			int pause_lo = (8600 - (900 * bln_speed)) + 200;
+			int pause_lo = (8600 - (900 * get_bln_speed())) + 200;
 
-			if (bln_number > 0 && !charging) { // if blink number is not infinite and is not charging, schedule CANCEL work
+			if (get_bln_number() > 0 && !charging) { // if blink number is not infinite and is not charging, schedule CANCEL work
 				if (!mutex_is_locked(&blinkstopworklock)) {
-					int sleeptime = ( (((short_vib_notif?(VIRTUAL_RAMP_SETP_TIME_DOUBLE_BLINK_SLOW+11):VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW) * (VIRTUAL_LUT_LEN)) * 2) + pause_hi + pause_lo) * bln_number;
+					int sleeptime = ( (((short_vib_notif?(VIRTUAL_RAMP_SETP_TIME_DOUBLE_BLINK_SLOW+11):VIRTUAL_RAMP_SETP_TIME_BLINK_SLOW) * (VIRTUAL_LUT_LEN)) * 2) + pause_hi + pause_lo) * get_bln_number();
 
 					ktime_t wakeup_time;
 					ktime_t curr_time = { .tv64 = 0 };
@@ -678,12 +721,12 @@ static int led_multicolor_short_transition(struct qpnp_led_data *led, int invers
 	struct lut_params	lut_params;
 	int *lut_short_blink;
 
-	int lut_fade[] = {0, 10 / (rgb_coeff_divider * lights_down_divider) , 30 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
-	int lut_fade_inv[] = {255 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider) , 60 / (rgb_coeff_divider * lights_down_divider), 30 / (rgb_coeff_divider * lights_down_divider), 10 / (rgb_coeff_divider * lights_down_divider) , 0};
+	int lut_fade[] = {0, 10 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()) , 30 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 60 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 110 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 170 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 255 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming())};
+	int lut_fade_inv[] = {255 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 170 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 110 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()) , 60 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 30 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 10 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()) , 0};
 
 	if (!charging || !supposedly_charging) return 0;
 
-	LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, rgb_coeff_divider);
+	LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, get_bln_rgb_blink_light_level());
 	lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
 	lut_params.start_idx = GREEN_SHORT_LUT_START;
 	lut_params.idx_len = PULSE_LUT_LEN;
@@ -726,7 +769,7 @@ static void led_multi_color_charge_level(int level)
 	int red_coeff = 255 - (us_level); // red be a bit more always, except on FULL charge ( 255 - 220 -> Min = 25, except on full where it is 1 )
 	int green_coeff = 235 - red_coeff; // green be a bit less always, except on FULL charge ( Green max is 220, min 1 - except on full where its 255)
 
-	if (!(colored_charge_level && supposedly_charging)) return;
+	if (!(get_bln_rgb_batt_colored() && supposedly_charging)) return;
 
 	if (green_coeff < 1) green_coeff = 10;
 
@@ -753,7 +796,7 @@ static void led_multi_color_charge_level(int level)
 	g_led_green->rgb_cfg->pwm_cfg->pwm_coefficient = green_coeff;
 	g_led_red->mode = val;
 	g_led_green->mode = val;
-	LED_INFO("%s color mixing charge level: red %d green %d \n",__func__, red_coeff / rgb_coeff_divider, green_coeff / rgb_coeff_divider);
+	LED_INFO("%s color mixing charge level: red %d green %d \n",__func__, red_coeff / get_bln_rgb_blink_light_level(), green_coeff / get_bln_rgb_blink_light_level());
 	queue_work(g_led_on_work_queue, &(g_led_red->led_multicolor_work));
 
 	if (level == 100) { // at 100, start fading work too for fancy noticeable look
@@ -767,7 +810,7 @@ static int first_level_registered = 0;
 void register_charge_level(int level)
 {
 	LED_INFO("%s %d\n",__func__,level);
-	if (colored_charge_level && charging && supposedly_charging) {
+	if (get_bln_rgb_batt_colored() && charging && supposedly_charging) {
 		// TRIGGER COLOR CHANGE of led
 		LED_INFO("%s triggering color change to multicolor led %d\n",__func__,level);
 		led_multi_color_charge_level(level);
@@ -801,8 +844,42 @@ void register_input_event(void) {
 		// user is inputing phone, no haptic blinking should trigger BLN when screen off
 		haptic_blinking = 0;
 	}
+	smart_set_last_user_activity_time();
 }
 EXPORT_SYMBOL(register_input_event);
+
+static int last_notification_number = 0;
+// register sys uci listener
+void uci_sys_listener(void) {
+      pr_info("%s uci sys parse happened...\n",__func__);
+      {
+            int ringing = uci_get_sys_property_int_mm("ringing", 0, 0, 1);
+            pr_info("%s uci sys ringing %d\n",__func__,ringing);
+            if (ringing) {
+                  register_input_event();
+            }
+      }
+      {
+            int notifications = uci_get_sys_property_int("notifications",0);
+            if (notifications != -EINVAL) {
+            if (notifications>last_notification_number) {
+                        if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
+                                pr_info("%s haptic_blinking %d\n", __func__, haptic_blinking);
+                                // store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
+                                haptic_blinking = 1;
+                                qpnp_buttonled_blink(1);
+                        }
+                        // call flash blink for flashlight notif if lights_down mode (>1) is not active...
+                        if (lights_down_divider==1) {
+                                flash_blink(false);
+                        }
+            }
+            last_notification_number = notifications;
+            }
+        }
+}
+
+
 
 int register_haptic(int value)
 {
@@ -826,7 +903,7 @@ int register_haptic(int value)
 			} else {
 				short_vib_notif = 0;
 			}
-			if ( bln_switch && (((!charging && lights_down_divider==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
+			if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
 				pr_info("%s haptic_blinking %d\n", __func__, haptic_blinking);
 				// store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
 				haptic_blinking = 1;
@@ -1298,7 +1375,7 @@ static void led_blink_do_work(struct work_struct *work)
 static int qpnp_rgb_set(struct qpnp_led_data *led)
 {
 	int rc;
-	int lut_on_rgb [1] = {255/(rgb_coeff_divider * lights_down_divider)};
+	int lut_on_rgb [1] = {255/(get_bln_rgb_blink_light_level() * smart_get_pulse_dimming())};
 	int lut_off_rgb [1] = {0};
 	LED_INFO("%s, name:%s, brightness = %d status: %d\n", __func__, led->cdev.name, led->cdev.brightness, led->status);
 
@@ -1319,7 +1396,7 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	if (led->cdev.brightness) {
 		if (led->status != ON) {
 			if (led->rgb_cfg->pwm_cfg->mode == RGB_MODE_PWM) {
-				rc = pwm_config_us(led->rgb_cfg->pwm_cfg->pwm_dev, 640 * led->rgb_cfg->pwm_cfg->pwm_coefficient / 255 / (rgb_coeff_divider * lights_down_divider), 640);
+				rc = pwm_config_us(led->rgb_cfg->pwm_cfg->pwm_dev, 640 * led->rgb_cfg->pwm_cfg->pwm_coefficient / 255 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 640);
 				if (rc < 0) {
 					dev_err(&led->spmi_dev->dev, "Failed to " \
 						"configure pwm for new values\n");
@@ -2007,8 +2084,8 @@ static ssize_t blink_store(struct device *dev,
 	led->cdev.brightness = blinking ? led->cdev.max_brightness : 0;
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if (bln_switch || blinking==0) {
-		if ( (blinking && lights_down_divider==1) || !blinking || charging) {
+	if (get_bln_switch() || blinking==0) {
+		if ( (blinking && smart_get_button_dimming()==1) || !blinking || charging) {
 			qpnp_buttonled_blink(blinking);
 		}
 	}
@@ -2825,7 +2902,7 @@ static DEVICE_ATTR(bln_rgb_pulse, (S_IWUSR|S_IRUGO),
 static ssize_t bln_coeff_div_show(struct device *dev,
             struct device_attribute *attr, char *buf)
 {
-      return snprintf(buf, PAGE_SIZE, "%d\n", (rgb_coeff_divider<20?(rgb_coeff_divider-1):20));
+      return snprintf(buf, PAGE_SIZE, "%d\n", (get_bln_rgb_blink_light_level()<20?(get_bln_rgb_blink_light_level()-1):20));
 }
 
 static ssize_t bln_coeff_div_dump(struct device *dev,
@@ -2978,11 +3055,11 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 	lut_short_blink[0] = pwm_coefficient;
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if (pulse_rgb_blink == 0) {
-		lut_short_blink[0] = lut_short_blink[0] / (rgb_coeff_divider * lights_down_divider);
+	if (get_bln_pulse_rgb_blink() == 0) {
+		lut_short_blink[0] = lut_short_blink[0] / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming());
 	}
-	if (led->id == QPNP_ID_RGB_GREEN && pulse_rgb_blink == 1) {
-		int lut_fade [] = {0, 0, 10 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
+	if (led->id == QPNP_ID_RGB_GREEN && get_bln_pulse_rgb_blink() == 1) {
+		int lut_fade [] = {0, 0, 10 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 60 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 110 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 170 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 255 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming())};
 		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
 
 		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
@@ -2994,8 +3071,8 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 
 		lut_short_blink = lut_fade;
 	}
-	if (led->id == QPNP_ID_RGB_RED && pulse_rgb_blink == 1) {
-		int lut_fade [] = {0, 0, 10 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
+	if (led->id == QPNP_ID_RGB_RED && get_bln_pulse_rgb_blink() == 1) {
+		int lut_fade [] = {0, 0, 10 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 60 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 110 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 170 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 255 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming())};
 		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
 
 		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
@@ -3029,7 +3106,7 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if ( bln_switch && (((!charging && lights_down_divider==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
+	if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
 		qpnp_buttonled_blink(1);
 	}
 	// call flash blink for flashlight notif if lights_down mode (>1) is not active...
@@ -3070,11 +3147,11 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 	lut_long_blink[0] = pwm_coefficient;
 
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if (pulse_rgb_blink == 0) {
-		lut_long_blink[0] = lut_long_blink[0] / (rgb_coeff_divider * lights_down_divider);
+	if (get_bln_pulse_rgb_blink() == 0) {
+		lut_long_blink[0] = lut_long_blink[0] / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming());
 	}
-	if (led->id == QPNP_ID_RGB_GREEN && pulse_rgb_blink == 1) {
-		int lut_fade [] = {0, 0, 10 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
+	if (led->id == QPNP_ID_RGB_GREEN && get_bln_pulse_rgb_blink() == 1) {
+		int lut_fade [] = {0, 0, 10 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 60 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 110 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 170 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 255 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming())};
 		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
 
 		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
@@ -3086,8 +3163,8 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 
 		lut_long_blink = lut_fade;
 	}
-	if (led->id == QPNP_ID_RGB_RED && pulse_rgb_blink == 1) {
-		int lut_fade [] = {0, 0, 10 / (rgb_coeff_divider * lights_down_divider), 60 / (rgb_coeff_divider * lights_down_divider), 110 / (rgb_coeff_divider * lights_down_divider), 170 / (rgb_coeff_divider * lights_down_divider), 255 / (rgb_coeff_divider * lights_down_divider)};
+	if (led->id == QPNP_ID_RGB_RED && get_bln_pulse_rgb_blink() == 1) {
+		int lut_fade [] = {0, 0, 10 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 60 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 110 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 170 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming()), 255 / (get_bln_rgb_blink_light_level() * smart_get_pulse_dimming())};
 		LED_INFO("%s, name:%s, brightness = %d status: %d coefficient: %d \n", __func__, led->cdev.name, led->cdev.brightness, led->status, pwm_coefficient);
 
 		lut_params.flags = PM_PWM_LUT_LOOP | PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_REVERSE | PM_PWM_LUT_PAUSE_HI_EN | PM_PWM_LUT_PAUSE_LO_EN;
@@ -3121,7 +3198,7 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 	led->status = ON;
 	led->rgb_cfg->pwm_cfg->blinking = true;
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if ( bln_switch && (((!charging && lights_down_divider==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
+	if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
 		qpnp_buttonled_blink(1);
 	}
 	// call flash blink for flashlight notif if lights_down mode (>1) is not active...
@@ -4026,7 +4103,7 @@ static ssize_t pm8xxx_led_blink_store(struct device *dev,
 	current_blink = val;
 	LED_INFO("%s: blink: %d\n", __func__, val);
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-	if (val==0 || (bln_switch && (charging || (!charging && lights_down_divider==1)))) {
+	if (val==0 || (bln_switch && (charging || (!charging && smart_get_button_dimming()==1)))) {
 		qpnp_buttonled_blink(val);
 	}
 	if (val==0) {
@@ -4093,7 +4170,7 @@ static int update_ModeRGB(struct qpnp_led_data *led, uint32_t val)
 
 	LED_INFO(" %s , RED = %d supposedly charging %d charging %d\n" , __func__, g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient, supposedly_charging, charging);
 
-	if (colored_charge_level && supposedly_charging && first_level_registered) {
+	if (get_bln_rgb_batt_colored() && supposedly_charging && first_level_registered) {
 		// if it's supposedly charging and first level registered from HTC battery, we can go and set charge level color mix instead of normal multicolor setting later...
 		led_multi_color_charge_level(charge_level);
 		// and return so color is not overwritten...
@@ -4131,7 +4208,7 @@ static ssize_t led_multi_color_store(struct device *dev,
 
 	LED_INFO(" %s , RED = %d supposedly charging %d charging %d\n" , __func__, g_led_red->rgb_cfg->pwm_cfg->pwm_coefficient, supposedly_charging, charging);
 
-	if (colored_charge_level && supposedly_charging && first_level_registered) {
+	if (get_bln_rgb_batt_colored() && supposedly_charging && first_level_registered) {
 		// if it's supposedly charging and first level registered from HTC battery, we can go and set charge level color mix instead of normal multicolor setting later...
 		led_multi_color_charge_level(charge_level);
 		// and return so color is not overwritten...
