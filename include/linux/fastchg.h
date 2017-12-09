@@ -15,10 +15,9 @@
 #ifndef _LINUX_FASTCHG_H
 #define _LINUX_FASTCHG_H
 
-extern int force_fast_charge;
-
 #define FAST_CHARGE_DISABLED 0	/* default */
 #define FAST_CHARGE_FORCE_AC 1
 
+extern int get_force_fast_charge(void);
 #endif
 

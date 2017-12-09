@@ -2100,7 +2100,7 @@ static int smbchg_set_high_usb_chg_current(struct smbchg_chip *chip,
 
 #ifdef CONFIG_FORCE_FAST_CHARGE
 static int fcharge_enabled(void) {
-	if (force_fast_charge == 1) {
+	if (get_force_fast_charge() == 1) {
 		return 1;
 	} else return 0;
 }

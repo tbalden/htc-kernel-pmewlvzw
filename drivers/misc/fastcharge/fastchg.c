@@ -25,7 +25,19 @@
 #include <linux/sysfs.h>
 #include <linux/fastchg.h>
 
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+#endif
+
 int force_fast_charge = 1;
+int get_force_fast_charge(void) {
+#ifdef CONFIG_UCI
+	return uci_get_user_property_int_mm("fastcharge", force_fast_charge, 0, 1);
+#else
+	return force_fast_charge;
+#endif
+}
+EXPORT_SYMBOL(get_force_fast_charge);
 
 /* sysfs interface for "force_fast_charge" */
 static ssize_t force_fast_charge_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
