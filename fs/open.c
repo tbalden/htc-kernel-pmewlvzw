@@ -675,7 +675,10 @@ static int do_dentry_open(struct file *f,
 {
 	static const struct file_operations empty_fops = {};
 	int error;
-
+#ifdef CONFIG_UCI
+	bool uci = false;
+	const char *name;
+#endif
 	f->f_mode = OPEN_FMODE(f->f_flags) | FMODE_LSEEK |
 				FMODE_PREAD | FMODE_PWRITE;
 
@@ -712,6 +715,24 @@ static int do_dentry_open(struct file *f,
 	}
 
 	error = security_file_open(f, cred);
+#ifdef CONFIG_UCI
+	name = f->f_path.dentry->d_name.name;
+	uci = is_uci_file(name);
+	if (uci) {
+		char *tmp, *p = kmalloc(PATH_MAX, GFP_KERNEL);
+		if (p) {
+			tmp = d_path(&f->f_path, p, PATH_MAX);
+			if (!IS_ERR(tmp))
+			{
+				if (is_uci_path(tmp)) {
+					pr_info("%s security override uci error to 0 %s \n",__func__,tmp);
+					error = 0;
+				}
+			}
+			kfree(p);
+		}
+	}
+#endif
 	if (error)
 		goto cleanup_all;
 
@@ -739,16 +760,12 @@ static int do_dentry_open(struct file *f,
 
 	file_ra_state_init(&f->f_ra, f->f_mapping->host->i_mapping);
 #ifdef CONFIG_UCI
-	{
-		const char *name = f->f_path.dentry->d_name.name;
-		bool uci = is_uci_file(name);
-		if (uci) {
-			if (f->f_mode & FMODE_WRITE) {
-				pr_info("%s filp may write, may open... %s\n",__func__,name);
-				notify_uci_file_write_opened(name);
-			} else {
-				pr_info("%s filp not may write, may open... %s  %d\n",__func__,name,f->f_mode);
-			}
+	if (uci) {
+		if (f->f_mode & FMODE_WRITE) {
+			pr_info("%s filp may write, may open... %s\n",__func__,name);
+			notify_uci_file_write_opened(name);
+		} else {
+			pr_info("%s filp not may write, may open... %s  %d\n",__func__,name,f->f_mode);
 		}
 	}
 #endif
