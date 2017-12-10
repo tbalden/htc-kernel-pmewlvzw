@@ -4897,6 +4897,7 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 					vibrate_rtc_callback);
 				alarm_init(&double_double_vol_rtc, ALARM_REALTIME,
 					double_double_vol_rtc_callback);
+				uci_add_sys_listener(uci_sys_listener);
 #endif
 			}
 		}
