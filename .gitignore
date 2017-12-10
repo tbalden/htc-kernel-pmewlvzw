@@ -85,3 +85,4 @@ GTAGS
 *.orig
 *~
 \#*#
+net/wireguard/
