@@ -869,8 +869,8 @@ void uci_sys_listener(void) {
                                 haptic_blinking = 1;
                                 qpnp_buttonled_blink(1);
                         }
-                        // call flash blink for flashlight notif if lights_down mode (>1) is not active...
-                        if (lights_down_divider==1) {
+                        // call flash blink for flashlight notif if lights_down mode (>1) is not active... and not screen on or wake not by user (ambient)
+                        if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
                                 flash_blink(false);
                         }
             }
