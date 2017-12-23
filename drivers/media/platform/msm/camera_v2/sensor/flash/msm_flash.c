@@ -473,6 +473,8 @@ void precise_delay(int usec) {
 
 extern void set_vibrate(int value);
 
+// should be true if phone was not in flashlight ready state, like not on a table face down. Then next flashblink start should reschedule work.
+static bool in_no_flash_long_alarm_wake_time = false;
 
 void do_flash_blink(void) {
 	ktime_t wakeup_time;
@@ -557,11 +559,14 @@ void do_flash_blink(void) {
 		int multiplicator = 1;
 		int calc_with_blink_num = current_blink_num;
 		if (!flash_next) {
+			in_no_flash_long_alarm_wake_time = true;
 			// won't need flashing next, skip a few blinks till next is a vibrating notifiaction, also count multiplicator, to multiply wait time...
 			while (current_blink_num % vib_slowness != (vib_slowness - 1)) {
 				current_blink_num++;
 				multiplicator++;
 			}
+		} else {
+			in_no_flash_long_alarm_wake_time = false;
 		}
 		wakeup_time = ktime_add_us(curr_time,
 			( (smart_get_flash_blink_wait_sec() + min(max(((calc_with_blink_num-6)/4),0),uci_get_flash_blink_wait_inc_max()) * uci_get_flash_blink_wait_inc()) * 1000LL * 1000LL) * multiplicator); // msec to usec 
@@ -598,6 +603,13 @@ static void flash_start_blink_work_func(struct work_struct *work)
 			// to shorter periodicity...
 			current_blink_num = 5;
 		} // otherwise if only a few blinks yet, don't reset count...
+		if (in_no_flash_long_alarm_wake_time) { // if flashless long wait, start right now, so in case now it could flash, let it do right now
+			// restart blinking with async work
+			alarm_cancel(&flash_blink_rtc); // stop pending alarm...
+			currently_blinking = 1;
+			queue_work(flash_blink_workqueue, &flash_blink_work);
+			in_no_flash_long_alarm_wake_time = false;
+		}
 		mutex_unlock(&flash_blink_lock);
 		pr_info("%s flash_blink unlock\n",__func__);
 	}
