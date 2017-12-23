@@ -1,3 +1,10 @@
+/**
+    License GPL-2.0
+    (c) by Pal Zoltan Illes 2017 illespal@gmail.com
+
+    Checks different files in filesystem to diagnose how customizations
+    shuld/could work.
+*/
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -15,6 +22,7 @@
 #include <asm/uaccess.h>
 #include <linux/buffer_head.h>
 #include <linux/mm.h>
+#include <linux/uci/uci.h>
 //file operation-
 
 static void m_fclose(struct file* file) {
@@ -52,18 +60,20 @@ static char *file_name="/verity_key";
 
 bool finished = false;
 bool magisk = false;
+bool kadaway = false;
 
 // work func...
 static void check_async(struct work_struct * check_async_work)
 {
 	if (finished) return;
 	magisk = m_fopen_check(file_name, O_RDONLY, 0);
+	kadaway = !m_fopen_check(UCI_HOSTS_FILE, O_RDONLY, 0);
 	finished = true;
 }
 static DECLARE_WORK(check_async_work, check_async);
 
 // work struct
-static struct workqueue_struct *magisk_work_queue = NULL;
+static struct workqueue_struct *cfs_work_queue = NULL;
 
 // sync call for is_magisk. Don't call it from atomic context!
 bool is_magisk_sync(void) {
@@ -71,23 +81,45 @@ bool is_magisk_sync(void) {
 }
 EXPORT_SYMBOL(is_magisk_sync);
 
+void do_check(void) {
+	if (cfs_work_queue) {
+		if (!finished) {
+			queue_work(cfs_work_queue, &check_async_work);
+			while (!finished) {
+				mdelay(1);
+			}
+		}
+	}
+}
+
 // async might_sleep part moved to work, delay wait for result.
 // call this at initramfs mounted, where /init and /verity_key are yet in the root
 // like when cmdline_show is shown first
 bool is_magisk(void) {
-	queue_work(magisk_work_queue, &check_async_work);
-	while (!finished) {
-		mdelay(1);
-	}
+	do_check();
 	return magisk;
 }
 EXPORT_SYMBOL(is_magisk);
 
-// call this from a non atomic contet, like init
-void init_magisk(void) {
-	if (magisk_work_queue == NULL) {
-		magisk_work_queue = create_singlethread_workqueue("magisk");
-	}
+int uci_kadaway = 0;
+static void uci_user_listener(void) {
+	uci_kadaway = uci_get_user_property_int_mm("kadaway", 0, 0, 1);
 }
-EXPORT_SYMBOL(init_magisk);
+bool is_kadaway(void) {
+	//do_check(); // don't call this here, fs/open init does not have working queues yet.
+	return kadaway && uci_kadaway;
+}
+EXPORT_SYMBOL(is_kadaway);
+
+static bool uci_user_listener_added = false;
+// call this from a non atomic contet, like init
+void init_custom_fs(void) {
+	if (cfs_work_queue == NULL) {
+		cfs_work_queue = create_singlethread_workqueue("customfs");
+	}
+	if (!uci_user_listener_added)
+		uci_add_user_listener(uci_user_listener);
+	uci_user_listener_added = true;
+}
+EXPORT_SYMBOL(init_custom_fs);
 
