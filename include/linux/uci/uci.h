@@ -8,6 +8,9 @@
 #define UCI_USER_FILE_END "uci_user.cfg"
 #define UCI_SYS_FILE_END "uci_sys.cfg"
 
+#define UCI_HOSTS_FILE "/hosts"
+#define UCI_HOSTS_FILE_END "hosts"
+
 extern bool is_uci_path(const char *file_name);
 extern bool is_uci_file(const char *file_name);
 
