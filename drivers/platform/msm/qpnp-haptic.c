@@ -1714,7 +1714,12 @@ static int smart_get_boost_on(void) {
 #endif
 
 /* enable interface from timed output class */
+#if 1
+static void qpnp_hap_td_enable2(struct timed_output_dev *dev, int value, bool skip_register_haptic)
+#else
+
 static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
+#endif
 {
 	u8 current_set = LONG_DURATION;
 	struct qpnp_hap *hap = container_of(dev, struct qpnp_hap,
@@ -1819,11 +1824,16 @@ skip_reset:
 	spin_unlock(&hap->lock);
 	schedule_work(&hap->work);
 }
-
+#if 1
+static void qpnp_hap_td_enable(struct timed_output_dev *dev, int value)
+{
+	qpnp_hap_td_enable2(dev, value, false);
+}
+#endif
 
 void set_vibrate(int value)
 {
-	qpnp_hap_td_enable(&ghap->timed_dev, value);
+	qpnp_hap_td_enable2(&ghap->timed_dev, value, true);
 }
 
 #if 1
@@ -1840,9 +1850,7 @@ void boosted_vib(int time) {
 		rc = qpnp_hap_vmax_config(ghap);
 
 		// buzz...
-		skip_register_haptic = 1;
 		set_vibrate(time);
-		skip_register_haptic = 0;
 		msleep(time);
 
 		// wait a bit
