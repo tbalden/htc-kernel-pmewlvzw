@@ -80,6 +80,7 @@
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
 
+#if 1 // TODO
 #define MDSS_BRIGHT_TO_BL_DIM(out, v) do {\
 			out = (v*v+46000*v-3000000)/50000;\
 			} while (0)
@@ -87,6 +88,7 @@ static int fbi_list_index;
 bool backlight_dimmer = false;
 module_param(backlight_dimmer, bool, 0755);
 static int backlight_min = 10;
+#endif
 
 static u32 mdss_fb_pseudo_palette[16] = {
 	0x00000000, 0xffffffff, 0xffffffff, 0xffffffff,
@@ -343,10 +345,12 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 
 	bl_lvl = mdss_backlight_trans(value, mfd->panel_info, true);
 
+#if 1 // TODO
 	if (backlight_dimmer)
 		MDSS_BRIGHT_TO_BL_DIM(bl_lvl, bl_lvl);
 
 	bl_lvl = MAX(backlight_min, bl_lvl);
+#endif
 
 	if (bl_lvl < 0) {
 		/* This maps android backlight level 0 to 255 into
@@ -366,6 +370,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	}
 }
 
+#if 1
 static ssize_t backlight_min_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
@@ -408,6 +413,7 @@ static struct attribute_group backlight_dimmer_attr_group =
 	};
 
 static struct kobject *backlight_dimmer_kobj;
+#endif
 
 static struct led_classdev backlight_led = {
 	.name           = "lcd-backlight",
@@ -4963,6 +4969,7 @@ int __init mdss_fb_init(void)
 	if (platform_driver_register(&mdss_fb_driver))
 		return rc;
 
+#if 1
 	backlight_dimmer_kobj = kobject_create_and_add("backlight_dimmer", NULL);
 	if (backlight_dimmer_kobj == NULL) {
 		pr_warn("%s kobject create failed!\n", __func__);
@@ -4972,6 +4979,7 @@ int __init mdss_fb_init(void)
         if (rc) {
 		pr_warn("%s sysfs file create failed!\n", __func__);
 	}
+#endif
 
 	return 0;
 }
