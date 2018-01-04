@@ -57,6 +57,10 @@
 #include "mdss_smmu.h"
 #include "mdss_mdp.h"
 
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+#endif
+
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -88,6 +92,8 @@ static int fbi_list_index;
 bool backlight_dimmer = false;
 module_param(backlight_dimmer, bool, 0755);
 static int backlight_min = 10;
+static enum led_brightness last_brightness;
+static bool first_brightness_set = false;
 #endif
 
 static u32 mdss_fb_pseudo_palette[16] = {
@@ -345,7 +351,9 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 
 	bl_lvl = mdss_backlight_trans(value, mfd->panel_info, true);
 
-#if 1 // TODO
+#if 1
+	last_brightness = value;
+	first_brightness_set = true;
 	if (backlight_dimmer)
 		MDSS_BRIGHT_TO_BL_DIM(bl_lvl, bl_lvl);
 
@@ -389,8 +397,8 @@ static ssize_t backlight_min_store(struct kobject *kobj,
 
 	backlight_min = input;
 
-	if (backlight_min < 5 || backlight_min > 4095)
-		backlight_min = 30;
+	if (backlight_min < 1 || backlight_min > 4095)
+		backlight_min = 10;
 
 	return count;
 }
@@ -421,6 +429,29 @@ static struct led_classdev backlight_led = {
 	.brightness_set = mdss_fb_set_bl_brightness,
 	.max_brightness = MDSS_MAX_BL_BRIGHTNESS,
 };
+
+#ifdef CONFIG_UCI
+extern int input_is_screen_on(void);
+
+// registered user uci listener
+static void uci_user_listener(void) {
+	bool change = false;
+	int on = backlight_dimmer?1:0;
+	int backlight_min_curr = backlight_min;
+	backlight_min = uci_get_user_property_int_mm("backlight_min", backlight_min, 1, 4095);
+	on = uci_get_user_property_int_mm("backlight_dimmer", on, 0, 1);
+
+	if (!!on != backlight_dimmer || backlight_min_curr != backlight_min) change = true;
+
+	backlight_dimmer = !!on;
+
+	if (first_brightness_set && change) {
+		if (last_brightness!=LED_OFF && input_is_screen_on()) {
+			mdss_fb_set_bl_brightness(&backlight_led, last_brightness);
+		}
+	}
+}
+#endif
 
 static ssize_t mdss_fb_get_type(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -1346,6 +1377,10 @@ static int mdss_fb_probe(struct platform_device *pdev)
 			pr_err("failed to register input handler\n");
 
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
+
+#ifdef CONFIG_UCI
+	uci_add_user_listener(uci_user_listener);
+#endif
 
 	return rc;
 }
