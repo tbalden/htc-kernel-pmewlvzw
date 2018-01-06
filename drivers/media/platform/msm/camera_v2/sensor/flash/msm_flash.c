@@ -296,6 +296,7 @@ static int uci_get_flash_only_face_down(void) {
 
 static bool face_down = false;
 static bool proximity = false;
+static bool silent = false;
 
 // register sys uci listener
 void flash_uci_sys_listener(void) {
@@ -303,8 +304,10 @@ void flash_uci_sys_listener(void) {
 	{
 		face_down = !!uci_get_sys_property_int_mm("face_down", 0, 0, 1);
 		proximity = !!uci_get_sys_property_int_mm("proximity", 0, 0, 1);
+		silent = !!uci_get_sys_property_int_mm("silent", 0, 0, 1);
 		pr_info("%s uci sys face_down %d\n",__func__,face_down);
 		pr_info("%s uci sys proximity %d\n",__func__,proximity);
+		pr_info("%s uci sys silent %d\n",__func__,silent);
 	}
 }
 
@@ -435,6 +438,7 @@ EXPORT_SYMBOL(get_vib_notification_length);
 
 static int smart_get_vib_notification_reminder(void) {
 	int ret = 0;
+	if (silent) return 0; // do not vibrate in silent mode at all, regadless of configurations
 	if (uci_get_user_property_int_mm("vib_notification_reminder", vib_notification_reminder, 0, 1)) {
 		int level = smart_get_notification_level(NOTIF_VIB_REMINDER);
 		if (level!=NOTIF_STOP) {
