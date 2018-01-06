@@ -94,6 +94,10 @@ module_param(backlight_dimmer, bool, 0755);
 static int backlight_min = 10;
 static enum led_brightness last_brightness;
 static bool first_brightness_set = false;
+#ifdef CONFIG_UCI
+static bool uci_user_backlight_dimmer_setting = false;
+static bool backlight_dimmer_uci = false;
+#endif
 #endif
 
 static u32 mdss_fb_pseudo_palette[16] = {
@@ -354,7 +358,11 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 #if 1
 	last_brightness = value;
 	first_brightness_set = true;
+#ifdef CONFIG_UCI
+	if (backlight_dimmer||backlight_dimmer_uci)
+#else
 	if (backlight_dimmer)
+#endif
 		MDSS_BRIGHT_TO_BL_DIM(bl_lvl, bl_lvl);
 
 	bl_lvl = MAX(backlight_min, bl_lvl);
@@ -390,6 +398,9 @@ static ssize_t backlight_min_store(struct kobject *kobj,
 {
 	int ret;
 	unsigned long input;
+#ifdef CONFIG_UCI
+	if (uci_user_backlight_dimmer_setting) return count; // do not allow store if uci handles this
+#endif
 
 	ret = kstrtoul(buf, 0, &input);
 	if (ret < 0)
@@ -436,14 +447,15 @@ extern int input_is_screen_on(void);
 // registered user uci listener
 static void uci_user_listener(void) {
 	bool change = false;
-	int on = backlight_dimmer?1:0;
+	int on = backlight_dimmer_uci?1:0;
 	int backlight_min_curr = backlight_min;
+	uci_user_backlight_dimmer_setting = true;
 	backlight_min = uci_get_user_property_int_mm("backlight_min", backlight_min, 1, 4095);
 	on = uci_get_user_property_int_mm("backlight_dimmer", on, 0, 1);
 
-	if (!!on != backlight_dimmer || backlight_min_curr != backlight_min) change = true;
+	if (!!on != backlight_dimmer_uci || backlight_min_curr != backlight_min) change = true;
 
-	backlight_dimmer = !!on;
+	backlight_dimmer_uci = !!on;
 
 	if (first_brightness_set && change) {
 		if (last_brightness!=LED_OFF && input_is_screen_on()) {
