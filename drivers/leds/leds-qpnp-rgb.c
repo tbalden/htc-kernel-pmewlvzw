@@ -975,7 +975,17 @@ static enum alarmtimer_restart double_double_vol_rtc_callback(struct alarm *al, 
 	return ALARMTIMER_NORESTART;
 }
 
+static bool uci_is_double_volume_gesture(void) {
+        int ret = uci_get_user_property_int_mm("double_volume_gesture",0,0,1);
+        return !!ret;
+}
+
 void register_double_volume_key_press(int long_press) {
+        if (!uci_is_double_volume_gesture()) {
+                set_suspend_booster(0);
+                lights_down_divider = 1;
+                return;
+	}
 	if (screen_on) return;
 	pr_info("%s gpio -> lights down divider - %d\n",__func__,lights_down_divider);
 	if (long_press) {
