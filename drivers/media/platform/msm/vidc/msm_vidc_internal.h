@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -45,6 +45,7 @@
 #define MIN_SUPPORTED_HEIGHT 32
 #define DEFAULT_FPS 15
 
+/* Maintains the number of FTB's between each FBD over a window */
 #define DCVS_FTB_WINDOW 32
 
 #define V4L2_EVENT_VIDC_BASE  10
@@ -80,6 +81,8 @@ enum vidc_core_state {
 	VIDC_CORE_INVALID
 };
 
+/* Do not change the enum values unless
+ * you know what you are doing*/
 enum instance_state {
 	MSM_VIDC_CORE_UNINIT_DONE = 0x0001,
 	MSM_VIDC_CORE_INIT,
@@ -146,6 +149,7 @@ struct msm_vidc_drv {
 	struct dentry *debugfs_root;
 	int thermal_level;
 	u32 platform_version;
+	u32 capability_version;
 };
 
 struct msm_video_device {
@@ -252,7 +256,7 @@ struct msm_vidc_inst {
 	void *session;
 	struct session_prop prop;
 	enum instance_state state;
-	struct msm_vidc_format *fmts[MAX_PORT_NUM];
+	struct msm_vidc_format fmts[MAX_PORT_NUM];
 	struct buf_queue bufq[MAX_PORT_NUM];
 	struct msm_vidc_list pendingq;
 	struct msm_vidc_list scratchbufs;
@@ -289,6 +293,7 @@ struct msm_vidc_inst {
 	u32 buffers_held_in_driver;
 	atomic_t in_flush;
 	u32 pic_struct;
+	u32 colour_space;
 };
 
 extern struct msm_vidc_drv *vidc_driver;
@@ -365,5 +370,7 @@ struct context_bank_info *msm_smem_get_context_bank(void *clt,
 		bool is_secure, enum hal_buffer buffer_type);
 void msm_vidc_fw_unload_handler(struct work_struct *work);
 int8_t msm_smem_compare_buffers(void *clt, int fd, void *priv);
+/* XXX: normally should be in msm_vidc.h, but that's meant for public APIs,
+ * whereas this is private */
 int msm_vidc_destroy(struct msm_vidc_inst *inst);
 #endif

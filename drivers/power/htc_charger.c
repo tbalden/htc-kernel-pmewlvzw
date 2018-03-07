@@ -29,7 +29,7 @@
 #include <linux/msm_bcl.h>
 #include <linux/ktime.h>
 #include <linux/htc_flags.h>
-#include "pmic-voter.h"
+#include <linux/pmic-voter.h>
 #ifdef CONFIG_HTC_BATT
 #include <linux/power/htc_battery.h>
 #endif

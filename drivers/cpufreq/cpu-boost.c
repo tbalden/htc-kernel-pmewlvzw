@@ -324,8 +324,9 @@ static void cpuboost_input_event(struct input_handle *handle,
 		return;
 
 	now = ktime_to_us(ktime_get());
-	if (now - last_input_time < input_boost_ms)
+	if (now - last_input_time < input_boost_ms * USEC_PER_MSEC) {
 		return;
+}
 
 	cancel_delayed_work(&input_boost_rem);
 

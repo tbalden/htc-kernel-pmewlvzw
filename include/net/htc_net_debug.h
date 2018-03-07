@@ -31,6 +31,8 @@ extern int htc_net_debug_dump;
 extern int htc_net_debug_print;
 extern int htc_net_debug_enable;
 extern void net_dbg_log_event(const char * event, ...);
+extern void net_dbg_log_event_oneline(int idx, const char * event, ...);
+extern int net_dbg_get_free_log_event_oneline(void);
 extern void net_get_kernel_timestamp(struct net_timestamp *ts);
 
 #define NET_DEBUG(fmt, args...) \

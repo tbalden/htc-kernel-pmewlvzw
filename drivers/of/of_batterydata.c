@@ -348,6 +348,9 @@ struct device_node *of_batterydata_get_best_profile(
 		if (rc)
 			pr_err("htc,id_raw_max missing in dt\n");
 
+		if (id_raw_max == 99999)
+			id_raw_max = INT_MAX;
+
 		pr_info("Find batterydata path: %s, id_ohm=%d, raw_min=%d, raw_max=%d.\n",
 					cur_node->name, htc_batt_id_ohm, id_raw_min, id_raw_max);
 		if (!rc) {

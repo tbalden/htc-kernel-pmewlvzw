@@ -22,8 +22,16 @@ DEFINE_MUTEX(pm_mutex);
 
 #ifdef CONFIG_PM_SLEEP
 
+/* Routines for PM-transition notifications */
 
 static BLOCKING_NOTIFIER_HEAD(pm_chain_head);
+
+#ifdef CONFIG_HTC_POWER_DEBUG
+struct blocking_notifier_head *get_pm_chain_head(void)
+{
+	return &pm_chain_head;
+}
+#endif
 
 int register_pm_notifier(struct notifier_block *nb)
 {
@@ -37,13 +45,21 @@ int unregister_pm_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_pm_notifier);
 
-int pm_notifier_call_chain(unsigned long val)
+int __pm_notifier_call_chain(unsigned long val, int nr_to_call, int *nr_calls)
 {
-	int ret = blocking_notifier_call_chain(&pm_chain_head, val, NULL);
+	int ret;
+
+	ret = __blocking_notifier_call_chain(&pm_chain_head, val, NULL,
+						nr_to_call, nr_calls);
 
 	return notifier_to_errno(ret);
 }
+int pm_notifier_call_chain(unsigned long val)
+{
+	return __pm_notifier_call_chain(val, -1, NULL);
+}
 
+/* If set, devices may be suspended and resumed asynchronously. */
 int pm_async_enabled = 1;
 
 static ssize_t pm_async_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -96,7 +112,7 @@ static ssize_t pm_test_show(struct kobject *kobj, struct kobj_attribute *attr,
 		}
 
 	if (s != buf)
-		
+		/* convert the last space to a newline */
 		*(s-1) = '\n';
 
 	return (s - buf);
@@ -130,7 +146,7 @@ static ssize_t pm_test_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 power_attr(pm_test);
-#endif 
+#endif /* CONFIG_PM_DEBUG */
 
 #ifdef CONFIG_DEBUG_FS
 static char *suspend_step_name(enum suspend_stat_step step)
@@ -229,11 +245,17 @@ static int __init pm_debugfs_init(void)
 }
 
 late_initcall(pm_debugfs_init);
-#endif 
+#endif /* CONFIG_DEBUG_FS */
 
-#endif 
+#endif /* CONFIG_PM_SLEEP */
 
 #ifdef CONFIG_PM_SLEEP_DEBUG
+/*
+ * pm_print_times: print time taken by devices to suspend and resume.
+ *
+ * show() returns whether printing of suspend and resume times is enabled.
+ * store() accepts 0 or 1.  0 disables printing and 1 enables it.
+ */
 bool pm_print_times_enabled;
 
 static ssize_t pm_print_times_show(struct kobject *kobj,
@@ -264,12 +286,22 @@ static inline void pm_print_times_init(void)
 {
 	pm_print_times_enabled = !!initcall_debug;
 }
-#else 
+#else /* !CONFIG_PP_SLEEP_DEBUG */
 static inline void pm_print_times_init(void) {}
-#endif 
+#endif /* CONFIG_PM_SLEEP_DEBUG */
 
 struct kobject *power_kobj;
 
+/**
+ * state - control system sleep states.
+ *
+ * show() returns available sleep state labels, which may be "mem", "standby",
+ * "freeze" and "disk" (hibernation).  See Documentation/power/states.txt for a
+ * description of what they mean.
+ *
+ * store() accepts one of those strings, translates it into the proper
+ * enumerated value, and initiates a suspend transition.
+ */
 static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 			  char *buf)
 {
@@ -285,7 +317,7 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	if (hibernation_available())
 		s += sprintf(s, "disk ");
 	if (s != buf)
-		
+		/* convert the last space to a newline */
 		*(s-1) = '\n';
 	return (s - buf);
 }
@@ -301,7 +333,7 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 	p = memchr(buf, '\n', n);
 	len = p ? p - buf : n;
 
-	
+	/* Check hibernation first. */
 	if (len == 4 && !strncmp(buf, "disk", len))
 		return PM_SUSPEND_MAX;
 
@@ -463,7 +495,7 @@ static ssize_t autosleep_store(struct kobject *kobj,
 }
 
 power_attr(autosleep);
-#endif 
+#endif /* CONFIG_PM_AUTOSLEEP */
 
 #ifdef CONFIG_PM_WAKELOCKS
 
@@ -496,7 +528,7 @@ wakelock_debug_store(struct kobject *kobj, struct kobj_attribute *attr,
         return n;
 }
 wakelock_debug_attr(wakelock_debug);
-#endif 
+#endif //CONFIG_PM_DEBUG
 
 static ssize_t wake_lock_show(struct kobject *kobj,
 			      struct kobj_attribute *attr,
@@ -538,8 +570,8 @@ static ssize_t wake_unlock_store(struct kobject *kobj,
 
 power_attr(wake_unlock);
 
-#endif 
-#endif 
+#endif /* CONFIG_PM_WAKELOCKS */
+#endif /* CONFIG_PM_SLEEP */
 
 #ifdef CONFIG_PM_TRACE
 int pm_trace_enabled;
@@ -585,7 +617,7 @@ pm_trace_dev_match_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 power_attr(pm_trace_dev_match);
 
-#endif 
+#endif /* CONFIG_PM_TRACE */
 
 #ifdef CONFIG_FREEZER
 static ssize_t pm_freeze_timeout_show(struct kobject *kobj,
@@ -609,7 +641,7 @@ static ssize_t pm_freeze_timeout_store(struct kobject *kobj,
 
 power_attr(pm_freeze_timeout);
 
-#endif	
+#endif	/* CONFIG_FREEZER*/
 
 #ifdef CONFIG_HTC_PNPMGR
 int powersave_enabled = 0;
@@ -703,7 +735,7 @@ static struct attribute * g[] = {
 #ifdef CONFIG_PM_WAKELOCKS
 #ifdef CONFIG_PM_DEBUG
 	&wakelock_debug_attr.attr,
-#endif 
+#endif //CONFIG_PM_DEBUG
 	&wake_lock_attr.attr,
 	&wake_unlock_attr.attr,
 #endif

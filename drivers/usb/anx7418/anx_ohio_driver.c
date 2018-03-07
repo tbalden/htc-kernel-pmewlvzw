@@ -101,7 +101,6 @@ struct ohio_data {
 	enum pr_change pr_change;
 	struct usb_typec_fwu_notifier *usbc_fwu_notifier;
 	struct dual_role_phy_instance *ohio_dual_role_instance;
-	struct power_supply *batt_psy;
 	uint fw_version;
 	int need_start_host;
 	int emarker_flag;
@@ -144,6 +143,12 @@ int ohio_dual_role_get_property(struct dual_role_phy_instance *dual_role,
 			break;
 		case DUAL_ROLE_PROP_VCONN_SUPPLY:
 			*val = (unsigned int)ohio->vconn;
+			break;
+		case DUAL_ROLE_PROP_PARTNER_SUPPORTS_USB_PD:
+			if (downstream_pd_cap)
+				*val = DUAL_ROLE_PROP_PARTNER_SUPPORTS_USB_PD_YES;
+			else
+				*val = DUAL_ROLE_PROP_PARTNER_SUPPORTS_USB_PD_NO;
 			break;
 		default:
 			break;
@@ -572,48 +577,7 @@ bool ohio_is_connected(void)
 }
 EXPORT_SYMBOL(ohio_is_connected);
 
-void notify_batt_cc_change(u8 cc_status)
-{
-	struct ohio_data *data = NULL;
-	union power_supply_propval batt_prop;
-
-	if(ohio_client)
-		data = i2c_get_clientdata(ohio_client);
-	else
-		return;
-
-	switch (cc_status) {
-	case 0x04:		
-		batt_prop.intval = utccDefault;
-		break;
-	case 0x40:
-		batt_prop.intval = utccDefault;
-		break;
-	case 0x08:		
-		batt_prop.intval = utcc1p5A;
-		break;
-	case 0x80:
-		batt_prop.intval = utcc1p5A;
-		break;
-	case 0x0c:		
-		batt_prop.intval = utcc3p0A;
-		break;
-	case 0xc0:
-		batt_prop.intval = utcc3p0A;
-		break;
-	default:
-		return;
-	}
-
-
-	if (data->batt_psy && data->batt_psy->set_property) {
-		data->batt_psy->set_property(
-			data->batt_psy, POWER_SUPPLY_PROP_TYPEC_SINK_CURRENT,
-			&batt_prop);
-	}
-}
-
-
+/* ohio power status, sync with interface and cable detection thread */
 inline unsigned char OhioReadReg(unsigned char RegAddr)
 {
 	int ret = 0;
@@ -1116,8 +1080,6 @@ static int __maybe_unused ohio_system_init(void)
 void cable_disconnect(void *data)
 {
 	struct ohio_data *ohio = data;
-	union power_supply_propval batt_prop;
-
 	cancel_delayed_work(&ohio->drole_work);
 	oc_enable = 0;
 	ohio->DFP_mode = 0;
@@ -1137,14 +1099,6 @@ void cable_disconnect(void *data)
 #ifdef SUP_VBUS_CTL
 	gpio_set_value(ohio->pdata->gpio_vbus_ctrl, 0);
 #endif
-
-	if (ohio->batt_psy && ohio->batt_psy->set_property) {
-		batt_prop.intval = utccNone;
-		ohio->batt_psy->set_property(
-			ohio->batt_psy, POWER_SUPPLY_PROP_TYPEC_SINK_CURRENT,
-			&batt_prop);
-	}
-
 	ohio_hardware_disable_vconn();
 	ohio_hardware_powerdown();
 	//ohio_clean_state_machine();
@@ -1527,8 +1481,8 @@ void usb_downgrade_func(void)
 	// Workaround: Downgrade USB speed to USB2.0 in host mode
 	if (ohio_get_data_value(OHIO_PMODE) == MODE_DFP && usb_lock_host_speed)
 		dfp_downgrade_usb20();
-	if (ohio_get_data_value(OHIO_PMODE) == MODE_UFP && usb_lock_speed)
-		ufp_switch_usb_speed(0);
+	//if (ohio_get_data_value(OHIO_PMODE) == MODE_UFP && usb_lock_speed)
+	//	ufp_switch_usb_speed(0);
 }
 
 extern int qpnp_boost_status(u8 *value);
@@ -2481,12 +2435,13 @@ static void usb_typec_fw_update_deinit(struct usb_typec_fwu_notifier *notifier)
 	notifier = NULL;
 }
 
-enum dual_role_property ohio_properties[5] = {
+enum dual_role_property ohio_properties[6] = {
 	DUAL_ROLE_PROP_SUPPORTED_MODES,
 	DUAL_ROLE_PROP_MODE,
 	DUAL_ROLE_PROP_PR,
 	DUAL_ROLE_PROP_DR,
 	DUAL_ROLE_PROP_VCONN_SUPPLY,
+	DUAL_ROLE_PROP_PARTNER_SUPPORTS_USB_PD,
 };
 
 static const struct dual_role_phy_desc ohio_desc = {
@@ -2509,8 +2464,6 @@ static int ohio_i2c_probe(struct i2c_client *client,
 	struct ohio_platform_data *pdata;
 	int ret = 0;
 
-	struct power_supply *batt_psy;
-
 	pr_info("%s start\n", __func__);
 
 	/*++ 2015/12/14, USB Team, PCN00048 ++*/
@@ -2519,13 +2472,7 @@ static int ohio_i2c_probe(struct i2c_client *client,
 		pr_info("%s skip ANX7418 driver probe on %s mode\n", __func__, htc_get_bootmode());
 		goto exit;
 	}
-	
-
-	batt_psy = power_supply_get_by_name("battery");
-	if (!batt_psy) {
-		pr_err("battery supply not found, deferring probe\n");
-		return -EPROBE_DEFER;
-	}
+	/*-- 2015/12/14, USB Team, PCN00048 --*/
 
 	if (!i2c_check_functionality(client->adapter,
 	I2C_FUNC_SMBUS_I2C_BLOCK)) {
@@ -2577,7 +2524,6 @@ static int ohio_i2c_probe(struct i2c_client *client,
 	ohio_client->addr = (OHIO_SLAVE_I2C_ADDR >> 1);
 
 	atomic_set(&ohio_power_status, 0);
-	ohio->batt_psy = batt_psy;
 
 	mutex_init(&ohio->lock);
 	mutex_init(&ohio->drole_lock);

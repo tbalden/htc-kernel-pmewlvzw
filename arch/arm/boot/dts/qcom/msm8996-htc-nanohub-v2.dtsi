@@ -72,6 +72,21 @@
 			};
 		};
 	};
+	sensorhub_handshaking {
+	/* HANDSHAKING */
+		sensorhub_handshaking_active: sensorhub_handshaking_active {
+			mux {
+				pins = "gpio119";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio119";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
 };
 
 &soc {
@@ -120,6 +135,7 @@
 		sensorhub,wakeup-gpio = <&tlmm 24 0x00>;
 		sensorhub,irq1-gpio = <&tlmm 123 0x00>;
 		sensorhub,irq2-gpio = <&tlmm 117 0x00>;
+		sensorhub,handshaking-gpio = <&tlmm 119 0x00>;
 		sensorhub,spi-cs-gpio = <&tlmm 27 0x00>;
 		sensorhub,bl-addr = <0x08000000>;
 		sensorhub,kernel-addr = <0x0800C000>;
@@ -136,9 +152,10 @@
 			<10 0x080C0000 0x20000>,
 			<11 0x080E0000 0x20000>;
 		sensorhub,num-shared-flash-banks = <6>;
+		sensorhub,gesture-vibrate-ms = <60>;
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&sensorhub_ctrl_active>;
+		pinctrl-0 = <&sensorhub_ctrl_active &sensorhub_handshaking_active>;
 	};
 };
 

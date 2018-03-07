@@ -25,6 +25,11 @@
 #define SPI_TIMEOUT		65535
 #define SPI_MIN_DMA		48
 
+static int LEN_PROTECT;
+module_param(LEN_PROTECT, int, 0660);
+MODULE_PARM_DESC(LEN_PROTECT, "nanohub spi length protect") ;
+static uint32_t print_count;
+
 struct nanohub_spi_data {
 	struct nanohub_data data;
 	struct spi_device *device;
@@ -275,7 +280,7 @@ int nanohub_spi_read(void *data, uint8_t *rx, int max_length, int timeout)
 	if (max_length < min_size)
 		return ERROR_NACK;
 
-	
+	/* consume leftover bytes, if any */
 	if (spi_data->rx_offset < spi_data->rx_length) {
 		for (i = spi_data->rx_offset; i < spi_data->rx_length; i++) {
 			if (comms->rx_buffer[i] != 0xFF) {
@@ -321,6 +326,21 @@ int nanohub_spi_read(void *data, uint8_t *rx, int max_length, int timeout)
 	if (ret == 0) {
 		if (offset > 0) {
 			packet = (struct nanohub_packet *)rx;
+
+			if (xfer.len > (max_length - offset)) {
+				if (LEN_PROTECT) {
+					xfer.len = (max_length - offset);
+					if (((print_count++) % 100) == 0) {
+						pr_warn("%s: xfer.len changed to [%d], offset = %d, max_length = %d, packet->len = %d, pr = %d\n",
+							__func__, xfer.len, offset, max_length, packet->len, print_count);
+					}
+				} else {
+					if (((print_count++) % 100) == 0) {
+						pr_warn("%s: xfer.len = %d, offset = %d, max_length = %d, packet->len = %d, pr = %d\n",
+							__func__, xfer.len, offset, max_length, packet->len,print_count);
+					}
+				}
+			}
 			memcpy(&rx[offset], comms->rx_buffer, xfer.len);
 			spi_data->rx_length = xfer.len;
 			spi_data->rx_offset = min_size + packet->len - offset;
@@ -464,6 +484,9 @@ static int nanohub_spi_probe(struct spi_device *spi)
 	nanohub_spi_bl_init(spi_data);
 
 	nanohub_reset(&spi_data->data);
+
+	print_count = 0;
+	LEN_PROTECT = 1;
 
 	return 0;
 }

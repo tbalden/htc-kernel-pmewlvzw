@@ -5,6 +5,17 @@
 // ================
 
 // msm-pm8994.dtsi has these settings, we replace them right here
+&pm8994_gpios {
+	gpio@d500 { /* GPIO 22 - POKHB */
+		qcom,mode = <0>;        /* DIGITAL IN */
+		qcom,pull = <5>;        /* No pull */
+		qcom,vin-sel = <2>;     /* S4 1.8V */
+		qcom,src-sel = <0>;     /* CONSTANT */
+		qcom,master-en = <1>;   /* ENABLE GPIO */
+		status = "okay";
+	};
+};
+
 &pm8994_mpps {
 	mpp@a100 { /*MPP 2*/
 		reg = <0xa100 0x100>;
@@ -86,19 +97,31 @@
 		qcom,master-en = <1>;	/* ENABLE GPIO */
 		status = "okay";
 	};
+	gpio@c500 {
+		reg = <0xc500 0x100>;
+		qcom,pin-num = <6>;
+		qcom,mode = <0>;        /* DIGITAL INPUT */
+		qcom,pull = <5>;        /* No Pull */
+		qcom,vin-sel = <2>;     /* 1.8 */
+		qcom,src-sel = <0>;     /* CONSTANT */
+		qcom,master-en = <1>;   /* ENABLE GPIO */
+		qcom,out-strength = <3>;
+		status = "okay";
+	};
 };
 
 &soc {
 	htc,htc-charger {
 		compatible = "htc,htc-charger";
 		qcom,charger-enable-gpio  = <&pmi8994_gpios 1 0>;
+		qcom,charger-ready-gpio  = <&pmi8994_gpios 6 0>;
 		qcom,usb_in_isen-vadc = <&pm8994_vadc>;
 		qcom,usb_in_isen-channel = <0x11>; //MPP2
 		qcom,vbusdet-vadc = <&pm8994_vadc>;
 		qcom,vbusdet-channel = <0x14>; //MPP5
 		qcom,usb_pwr_temp-vadc = <&pm8994_vadc>;
 		qcom,usb_pwr_temp-channel = <0x16>; //MPP7
-		iusb_rsen = <732>;
+		iusb_rsen = <1400>;
 		iusb_multiplier = <2050>;
 
 		run_mode = <0>;
@@ -111,15 +134,23 @@
 	oce_batterydata: qcom,battery-data {
 		#include "batterydata-oce-id1.dtsi"
 		#include "batterydata-oce-id2.dtsi"
+		#include "batterydata-oce-unknown.dtsi"
 	};
 };
 
 &pmi8994_charger {
+	htc,tps_otg_control = <&tca6418 0 0>;
 	qcom,battery-data = <&oce_batterydata>;
 };
 
 &pmi8994_fg {
 	qcom,battery-data = <&oce_batterydata>;
+	qcom,cold-hot-jeita-hysteresis = <20 20>;
+	com,warm-bat-decidegc = <480>;
+	qcom,fg-cutoff-voltage-mv = <3250>;
+	qcom,irq-volt-empty-mv = <3050>;
+	qcom,fg-iterm-ma = <360>;
+	/delete-property/ qcom,capacity-learning-feedback;
 };
 
 // Battery profile end

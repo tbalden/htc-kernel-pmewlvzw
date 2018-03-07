@@ -1,50 +1,50 @@
 qcom,oce-id2-batterydata {
-	/* #2166223_HTC_35H00256_01M_3000mAh_averaged_MasterSlave_Oct16th2015*/
+	/* #2645123_HTC_B2PZF100lishen_3000mAh_averaged_MasterSlave_Nov22nd2016*/
 	qcom,max-voltage-uv = <4400000>;
 	qcom,v-cutoff-uv = <3250000>;
 	qcom,nom-batt-capacity-mah = <3000>;
-	qcom,batt-id-kohm = <33>;
+	qcom,batt-id-kohm = <22>;
 	qcom,battery-beta = <4360>;
 	qcom,battery-type = "oce_id2";
-	qcom,chg-rslow-comp-c1 = <2378826>;
-	qcom,chg-rslow-comp-c2 = <2172944>;
-	qcom,chg-rs-to-rslow = <1144693>;
-	qcom,chg-rslow-comp-thr = <0x99>;
-	qcom,checksum = <0x8D52>;
-	qcom,gui-version = "PMI8996GUI - 1.0.1.4";
+	qcom,chg-rslow-comp-c1 = <3207669>;
+	qcom,chg-rslow-comp-c2 = <5388791>;
+	qcom,chg-rs-to-rslow = <935010>;
+	qcom,chg-rslow-comp-thr = <0xB5>;
+	qcom,checksum = <0x08F0>;
+	qcom,gui-version = "PMI8996GUI - 1.1.0.4";
 	htc,batt_id = <2>;
-	htc,id_raw_min = <22001>;
-	htc,id_raw_max = <40000>;
+	htc,id_raw_min = <16001>;
+	htc,id_raw_max = <27500>;
 	qcom,fg-profile-data = [
-		95 83 76 75
-		0D 80 F0 75
-		56 83 C0 54
-		25 80 3D 85
-		00 82 B7 98
-		6E B5 32 C0
-		77 17 0A 88
-		9C 7E B2 82
-		5B 7D 70 83
-		A2 75 6E 8A
-		37 95 4F 82
-		3B 98 79 B5
-		BE C0 58 17
-		13 0C AE 5A
-		14 70 B8 FE
-		30 45 09 45
-		0B 48 00 00
-		15 47 66 39
-		1D 2E 00 00
+		E9 83 F4 7C
+		FD 80 F4 76
+		56 83 77 35
+		FD 80 47 8C
+		12 82 E7 9A
+		49 BE CD CB
+		5B 0E FC 83
+		2E 7D 08 81
+		D9 76 4D 83
+		23 71 BE 38
+		22 7E 5B 82
+		52 99 8C BC
+		37 C9 5A 0C
+		C3 0B B6 59
+		14 70 52 F8
+		45 3E 61 3F
+		3F 39 00 00
+		43 45 3F 31
+		3F 29 00 00
 		00 00 00 00
 		00 00 00 00
-		15 71 FA 6B
-		05 63 A2 88
-		73 75 68 68
-		62 46 D7 7B
-		12 74 83 60
-		00 81 82 C2
-		12 CB 62 C2
-		64 A0 71 0C
+		5F 70 83 6B
+		87 5A 27 83
+		BE 75 17 69
+		45 5E 04 7B
+		A2 74 11 63
+		33 7D 00 A9
+		1A 3E 60 0A
+		5E A0 71 0C
 		28 00 FF 36
 		F0 11 30 03
 		00 00 00 0C

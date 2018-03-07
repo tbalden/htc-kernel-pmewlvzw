@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -92,10 +92,18 @@ size_t get_cal_info_size(int32_t cal_type)
 		size = sizeof(struct audio_cal_info_spk_prot_cfg);
 		break;
 	case AFE_FB_SPKR_PROT_TH_VI_CAL_TYPE:
+		/*
+		 * Since get and set parameter structures are different in size
+		 * use the maximum size of get and set parameter structure
+		 */
 		size = max(sizeof(struct audio_cal_info_sp_th_vi_ftm_cfg),
 			   sizeof(struct audio_cal_info_sp_th_vi_param));
 		break;
 	case AFE_FB_SPKR_PROT_EX_VI_CAL_TYPE:
+		/*
+		 * Since get and set parameter structures are different in size
+		 * use the maximum size of get and set parameter structure
+		 */
 		size = max(sizeof(struct audio_cal_info_sp_ex_vi_ftm_cfg),
 			   sizeof(struct audio_cal_info_sp_ex_vi_param));
 		break;
@@ -149,9 +157,6 @@ size_t get_cal_info_size(int32_t cal_type)
 		break;
 	case ULP_LSM_CAL_TYPE:
 		size = sizeof(struct audio_cal_info_lsm);
-		break;
-	case DTS_EAGLE_CAL_TYPE:
-		size = 0;
 		break;
 	case AUDIO_CORE_METAINFO_CAL_TYPE:
 		size = sizeof(struct audio_cal_info_metainfo);
@@ -233,10 +238,18 @@ size_t get_user_cal_type_size(int32_t cal_type)
 		size = sizeof(struct audio_cal_type_fb_spk_prot_cfg);
 		break;
 	case AFE_FB_SPKR_PROT_TH_VI_CAL_TYPE:
+		/*
+		 * Since get and set parameter structures are different in size
+		 * use the maximum size of get and set parameter structure
+		 */
 		size = max(sizeof(struct audio_cal_type_sp_th_vi_ftm_cfg),
 			   sizeof(struct audio_cal_type_sp_th_vi_param));
 		break;
 	case AFE_FB_SPKR_PROT_EX_VI_CAL_TYPE:
+		/*
+		 * Since get and set parameter structures are different in size
+		 * use the maximum size of get and set parameter structure
+		 */
 		size = max(sizeof(struct audio_cal_type_sp_ex_vi_ftm_cfg),
 			   sizeof(struct audio_cal_type_sp_ex_vi_param));
 		break;
@@ -290,9 +303,6 @@ size_t get_user_cal_type_size(int32_t cal_type)
 		break;
 	case ULP_LSM_CAL_TYPE:
 		size = sizeof(struct audio_cal_type_lsm);
-		break;
-	case DTS_EAGLE_CAL_TYPE:
-		size = 0;
 		break;
 	case AUDIO_CORE_METAINFO_CAL_TYPE:
 		size = sizeof(struct audio_cal_type_metainfo);
@@ -633,7 +643,9 @@ done:
 	return cal_block;
 err:
 	kfree(cal_block->cal_info);
+	cal_block->cal_info = NULL;
 	kfree(cal_block->client_info);
+	cal_block->client_info = NULL;
 	kfree(cal_block);
 	cal_block = NULL;
 	return cal_block;
@@ -899,7 +911,7 @@ int cal_utils_set_cal(size_t data_size, void *data,
 		goto done;
 	}
 
-	if (data_size > get_user_cal_type_size(cal_type->info.reg.cal_type)) { 
+	if (data_size > get_user_cal_type_size(cal_type->info.reg.cal_type)) { //HTC_AUD klockwork ID: 502
 		pr_err("%s: cal_type %d, data_size of %zd is invalid, expecting %zd!\n",
 			__func__, cal_type->info.reg.cal_type, data_size,
 			get_user_cal_type_size(cal_type->info.reg.cal_type));

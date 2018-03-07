@@ -2170,7 +2170,6 @@ VL53L0_Error VL53L0_compute_dmax(VL53L0_DEV Dev, uint16_t *pDmaxVal,
 
 
 	if ((MinSignalNeeded > 0)
-		&& (DmaxCalSignalRateRtnMegaCps >= 0)
 		&& (AmbientRate < DmaxCalBlindAmbient97)) {
 
 		/* multiply by 65536 to give more precision */

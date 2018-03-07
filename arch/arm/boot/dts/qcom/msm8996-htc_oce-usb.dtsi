@@ -1,0 +1,241 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&qusb_phy0 {
+	qcom,qusb-phy-init-seq = <0xE8 0x80
+					0x23 0x84
+					0x83 0x88
+					0xC0 0x8C
+					0x03 0x90
+					0x30 0x08
+					0x79 0x0C
+					0x21 0x10
+					0x14 0x9C
+					0x9F 0x1C
+					0x00 0x18>;
+	htc,usb-phy-always-on = <0>;
+};
+
+&rpm_bus {
+	rpm-regulator-ldoa27 { /* anx7688 vdd10 */
+		status = "okay";
+		pm8994_l27: regulator-l27 {
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+			qcom,init-voltage = <1000000>;
+			status = "okay";
+		};
+	};
+};
+
+&pm8994_gpios {
+	gpio@c800 { /* GPIO 09 - AUD_MBHC_HSDET_L */
+		reg = <0xc800 0x100>;
+		qcom,pin-num = <9>;
+		qcom,mode = <1>;			/* QPNP_PIN_MODE_DIG_OUT */
+		qcom,output-type = <0>;		/* QPNP_PIN_OUT_BUF_CMOS */
+		qcom,pull = <5>;			/* QPNP_PIN_PULL_NO */
+		qcom,invert = <1>;			/* QPNP_PIN_INVERT_ENABLE */
+		qcom,vin-sel = <2>;			/* QPNP_PIN_VIN2 (1.8) */
+		qcom,src-sel = <0>;			/* QPNP_PIN_SEL_FUNC_CONSTANT */
+		qcom,out-strength = <1>;    /* QPNP_PIN_OUT_STRENGTH_LOW (Low drive strength) */
+		qcom,master-en = <1>;       /* ENABLE GPIO */
+		status = "okay";
+	};
+
+	gpio@ca00 { /* GPIO 11 - VCONN_5V_EN_AP */
+		reg = <0xca00 0x100>;
+		qcom,pin-num = <11>;
+		qcom,mode = <1>;            /* QPNP_PIN_MODE_DIG_OUT */
+		qcom,output-type = <0>;     /* QPNP_PIN_OUT_BUF_CMOS */
+		qcom,pull = <4>;            /* QPNP_PIN_PULL_DN */
+		qcom,vin-sel = <2>;         /* QPNP_PIN_VIN2 (1.8) */
+		qcom,src-sel = <0>;         /* QPNP_PIN_SEL_FUNC_CONSTANT */
+		qcom,out-strength = <1>;    /* QPNP_PIN_OUT_STRENGTH_LOW (Low drive strength) */
+		qcom,master-en = <1>;       /* ENABLE GPIO */
+		status = "okay";
+	};
+
+	gpio@cb00 { /* GPIO 12 - anx7688 reset */
+		qcom,mode = <1>;        /* DIGITAL OUT */
+		qcom,output-type = <0>;     /* CMOS logic */
+		qcom,pull = <4>;        /* Pulldown 10uA */
+		qcom,invert = <0>;      /* output low */
+		qcom,vin-sel = <2>;     /* 1.8 */
+		qcom,src-sel = <0>;     /* CONSTANT */
+		qcom,out-strength = <1>;    /* Low drive strength */
+		qcom,master-en = <1>;       /* ENABLE GPIO */
+		status = "okay";
+	};
+};
+
+&tlmm {
+	anx7688_p_on: anx7688_p_on {
+		config {
+			pins = "gpio30";
+			drive-strength = <2>;
+			bias-pull-down;
+			output-low;
+		};
+	};
+
+	anx7688_cbl_det: anx7688_cbl_det {
+		config {
+			pins = "gpio57";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+
+	anx7688_intr_comm: anx7688_intr_comm {
+		config {
+			pins = "gpio124";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	fsa3030 {
+		fsa3030_sel0: fsa3030_sel0 {
+			mux {
+				pins = "gpio75";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio75";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+
+		fsa3030_sel1: fsa3030_sel1 {
+			mux {
+				pins = "gpio76";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio76";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+		};
+
+		fsa3030_sel2: fsa3030_sel2 {
+			mux {
+				pins = "gpio78";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio78";
+				drive-strength = <2>;
+				bias-pull-down;
+				output-low;
+			};
+		};
+	};
+
+	usb3_redriver {
+		usb_ptn_c1: usb_ptn_c1 {
+			mux {
+				pins = "gpio29";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio29";
+				drive-strength = <2>;
+				bias-pull-down;
+				output-low;
+			};
+		};
+
+		usb_ptn_c2: usb_ptn_c2 {
+			mux {
+				pins = "gpio118";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio118";
+				drive-strength = <2>;
+				bias-pull-down;
+				output-low;
+			};
+		};
+	};
+
+	ovp_cc_sbu: ovp_cc_sbu {
+		mux {
+			pins = "gpio63";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio63";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&soc {
+	i2c_9: i2c@75b7000 { /* BLSP2 QUP3 */
+		anx7688@50 {
+			compatible = "analogix,anx7688";
+			reg = <0x50>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <124 0>;
+			analogix,p-on-gpio = <&tlmm 30 0x00>;
+			analogix,cbl-det-gpio = <&tlmm 57 0x00>;
+			analogix,intr-comm-gpio = <&tlmm 124 0x00>;
+			analogix,reset-gpio = <&pm8994_gpios 12 0>;
+			analogix,hdmi-tx-map = <&mdss_hdmi_tx>;
+
+			/* USB3.0 redriver IC */
+			htc,usb-ptn-c1-gpio = <&tlmm 29 0>;
+			htc,usb-ptn-c2-gpio = <&tlmm 118 0>;
+
+			/* Audio accessory mode */
+			htc,aud-hsdet-gpio = <&pm8994_gpios 9 0>;
+			htc,usb_hph_fsa3030_sel0 = <&tlmm 75 0>;
+			htc,usb_hph_fsa3030_sel1 = <&tlmm 76 0>;
+			htc,usb_hph_fsa3030_sel2 = <&tlmm 78 0>;
+
+			/* Vconn 5V */
+			htc,vconn_5v_en = <&pm8994_gpios 11 0x00>;
+
+			/* CC/SBU OVP */
+			htc,ovp-cc-sbu = <&tlmm 63 0>;
+
+			/* anx7688 power supply */
+			vdd10-supply = <&pm8994_l27>;
+
+			/* USB3.0 redriver IC power supply */
+			vdd18-supply = <&pm8994_l23>;
+
+			htc,disable-hbr25;
+
+			pinctrl-names = "anx7688_p_on", "anx7688_cbl_det", "anx7688_intr_comm",
+                            "fsa3030_default", "usb3_redriver", "ovp_cc_sbu";
+			pinctrl-0 = <&anx7688_p_on>;
+			pinctrl-1 = <&anx7688_cbl_det>;
+			pinctrl-2 = <&anx7688_intr_comm>;
+			pinctrl-3 = <&fsa3030_sel0 &fsa3030_sel1 &fsa3030_sel2>;
+			pinctrl-4 = <&usb_ptn_c1 &usb_ptn_c2>;
+			pinctrl-5 = <&ovp_cc_sbu>;
+
+		};
+	};
+};

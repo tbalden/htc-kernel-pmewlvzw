@@ -303,8 +303,13 @@ static char *fw_path[32] = {
 	"/lib/firmware/updates",
 	"/lib/firmware/" UTS_RELEASE,
 	"/lib/firmware",
-	"/firmware/image"
-//++ Modem BSP, support dynamic modem image switch
+	"/lib64/firmware",
+	"/lib/firmware/image"
+//++ Modem BSP
+        /* QCT moved /firmware/image to uevnetd in O80
+           We added back to WA UMTS radio not be loaded as default*/
+	,"/firmware/image"
+        /* Support dynamic modem image switch */
         ,"/firmware/cradio"
 //-- Modem BSP
 };

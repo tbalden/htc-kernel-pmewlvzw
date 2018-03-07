@@ -46,6 +46,7 @@ static struct device_attribute dual_role_attrs[] = {
 	DUAL_ROLE_ATTR(power_role),
 	DUAL_ROLE_ATTR(data_role),
 	DUAL_ROLE_ATTR(powers_vconn),
+	DUAL_ROLE_ATTR(partner_supports_usb_pd),
 };
 
 struct class *dual_role_class;
@@ -267,6 +268,11 @@ static char *vconn_supply_text[] = {
 	"n", "y"
 };
 
+/* Port partner supports PD */
+static char *partner_supports_usb_pd_text[] = {
+	"no", "yes"
+};
+
 static ssize_t dual_role_show_property(struct device *dev,
 				       struct device_attribute *attr, char *buf)
 {
@@ -331,7 +337,15 @@ static ssize_t dual_role_show_property(struct device *dev,
 					vconn_supply_text[value]);
 		else
 			return -EIO;
-	} else
+	} else if (off == DUAL_ROLE_PROP_PARTNER_SUPPORTS_USB_PD) {
+		BUILD_BUG_ON(DUAL_ROLE_PROP_PARTNER_SUPPORTS_USB_PD_TOTAL !=
+				ARRAY_SIZE(partner_supports_usb_pd_text));
+		if (value < DUAL_ROLE_PROP_PARTNER_SUPPORTS_USB_PD_TOTAL)
+			return snprintf(buf, PAGE_SIZE, "%s\n",
+					partner_supports_usb_pd_text[value]);
+		else
+			return -EIO;
+	}
 		return -EIO;
 }
 

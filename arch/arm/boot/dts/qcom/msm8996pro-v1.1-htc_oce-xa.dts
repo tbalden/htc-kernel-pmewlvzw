@@ -15,13 +15,14 @@
 
 #include "msm8996pro-v1.1.dtsi"
 #include "msm-pmi8996.dtsi"
-#include "msm8996-mtp.dtsi"
-#include "msm8996-nc-pins-htc_oce-xa.dtsi"
 #include "msm8996-htc_oce.dtsi"
+#include "msm8996-nc-pins-htc_oce-xa.dtsi"
+#include "msm8996-camera-laser-oce-xa.dtsi"
+#include "msm8996-camera-sensor-ocean_note_xa.dtsi"
+#include "pmic8994-nc-pins-htc_oce-xa.dtsi"
 
 / {
 	model = "HTC Corporation. MSM8996pro v1.1 + PMI8996 OCE XA";
-	qcom,msm-id = <433 0x10001>, <434 0x10001>;
+	qcom,msm-id = <433 0x10001>, <434 0x10001>, <435 0x10001>;
 	qcom,board-id = <0 0>;
 };
-

@@ -25,7 +25,6 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/mount.h>
-#include <linux/file.h>
 #include "ecryptfs_kernel.h"
 
 struct ecryptfs_open_req {
@@ -45,6 +44,15 @@ static struct ecryptfs_kthread_ctl {
 
 static struct task_struct *ecryptfs_kthread;
 
+/**
+ * ecryptfs_threadfn
+ * @ignored: ignored
+ *
+ * The eCryptfs kernel thread that has the responsibility of getting
+ * the lower file with RW permissions.
+ *
+ * Returns zero on success; non-zero otherwise
+ */
 static int ecryptfs_threadfn(void *ignored)
 {
 	set_freezable();
@@ -109,6 +117,16 @@ void ecryptfs_destroy_kthread(void)
 	wake_up(&ecryptfs_kthread_ctl.wait);
 }
 
+/**
+ * ecryptfs_privileged_open
+ * @lower_file: Result of dentry_open by root on lower dentry
+ * @lower_dentry: Lower dentry for file to open
+ * @lower_mnt: Lower vfsmount for file to open
+ *
+ * This function gets a r/w file opened againt the lower dentry.
+ *
+ * Returns zero on success; non-zero otherwise
+ */
 int ecryptfs_privileged_open(struct file **lower_file,
 			     struct dentry *lower_dentry,
 			     struct vfsmount *lower_mnt,
@@ -123,10 +141,13 @@ int ecryptfs_privileged_open(struct file **lower_file,
 	req.path.dentry = lower_dentry;
 	req.path.mnt = lower_mnt;
 
+	/* Corresponding dput() and mntput() are done when the
+	 * lower file is fput() when all eCryptfs files for the inode are
+	 * released. */
 	flags |= IS_RDONLY(lower_dentry->d_inode) ? O_RDONLY : O_RDWR;
 	(*lower_file) = dentry_open(&req.path, flags, cred);
 	if (!IS_ERR(*lower_file))
-		goto have_file;
+		goto out;
 	if ((flags & O_ACCMODE) == O_RDONLY) {
 		rc = PTR_ERR((*lower_file));
 		goto out;
@@ -144,16 +165,8 @@ int ecryptfs_privileged_open(struct file **lower_file,
 	mutex_unlock(&ecryptfs_kthread_ctl.mux);
 	wake_up(&ecryptfs_kthread_ctl.wait);
 	wait_for_completion(&req.done);
-	if (IS_ERR(*lower_file)) {
+	if (IS_ERR(*lower_file))
 		rc = PTR_ERR(*lower_file);
-		goto out;
-	}
-have_file:
-	if ((*lower_file)->f_op->mmap == NULL) {
-		fput(*lower_file);
-		*lower_file = NULL;
-		rc = -EMEDIUMTYPE;
-	}
 out:
 	return rc;
 }

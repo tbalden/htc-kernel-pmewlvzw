@@ -331,3 +331,7 @@ config HTC_PNPMGR
 	  depends on PM
 	  ---help---
 	  Collect the sysfs files nodes for pnpmgr usage.
+
+config DEDUCE_WAKEUP_REASONS
+	bool
+	default n

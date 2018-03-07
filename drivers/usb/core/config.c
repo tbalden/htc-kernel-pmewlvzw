@@ -13,6 +13,9 @@
 
 #define USB_MAXCONFIG			8	/* Arbitrary limit */
 
+#if defined(CONFIG_MACH_OCE)
+extern void dwc3_otg_switch_power_source(bool);
+#endif
 
 static inline const char *plural(int n)
 {
@@ -327,6 +330,13 @@ static int usb_parse_interface(struct device *ddev, int cfgno,
 
 	if (d->bLength < USB_DT_INTERFACE_SIZE)
 		goto skip_to_next_interface_descriptor;
+
+#if defined(CONFIG_MACH_OCE)
+	if (d->bInterfaceClass == 0x1) {
+		pr_debug("usb audio interface\n");
+		dwc3_otg_switch_power_source(1);
+	}
+#endif
 
 	/* Which interface entry is this? */
 	intfc = NULL;

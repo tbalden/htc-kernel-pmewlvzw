@@ -407,6 +407,33 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			memcpy((void*)buf, (void*)version, sizeof(version));
 			break;
 		}
+#ifdef CONFIG_USE_AS_HS
+		case ACOUSTIC_GET_HEADSET_TYPE: {
+			if (the_ops && the_ops->get_headsetType)
+				s32_value = the_ops->get_headsetType();
+			else
+				s32_value = 0;
+
+			if (sizeof(s32_value) <= us32_size) {
+				memcpy((void *)buf, (void *)&s32_value,
+					sizeof(s32_value));
+			} else {
+				E("%s %d: ACOUSTIC_GET_HEADSET_TYPE error.\n",
+					__func__, __LINE__);
+				rc = -EINVAL;
+			}
+			break;
+		}
+		case  ACOUSTIC_MSM_SETPARAM: {
+			if (rc == 0 &&
+				sizeof(htc_adsp_params_ioctl_t) == us32_size &&
+				the_ops && the_ops->msm_setparam) {
+				the_ops->msm_setparam(
+					(htc_adsp_params_ioctl_t *)buf);
+			}
+			break;
+		}
+#endif
 		default: {
 			rc= -EINVAL;
 			break;

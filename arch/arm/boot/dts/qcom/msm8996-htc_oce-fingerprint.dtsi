@@ -1,0 +1,128 @@
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&tlmm {
+	fpc1020_id {
+		fpc1020_id_init: init {
+			mux {
+				pins = "gpio120";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio120";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+
+		fpc1020_id_active: active {
+			mux {
+				pins = "gpio120";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio120";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+
+		fpc1020_id_sleep: sleep {
+			mux {
+				pins = "gpio120";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio120";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+	};
+};
+
+&fpc1020_reset_reset {
+	mux {
+		pins = "gpio131";
+		funcion = "gpio";
+	};
+
+	config {
+		pins = "gpio131";
+		drive-strength = <2>;
+		bias-disable;
+		output-low;
+	};
+};
+
+&fpc1020_reset_active {
+	mux {
+		pins = "gpio131";
+		funcion = "gpio";
+	};
+
+	config {
+		pins = "gpio131";
+		drive-strength = <2>;
+		bias-disable;
+		output-high;
+	};
+};
+
+&fpc1020_irq_active {
+	mux {
+		pins = "gpio80";
+		funcion = "gpio";
+	};
+
+	config {
+		pins = "gpio80";
+		drive-strength = <2>;
+		bias-pull-down;
+		// input-enable;
+	};
+};
+
+&soc {
+	fp_fpc1155 {
+		compatible = "fpc,fpc1020";
+		interrupt-parent = <&tlmm>;
+		interrupts = <80 0x0>;
+		fpc,reset-gpio = <&tlmm 131 0>;
+		fpc,irq-gpio = <&tlmm 80 0>;
+		fpc,id-gpio = <&tlmm 120 0>;
+		fpc,enable-on-boot;
+		/delete-property/ fpc,enable-wakeup;
+		// EV_MSC, MSC_SCAN
+		fpc,event-type = <4>;
+		fpc,event-code = <4>;
+		pinctrl-names = "fpc1020_id_active",
+				"fpc1020_id_init",
+				"fpc1020_id_sleep",
+				"fpc1020_irq_active",
+				"fpc1020_reset_active",
+				"fpc1020_reset_reset";
+
+		pinctrl-0 = <&fpc1020_id_active>;
+		pinctrl-1 = <&fpc1020_id_init>;
+		pinctrl-2 = <&fpc1020_id_sleep>;
+		pinctrl-3 = <&fpc1020_irq_active>;
+		pinctrl-4 = <&fpc1020_reset_active>;
+		pinctrl-5 = <&fpc1020_reset_reset>;
+	};
+};

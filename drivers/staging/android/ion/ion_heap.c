@@ -2,7 +2,7 @@
  * drivers/staging/android/ion/ion_heap.c
  *
  * Copyright (C) 2011 Google, Inc.
- * Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -293,6 +293,10 @@ static unsigned long ion_heap_shrink_scan(struct shrinker *shrinker,
 	if (to_scan == 0)
 		return 0;
 
+	/*
+	 * shrink the free list first, no point in zeroing the memory if we're
+	 * just going to reclaim it. Also, skip any possible page pooling.
+	 */
 	if (heap->flags & ION_HEAP_FLAG_DEFER_FREE)
 		freed = ion_heap_freelist_shrink(heap, to_scan * PAGE_SIZE) /
 				PAGE_SIZE;

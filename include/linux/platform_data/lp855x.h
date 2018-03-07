@@ -136,14 +136,19 @@ struct lp855x_rom_data {
 		Only valid when mode is PWM_BASED.
  * @size_program : total size of lp855x_rom_data
  * @rom_data : list of new eeprom/eprom registers
+ * @boot_on : device is already configured from previous stage (eg. bootloader)
+ * @torch_brightness : torch brightness when flash mode used
  */
 struct lp855x_platform_data {
 	const char *name;
 	u8 device_control;
-	u8 initial_brightness;
+	int initial_brightness;
 	unsigned int period_ns;
 	int size_program;
 	struct lp855x_rom_data *rom_data;
+	bool boot_on;
+	int torch_brightness;
+	bool use_htc_strobe;
 };
 
 #endif

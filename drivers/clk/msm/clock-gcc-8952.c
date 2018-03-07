@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -90,6 +90,9 @@ static DEFINE_CLK_VOTER(bimc_usb_a_clk, &bimc_a_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(pnoc_usb_clk, &pnoc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(snoc_usb_clk, &snoc_clk.c, LONG_MAX);
 static DEFINE_CLK_VOTER(bimc_usb_clk, &bimc_clk.c, LONG_MAX);
+
+static DEFINE_CLK_VOTER(snoc_wcnss_a_clk, &snoc_a_clk.c, LONG_MAX);
+static DEFINE_CLK_VOTER(bimc_wcnss_a_clk, &bimc_a_clk.c, LONG_MAX);
 
 /* Branch Voter clocks */
 static DEFINE_CLK_BRANCH_VOTER(xo_gcc, &xo_clk_src.c);
@@ -766,6 +769,27 @@ static struct clk_freq_tbl ftbl_gcc_oxili_gfx3d_clk_8937_475MHz[] = {
 	F_END
 };
 
+static struct clk_freq_tbl ftbl_gcc_oxili_gfx3d_clk_8940_500MHz[] = {
+	F_SLEW( 19200000,  FIXED_CLK_SRC, xo,		1,	0,	0),
+	F_SLEW( 50000000,  FIXED_CLK_SRC, gpll0,	16,	0,	0),
+	F_SLEW( 80000000,  FIXED_CLK_SRC, gpll0,	10,	0,	0),
+	F_SLEW( 100000000, FIXED_CLK_SRC, gpll0,	8,	0,	0),
+	F_SLEW( 160000000, FIXED_CLK_SRC, gpll0,	5,	0,	0),
+	F_SLEW( 200000000, FIXED_CLK_SRC, gpll0,	4,	0,	0),
+	F_SLEW( 216000000, FIXED_CLK_SRC, gpll6_aux,	5,	0,	0),
+	F_SLEW( 228570000, FIXED_CLK_SRC, gpll0,	3.5,	0,	0),
+	F_SLEW( 240000000, FIXED_CLK_SRC, gpll6_aux,	4.5,	0,	0),
+	F_SLEW( 266670000, FIXED_CLK_SRC, gpll0,	3,	0,	0),
+	F_SLEW( 300000000, 600000000,	  gpll3,	1,	0,	0),
+	F_SLEW( 320000000, FIXED_CLK_SRC, gpll0,	2.5,	0,	0),
+	F_SLEW( 375000000, 750000000,	  gpll3,	1,	0,	0),
+	F_SLEW( 400000000, FIXED_CLK_SRC, gpll0,	2,	0,	0),
+	F_SLEW( 450000000, 900000000,	  gpll3,	1,	0,	0),
+	F_SLEW( 475000000, 950000000,	  gpll3,	1,	0,	0),
+	F_SLEW( 500000000, 1000000000,	  gpll3,	1,	0,	0),
+	F_END
+};
+
 static struct clk_freq_tbl ftbl_gcc_oxili_gfx3d_clk_8917[] = {
 	F_SLEW( 19200000,  FIXED_CLK_SRC, xo,		1,	0,	0),
 	F_SLEW( 50000000,  FIXED_CLK_SRC, gpll0,	16,	0,	0),
@@ -850,6 +874,18 @@ static struct clk_freq_tbl ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk[] = {
 	F( 16000000,	gpll0,	10,	1,	5),
 	F( 19200000,	xo,	1,	0,	0),
 	F( 25000000,	gpll0,	16,	1,	2),
+	F( 50000000,	gpll0,	16,	0,	0),
+	F_END
+};
+
+static struct clk_freq_tbl ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk_8917[] = {
+	F( 960000,	xo,	10,	1,	2),
+	F( 4800000,	xo,	4,	0,	0),
+	F( 9600000,	xo,	2,	0,	0),
+	F( 16000000,	gpll0,	10,	1,	5),
+	F( 19200000,	xo,	1,	0,	0),
+	F( 25000000,	gpll0,	16,	1,	2),
+	F( 40000000,	gpll0,	10,	1,	2),
 	F( 50000000,	gpll0,	16,	0,	0),
 	F_END
 };
@@ -1275,6 +1311,7 @@ static struct rcg_clk jpeg0_clk_src = {
 };
 
 static struct clk_freq_tbl ftbl_gcc_camss_mclk0_2_clk[] = {
+	F( 19200000,	xo,	1,	0,	0),
 	F( 24000000,	gpll6,	1,	1,	45),
 	F( 66670000,	gpll0,	12,	0,	0),
 	F_END
@@ -3761,6 +3798,9 @@ static struct clk_lookup msm_clocks_lookup_common[] = {
 	CLK_LIST(snoc_usb_clk),
 	CLK_LIST(bimc_usb_clk),
 
+	CLK_LIST(snoc_wcnss_a_clk),
+	CLK_LIST(bimc_wcnss_a_clk),
+
 	CLK_LIST(qdss_clk),
 	CLK_LIST(qdss_a_clk),
 
@@ -4293,7 +4333,7 @@ static int msm_gcc_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	if (compat_bin2)
+	if (compat_bin2 || compat_bin4)
 		nbases = APCS_C0_PLL_BASE;
 
 	ret = get_mmio_addr(pdev, nbases);
@@ -4375,9 +4415,17 @@ static int msm_gcc_probe(struct platform_device *pdev)
 		override_for_8937(speed_bin);
 
 		if (compat_bin3) {
-			gfx3d_clk_src.freq_tbl =
+			if (speed_bin) {
+				gfx3d_clk_src.freq_tbl =
+					ftbl_gcc_oxili_gfx3d_clk_8940_500MHz;
+				gfx3d_clk_src.c.fmax[VDD_DIG_SUPER_TUR] =
+								500000000;
+			} else {
+				gfx3d_clk_src.freq_tbl =
 					ftbl_gcc_oxili_gfx3d_clk_8937_475MHz;
-			gfx3d_clk_src.c.fmax[VDD_DIG_SUPER_TUR] = 475000000;
+				gfx3d_clk_src.c.fmax[VDD_DIG_SUPER_TUR] =
+								475000000;
+			}
 		}
 	} else if (compat_bin2 || compat_bin4) {
 		gpll0_clk_src.c.parent = &gpll0_clk_src_8937.c;
@@ -4388,6 +4436,21 @@ static int msm_gcc_probe(struct platform_device *pdev)
 		vdd_hf_pll.cur_level = VDD_HF_PLL_NUM_8917;
 		get_speed_bin(pdev, &speed_bin);
 		override_for_8917(speed_bin);
+
+		if (compat_bin2) {
+			blsp1_qup2_spi_apps_clk_src.freq_tbl =
+				ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk_8917;
+			blsp1_qup3_spi_apps_clk_src.freq_tbl =
+				ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk_8917;
+			blsp1_qup4_spi_apps_clk_src.freq_tbl =
+				ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk_8917;
+			blsp2_qup1_spi_apps_clk_src.freq_tbl =
+				ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk_8917;
+			blsp2_qup2_spi_apps_clk_src.freq_tbl =
+				ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk_8917;
+			blsp2_qup3_spi_apps_clk_src.freq_tbl =
+				ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk_8917;
+		}
 	} else {
 		gpll0_clk_src.c.parent = &gpll0_clk_src_8952.c;
 		gpll0_ao_clk_src.c.parent = &gpll0_ao_clk_src_8952.c;

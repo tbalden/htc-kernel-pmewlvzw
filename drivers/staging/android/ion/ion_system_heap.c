@@ -536,12 +536,12 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 		pool = sys_heap->uncached_pools[i];
 		if (use_seq) {
 			seq_printf(s,
-				"%d order %u highmem pages in uncached pool = %lu total\n",
+				"%4d order %u highmem pages in uncached pool = %9lu total\n",
 				pool->high_count, pool->order,
 				(1 << pool->order) * PAGE_SIZE *
 					pool->high_count);
 			seq_printf(s,
-				"%d order %u lowmem pages in uncached pool = %lu total\n",
+				"%4d order %u  lowmem pages in uncached pool = %9lu total\n",
 				pool->low_count, pool->order,
 				(1 << pool->order) * PAGE_SIZE *
 					pool->low_count);
@@ -557,11 +557,11 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 		pool = sys_heap->cached_pools[i];
 		if (use_seq) {
 			seq_printf(s,
-				"%d order %u highmem pages in cached pool = %lu total\n",
+				"%4d order %u highmem pages in cached pool = %9lu total\n",
 				pool->high_count, pool->order,
 				(1 << pool->order) * PAGE_SIZE * pool->high_count);
 			seq_printf(s,
-				"%d order %u lowmem pages in cached pool = %lu total\n",
+				"%4d order %u  lowmem pages in cached pool = %9lu total\n",
 				pool->low_count, pool->order,
 				(1 << pool->order) * PAGE_SIZE *
 					pool->low_count);
@@ -580,16 +580,18 @@ static int ion_system_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
 			pool = sys_heap->secure_pools[j][i];
 
 			if (use_seq) {
-				seq_printf(s,
-					"VMID %d: %d order %u highmem pages in secure pool = %lu total\n",
-					j, pool->high_count, pool->order,
-					(1 << pool->order) * PAGE_SIZE *
-						pool->high_count);
-				seq_printf(s,
-					"VMID  %d: %d order %u lowmem pages in secure pool = %lu total\n",
-					j, pool->low_count, pool->order,
-					(1 << pool->order) * PAGE_SIZE *
-						pool->low_count);
+				if (pool->high_count || pool->low_count) {
+					seq_printf(s,
+						"VMID %2d: %4d order %u highmem pages in secure pool = %9lu total\n",
+						j, pool->high_count, pool->order,
+						(1 << pool->order) * PAGE_SIZE *
+							pool->high_count);
+					seq_printf(s,
+						"VMID %2d: %4d order %u  lowmem pages in secure pool = %9lu total\n",
+						j, pool->low_count, pool->order,
+						(1 << pool->order) * PAGE_SIZE *
+							pool->low_count);
+				}
 			}
 
 			secure_total += (1 << pool->order) * PAGE_SIZE *

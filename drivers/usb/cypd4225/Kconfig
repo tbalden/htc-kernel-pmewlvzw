@@ -1,0 +1,7 @@
+config CYPD4225
+	tristate "Cypress CYPD4225 driver"
+	default n
+	help
+        	Cypress CYPD4225 driver
+
+       

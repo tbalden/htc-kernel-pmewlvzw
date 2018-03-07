@@ -152,6 +152,7 @@
 #define FB_ACCEL_PUV3_UNIGFX	0xa0	/* PKUnity-v3 Unigfx		*/
 
 #define FB_CAP_FOURCC		1	/* Device supports FOURCC-based formats */
+#define FB_CAP_VENDOR		BIT(10) /* Device had vendor specific configurations */
 
 struct fb_fix_screeninfo {
 	char id[16];			/* identification string eg "TT Builtin" */
@@ -398,5 +399,13 @@ struct fb_cursor {
 #define FB_BACKLIGHT_MAX	0xFF
 #endif
 
+enum {
+	FB_AOD_PREPARE_OFF = -1,
+	FB_AOD_OFF = 0,
+	FB_AOD_IDLE,
+	FB_AOD_PARTIAL_ON,
+	FB_AOD_FULL_ON,
+	FB_AOD_MAX,
+};
 
 #endif /* _UAPI_LINUX_FB_H */

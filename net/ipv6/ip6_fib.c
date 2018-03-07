@@ -1661,6 +1661,9 @@ static int fib6_age(struct rt6_info *rt, void *arg)
 	if (rt->rt6i_flags & RTF_EXPIRES && rt->dst.expires) {
 		if (time_after(now, rt->dst.expires)) {
 			RT6_TRACE("expiring %p\n", rt);
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+			pr_info("[NET]%s: expiring %p\n", __func__, rt);
+#endif
 			return -1;
 		}
 		gc_args.more++;

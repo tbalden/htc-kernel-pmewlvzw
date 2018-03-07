@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -358,7 +358,8 @@ static int pp_hist_lut_get_config(char __iomem *base_addr, void *cfg_data,
 	int ret = 0, i = 0;
 	char __iomem *hist_addr;
 	u32 sz = 0, temp = 0, *data = NULL;
-	struct mdp_hist_lut_data_v1_7 *lut_data = NULL;
+	struct mdp_hist_lut_data_v1_7 lut_data_v1_7;
+	struct mdp_hist_lut_data_v1_7 *lut_data = &lut_data_v1_7;
 	struct mdp_hist_lut_data *lut_cfg_data = NULL;
 
 	if (!base_addr || !cfg_data) {
@@ -378,7 +379,11 @@ static int pp_hist_lut_get_config(char __iomem *base_addr, void *cfg_data,
 		       lut_cfg_data->version, lut_cfg_data->cfg_payload);
 		return -EINVAL;
 	}
-	lut_data = lut_cfg_data->cfg_payload;
+	if (copy_from_user(lut_data, (void __user *) lut_cfg_data->cfg_payload,
+			sizeof(*lut_data))) {
+		pr_err("copy from user failed for lut_data\n");
+		return -EFAULT;
+	}
 	if (lut_data->len != ENHIST_LUT_ENTRIES) {
 		pr_err("invalid hist_lut len %d", lut_data->len);
 		return -EINVAL;
@@ -833,6 +838,8 @@ static int pp_gamut_set_config(char __iomem *base_addr,
 	struct mdp_gamut_cfg_data *gamut_cfg_data = NULL;
 	struct mdp_gamut_data_v1_7 *gamut_data = NULL;
 	char __iomem *base_addr_scale = base_addr;
+	uint64_t gamut_val;
+
 	if (!base_addr || !cfg_data || !pp_sts) {
 		pr_err("invalid params base_addr %pK cfg_data %pK pp_sts_type %pK\n",
 		      base_addr, cfg_data, pp_sts);
@@ -900,12 +907,18 @@ static int pp_gamut_set_config(char __iomem *base_addr,
 		val = index_start;
 		val |= GAMUT_TABLE_SELECT(i);
 		writel_relaxed(val, (base_addr + GAMUT_TABLE_INDEX));
-		for (j = 0; j < gamut_data->tbl_size[i]; j++) {
-			writel_relaxed(gamut_data->c1_c2_data[i][j],
-				       base_addr + GAMUT_TABLE_LOWER_GB);
-			writel_relaxed(gamut_data->c0_data[i][j],
-				      base_addr + GAMUT_TABLE_UPPER_R);
+
+		writel_relaxed(gamut_data->c1_c2_data[i][0],
+				base_addr + GAMUT_TABLE_LOWER_GB);
+		for (j = 0; j < gamut_data->tbl_size[i] - 1; j++) {
+			gamut_val = gamut_data->c1_c2_data[i][j + 1];
+			gamut_val = (gamut_val << 32) |
+					gamut_data->c0_data[i][j];
+			writeq_relaxed(gamut_val,
+					base_addr + GAMUT_TABLE_UPPER_R);
 		}
+		writel_relaxed(gamut_data->c0_data[i][j],
+				base_addr + GAMUT_TABLE_UPPER_R);
 		if ((i >= MDP_GAMUT_SCALE_OFF_TABLE_NUM) ||
 				(!gamut_data->map_en))
 			continue;
@@ -1778,7 +1791,8 @@ static int pp_igc_get_config(char __iomem *base_addr, void *cfg_data,
 {
 	int ret = 0, i = 0;
 	struct mdp_igc_lut_data *lut_cfg_data = NULL;
-	struct mdp_igc_lut_data_v1_7 *lut_data = NULL;
+	struct mdp_igc_lut_data_v1_7 lut_data_v1_7;
+	struct mdp_igc_lut_data_v1_7 *lut_data = &lut_data_v1_7;
 	char __iomem *c1 = NULL, *c2 = NULL;
 	u32 *c0c1_data = NULL, *c2_data = NULL;
 	u32 data = 0, sz = 0;
@@ -1802,7 +1816,11 @@ static int pp_igc_get_config(char __iomem *base_addr, void *cfg_data,
 		ret = -EINVAL;
 		goto exit;
 	}
-	lut_data = lut_cfg_data->cfg_payload;
+	if (copy_from_user(lut_data, (void __user *) lut_cfg_data->cfg_payload,
+			sizeof(*lut_data))) {
+		pr_err("copy from user failed for lut_data\n");
+		return -EFAULT;
+	}
 	if (lut_data->len != IGC_LUT_ENTRIES) {
 		pr_err("invalid lut len %d\n", lut_data->len);
 		ret = -EINVAL;
@@ -1946,19 +1964,23 @@ static int pp_pgc_get_config(char __iomem *base_addr, void *cfg_data,
 	u32 *c0_data = NULL, *c1_data = NULL, *c2_data = NULL;
 	u32 val = 0, i = 0, sz = 0;
 	struct mdp_pgc_lut_data *pgc_data = NULL;
-	struct mdp_pgc_lut_data_v1_7  *pgc_data_v17 = NULL;
+	struct mdp_pgc_lut_data_v1_7  pgc_lut_data_v17;
+	struct mdp_pgc_lut_data_v1_7  *pgc_data_v17 = &pgc_lut_data_v17;
 	if (!base_addr || !cfg_data) {
 		pr_err("invalid params base_addr %pK cfg_data %pK block_type %d\n",
 		      base_addr, cfg_data, block_type);
 		return -EINVAL;
 	}
 	pgc_data = (struct mdp_pgc_lut_data *) cfg_data;
-	pgc_data_v17 = (struct mdp_pgc_lut_data_v1_7 *)
-			pgc_data->cfg_payload;
-	if (pgc_data->version != mdp_pgc_v1_7 || !pgc_data_v17) {
+	if (pgc_data->version != mdp_pgc_v1_7 || !pgc_data->cfg_payload) {
 		pr_err("invalid pgc version %d payload %pK\n",
-			pgc_data->version, pgc_data_v17);
+			pgc_data->version, pgc_data->cfg_payload);
 		return -EINVAL;
+	}
+	if (copy_from_user(pgc_data_v17, (void __user *) pgc_data->cfg_payload,
+			sizeof(*pgc_data_v17))) {
+		pr_err("copy from user failed for pgc lut data\n");
+		return -EFAULT;
 	}
 	if (!(pgc_data->flags & MDP_PP_OPS_READ)) {
 		pr_info("read ops is not set %d", pgc_data->flags);

@@ -27,12 +27,5 @@ enum {
 	USER_PERF_LVL_TOTAL,
 };
 
-struct user_perf_data {
-	int *bc_perf_table;
-	int *lc_perf_table;
-};
-
-extern void pnpmgr_init_perf_table(struct user_perf_data *pdata);
-
 #endif
 

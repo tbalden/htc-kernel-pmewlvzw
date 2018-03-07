@@ -64,10 +64,13 @@ obj-$(CONFIG_RSI_91X)	+= rsi/
 obj-$(CONFIG_WCNSS_CORE)	+= wcnss/
 
 obj-$(CONFIG_CNSS)	+= cnss/
+obj-$(CONFIG_CNSS2)	+= cnss2/
 obj-$(CONFIG_WCNSS_MEM_PRE_ALLOC) += cnss_prealloc/
-obj-$(CONFIG_CNSS_CRYPTO)   += cnss_crypto/
+obj-$(CONFIG_CNSS_CRYPTO)	+= cnss_crypto/
+obj-$(CONFIG_CNSS_UTILS) += cnss_utils/
 
 # HTC WLAN
-obj-$(CONFIG_BCM4359)	+= bcmdhd_4359/
+obj-$(CONFIG_BCM4359)   += bcmdhd_4359/
 obj-$(CONFIG_BCMDHD_GPIO) += bcmdhd_gpio/
 obj-y += htc_wifi_nvs.o
+

@@ -1,0 +1,87 @@
+/*
+ * Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&pm8994_gpios {
+    gpio@c500 { /* GPIO 6*/
+        qcom,mode = <0>;        /* QPNP_PIN_MODE_DIG_IN */
+        qcom,pull = <5>;        /* QPNP_PIN_NO_PULL */
+        qcom,vin-sel = <2>;     /* QPNP_PIN_VIN2 */
+        qcom,src-sel = <0>;     /* CONSTANT */
+        qcom,master-en = <1>;   /* ENABLE GPIO */
+        status = "okay";
+    };
+};
+
+&tca6418 {
+    laser_sensor {
+        laser_power:laser_power {
+            config {
+                  pins = "gpio5";
+                  drive-strength = <2>;
+                  bias-disable;
+            };
+        };
+
+        laser_pwrdn:laser_pwrdn {
+            config {
+                   pins = "gpio3";
+                   drive-strength = <2>;
+                   bias-disable;
+            };
+        };
+    };
+};
+
+&rpm_bus {
+    rpm-regulator-ldoa18 {
+        pm8994_l18: regulator-l18 {
+            /delete-property/ regulator-boot-on;
+            /delete-property/ regulator-always-on;
+
+            regulator-min-microvolt = <2850000>;
+            regulator-max-microvolt = <2850000>;
+            qcom,init-voltage = <2850000>;
+            /* proxy-supply: phandle of the regulator's own device node.
+             *               This property is required if any of the three
+             *               properties below are specified.
+             * qcom,proxy-consumer-enable:
+             *               Boolean indicating that the regulator must be
+             *               kept enabled during boot.
+             * qcom,proxy-consumer-current:
+             *               Minimum current in microamps required during
+             *               boot.
+             */
+            proxy-supply = <&pm8994_l18>;
+            qcom,proxy-consumer-enable;
+            qcom,proxy-consumer-current = <10000>;
+        };
+    };
+};
+
+&soc {
+    i2c@75b5000 {
+        htc_laser@29 {
+            compatible = "htc_laser";
+            reg = <0x29>;
+            pinctrl-names = "laser_gpio_init";
+            pinctrl-0 = <&laser_power &laser_pwrdn>;
+            laser,pwdn-gpio = <&tca6418 3 0>;
+            CAMIO_1v8-supply = <&pm8994_l14>;
+            POWER_2v8-supply = <&pm8994_l18>;
+            laser,intr-gpio = <&pm8994_gpios 6 0>;
+		};
+	};
+};
+
+
+

@@ -270,6 +270,17 @@
 
 &spmi_bus {
 	qcom,pmi8994@2{
+		pmi8994_mppa: mpps {
+			mpp@a100 {
+				reg = <0xa100 0x100>;
+				qcom,pin-num = <2>;
+				qcom,mode = <0>;        /* QPNP_PIN_MODE_DIG_IN */
+				qcom,vin-sel = <2>;     /* QPNP_PIN_VIN2 */
+				qcom,src-sel = <0>;     /* QPNP_PIN_SEL_FUNC_CONSTANT */
+				qcom,master-en = <1>;   /* Enable */
+				status = "okay";
+			};
+		};
 		mpp@a000 { /* MPP 1 */
 			compatible = "qcom,rgb-qpnp";
 			reg = <0xa000 0x100>;
@@ -350,6 +361,13 @@
 				pwm_ratio = /bits/ 8 <255>;
 				linux,name = "indicator";
 			};
+		};
+		flash_led: qcom,leds@d300 {
+			compatible = "qcom,qpnp-flash-led";
+			status = "okay";
+			reg = <0xd300 0x100>;
+			label = "flash";
+			qcom,gpio-flash-strobe = <&tlmm 22 0x00>;
 		};
 		qcom,leds@d800 {
 			qcom,fs-curr-ua = <10000>;      /* HTC: 4ch, 10mA */

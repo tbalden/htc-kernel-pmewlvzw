@@ -1852,7 +1852,15 @@ enum Tfa98xx_Error tfaContClose(int dev_idx)
  * return the device count in the container file
  */
 int tfa98xx_cnt_max_device(void) {
+/* HTC_AUD_START: Klocwork */
+#if 0
 	return g_cont !=NULL ? g_cont->ndev : 0;
+#else
+	if (g_cont != NULL)
+		return (g_cont->ndev < TFACONT_MAXDEVS) ? g_cont->ndev : TFACONT_MAXDEVS;
+	return 0;
+#endif
+/* HTC_AUD_END */
 }
 
 /*

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -58,6 +58,11 @@
  * TZ 3.X version info
  */
 #define QSEE_VERSION_TZ_3_X 0x800000
+
+#define TZBSP_AES_256_ENCRYPTED_KEY_SIZE 256
+#define TZBSP_NONCE_LEN 12
+#define TZBSP_TAG_LEN 16
+
 /*
  * VMID Table
  */
@@ -126,6 +131,14 @@ struct tzdbg_int_t {
 	uint64_t int_count[TZBSP_MAX_CPU_COUNT]; /* # of times seen per CPU */
 };
 
+/* warm boot reason for cores */
+struct tzbsp_diag_wakeup_info_t {
+	/* Wake source info : APCS_GICC_HPPIR */
+	uint32_t HPPIR;
+	/* Wake source info : APCS_GICC_AHPPIR */
+	uint32_t AHPPIR;
+};
+
 /*
  * Log ring buffer position
  */
@@ -180,6 +193,10 @@ struct tzdbg_t {
 	 * Ring Buffer Length
 	 */
 	uint32_t ring_len;
+
+	/* Offset for Wakeup info */
+	uint32_t wakeup_info_off;
+
 	/*
 	 * VMID to EE Mapping
 	 */
@@ -194,6 +211,16 @@ struct tzdbg_t {
 	struct tzdbg_reset_info_t reset_info[TZBSP_MAX_CPU_COUNT];
 	uint32_t num_interrupts;
 	struct tzdbg_int_t  int_info[TZBSP_DIAG_INT_NUM];
+
+	/* Wake up info */
+	struct tzbsp_diag_wakeup_info_t  wakeup_info[TZBSP_MAX_CPU_COUNT];
+
+	uint8_t key[TZBSP_AES_256_ENCRYPTED_KEY_SIZE];
+
+	uint8_t nonce[TZBSP_NONCE_LEN];
+
+	uint8_t tag[TZBSP_TAG_LEN];
+
 	/*
 	 * We need at least 2K for the ring buffer
 	 */
@@ -943,10 +970,16 @@ static ssize_t tzdbgfs_read(struct file *file, char __user *buf,
 	int len = 0;
 	int *tz_id =  file->private_data;
 
-	memcpy_fromio((void *)tzdbg.diag_buf, tzdbg.virt_iobase,
+	if (*tz_id == TZDBG_BOOT || *tz_id == TZDBG_RESET ||
+		*tz_id == TZDBG_INTERRUPT || *tz_id == TZDBG_GENERAL ||
+		*tz_id == TZDBG_VMID || *tz_id == TZDBG_LOG)
+		memcpy_fromio((void *)tzdbg.diag_buf, tzdbg.virt_iobase,
 						debug_rw_buf_size);
-	memcpy_fromio((void *)tzdbg.hyp_diag_buf, tzdbg.hyp_virt_iobase,
+
+	if (*tz_id == TZDBG_HYP_GENERAL || *tz_id == TZDBG_HYP_LOG)
+		memcpy_fromio((void *)tzdbg.hyp_diag_buf, tzdbg.hyp_virt_iobase,
 					tzdbg.hyp_debug_rw_buf_size);
+
 	switch (*tz_id) {
 	case TZDBG_BOOT:
 		len = _disp_tz_boot_stats();
@@ -1114,6 +1147,12 @@ static int  tzdbgfs_init(struct platform_device *pdev)
 
 	for (i = 0; i < TZDBG_STATS_MAX; i++) {
 		tzdbg.debug_tz[i] = i;
+		/* Do not create hyp entries in debugfs when hyplog flag is not
+		   enabled in dtsi. */
+		if (!tzdbg.is_hyplog_enabled &&
+		    ((TZDBG_HYP_LOG == tzdbg.debug_tz[i]) ||
+		     (TZDBG_HYP_GENERAL == tzdbg.debug_tz[i])))
+			continue;
 		dent = debugfs_create_file(tzdbg.stat[i].name,
 				S_IRUGO, dent_dir,
 				&tzdbg.debug_tz[i], &tzdbg_fops);
@@ -1323,6 +1362,7 @@ static struct platform_driver tz_log_driver = {
 		.name = "tz_log",
 		.owner = THIS_MODULE,
 		.of_match_table = tzlog_match,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
 

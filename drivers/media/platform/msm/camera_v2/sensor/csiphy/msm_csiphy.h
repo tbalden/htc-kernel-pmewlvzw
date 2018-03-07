@@ -32,6 +32,7 @@ struct csiphy_reg_t {
 };
 
 struct csiphy_reg_parms_t {
+/*MIPI CSI PHY registers*/
 	uint32_t mipi_csiphy_lnn_cfg1_addr;
 	uint32_t mipi_csiphy_lnn_cfg2_addr;
 	uint32_t mipi_csiphy_lnn_cfg3_addr;
@@ -61,6 +62,7 @@ struct csiphy_reg_parms_t {
 };
 
 struct csiphy_reg_3ph_parms_t {
+/*MIPI CSI PHY registers*/
 	struct csiphy_reg_t mipi_csiphy_3ph_cmn_ctrl5;
 	struct csiphy_reg_t mipi_csiphy_3ph_cmn_ctrl6;
 	struct csiphy_reg_t mipi_csiphy_3ph_lnn_ctrl34;
@@ -167,6 +169,7 @@ struct csiphy_device {
 	uint8_t num_irq_registers;
 	uint32_t csiphy_sof_debug;
 	uint32_t csiphy_sof_debug_count;
+	uint32_t is_combo_mode;
 	struct camera_vreg_t *csiphy_vreg;
 	struct regulator *csiphy_reg_ptr[MAX_REGULATOR];
 	int32_t regulator_count;

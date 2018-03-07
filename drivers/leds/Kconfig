@@ -446,6 +446,14 @@ config LEDS_TCA6507
 	  LED driver chips accessed via the I2C bus.
 	  Driver support brightness control and hardware-assisted blinking.
 
+config LEDS_TLC591XX
+	tristate "LED driver for TLC59108 and TLC59116 controllers"
+	depends on LEDS_CLASS && I2C
+	select REGMAP_I2C
+	help
+	  This option enables support for Texas Instruments TLC59108
+	  and TLC59116 LED controllers.
+
 config LEDS_MAX8997
 	tristate "LED support for MAX8997 PMIC"
 	depends on LEDS_CLASS && MFD_MAX8997
@@ -513,6 +521,12 @@ config LEDS_VIRTUAL_KEY_CHECK_SOURCE
 	help
 		Check virtual key LED power source for dynamic probe if needed.
 
+config LEDS_GET_ENG_ID
+	tristate "Get engineer id if needed"
+	depends on LEDS_QPNP_RGB
+	help
+		Get engineer id
+
 config LEDS_SYNC_TOUCH_SOLUTION
 	bool "Sync touch solution to led driver"
 	default n
@@ -528,6 +542,12 @@ config LEDS_QPNP_FLASH
 
 	  To compile this driver as a module, choose M here: the module will
 	  be called leds-qpnp-flash.
+
+config GPIO_STROBE_NOT_SUPPORT
+	tristate "GPIO strobe support"
+	depends on LEDS_QPNP_FLASH
+	help
+		Check GPIO strobe support dynamic for set_backlight.
 
 config LEDS_QPNP_WLED
 	tristate "Support for QPNP WLED"

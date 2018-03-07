@@ -574,7 +574,7 @@ static void ncm_do_notify(struct f_ncm *ncm)
 	int				status;
 
 	/* notification already in flight? */
-	if (!req)
+	if (!req || !req->buf)
 		return;
 
 	event = req->buf;

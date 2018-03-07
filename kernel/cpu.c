@@ -631,7 +631,7 @@ void __ref enable_nonboot_cpus(void)
 			cpu_device = get_cpu_device(cpu);
 			if (!cpu_device)
 				pr_err("%s: failed to get cpu%d device\n",
-					__func__, cpu);
+				       __func__, cpu);
 			else
 				kobject_uevent(&cpu_device->kobj, KOBJ_ONLINE);
 			continue;

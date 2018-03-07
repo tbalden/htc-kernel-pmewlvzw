@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -375,6 +375,14 @@ static int msm_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 		q6asm_cmd(prtd->audio_client, CMD_PAUSE);
 		q6asm_cmd(prtd->audio_client, CMD_FLUSH);
 		buf = q6asm_shared_io_buf(prtd->audio_client, dir);
+		if (buf == NULL) {
+			pr_err("%s: shared IO buffer is null\n", __func__);
+			ret = -EINVAL;
+			break;
+		}
+/* HTC_AUD_START: Klocwork */
+		if (buf && buf->data)
+/* HTC_AUD_END */
 		memset(buf->data, 0, buf->actual_size);
 		break;
 	case SNDRV_PCM_TRIGGER_SUSPEND:
@@ -539,6 +547,8 @@ static int msm_pcm_close(struct snd_pcm_substream *substream)
 					 SNDRV_PCM_STREAM_PLAYBACK :
 					 SNDRV_PCM_STREAM_CAPTURE);
 	kfree(prtd);
+	runtime->private_data = NULL;
+
 	return 0;
 }
 

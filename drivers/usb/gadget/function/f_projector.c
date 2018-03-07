@@ -1173,7 +1173,7 @@ static int projector_touch_init(struct projector_dev *dev)
 		return -1;
 	}
 	tdev = dev->touch_input;
-	tdev->name = "projector_input";
+	tdev->name = "autobot_input";
 	set_bit(EV_SYN,    tdev->evbit);
 	set_bit(EV_KEY,    tdev->evbit);
 	set_bit(EV_ABS,    tdev->evbit);
@@ -1248,7 +1248,7 @@ static int projector_keypad_init(struct projector_dev *dev)
 
 	set_bit(KEY_WAKEUP, kdev->keybit);
 
-	kdev->name = "projector-Keypad";
+	kdev->name = "autobot-Keypad";
 	kdev->phys = "input2";
 	kdev->id.bustype = BUS_HOST;
 	kdev->id.vendor = 0x0123;

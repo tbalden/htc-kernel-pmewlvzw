@@ -784,7 +784,13 @@ static void hidinput_configure_usage(struct hid_input *hidinput, struct hid_fiel
 		case 0x0b9: map_key_clear(KEY_SHUFFLE);		break;
 		case 0x0bf: map_key_clear(KEY_SLOW);		break;
 
+/* HTC_AUD_START */
+#if 0
 		case 0x0cd: map_key_clear(KEY_PLAYPAUSE);	break;
+#else
+		case 0x0cd: map_key_clear(KEY_MEDIA);		break;
+#endif
+/* HTC_AUD_END */
 		case 0x0cf: map_key_clear(KEY_VOICECOMMAND);	break;
 		case 0x0e0: map_abs_clear(ABS_VOLUME);		break;
 		case 0x0e2: map_key_clear(KEY_MUTE);		break;
@@ -1123,7 +1129,7 @@ void hidinput_hid_event(struct hid_device *hid, struct hid_field *field, struct 
 
 	printk(KERN_INFO "[HID] %s: usage->hid:%x, type:%d, code:%d, value:%d\n", __func__, usage->hid, usage->type, usage->code, value);
 	/* report the usage code as scancode if the key status has changed */
-	if (usage->type == EV_KEY && !!test_bit(usage->code, input->key) != value)
+	if (usage->type == EV_KEY && (!!test_bit(usage->code, input->key)) != value)
 		input_event(input, EV_MSC, MSC_SCAN, usage->hid);
 
 	input_event(input, usage->type, usage->code, value);

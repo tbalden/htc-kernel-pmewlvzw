@@ -36,10 +36,19 @@
 #include "../codecs/wcd9xxx-common.h"
 #include "../codecs/wcd9330.h"
 #include "../codecs/wcd9335.h"
+/* HTC_AUD_START */
+#ifdef USE_WSA_AMP
 #include "../codecs/wsa881x.h"
+#endif
+/* HTC_AUD_END */
 
+/* HTC_AUD_START */
 #include <sound/htc_acoustic_alsa.h>
 #include <linux/qdsp6v2/apr.h>
+#ifdef CONFIG_USE_AS_HS
+#include <linux/qpnp/qpnp-adc.h>
+#include <linux/qdsp6v2/apr.h>
+#endif
 
 #define	ADAP_CONF_FILE_SIZE 4096
 #define	ADAP_ONE_CHANNEL_SIZE (ADAP_CONF_FILE_SIZE/2)
@@ -47,11 +56,8 @@
 #define	ADAP_ONE_CHANNEL_CONF_NUM          (ADAP_ONE_CHANNEL_SIZE/sizeof(short))
 #define	ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD (ADAP_ONE_CHANNEL_SIZE/sizeof(int32_t))
 
-int32_t g_AdapConfLchannel[ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD] = {0};
-int32_t g_AdapConfRchannel[ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD] = {0};
-
-char g_AdapConfFilePath[128]={0}, g_AdapGainFilePath[128]={0};;
-int g_gain = 0;
+#define AS_MAX_SIZE 512
+/* HTC_AUD_END */
 
 #define DRV_NAME "msm8996-asoc-snd"
 
@@ -72,25 +78,36 @@ int g_gain = 0;
 #define ADSP_STATE_READY_TIMEOUT_MS    3000
 #define DEV_NAME_STR_LEN            32
 
+/* HTC_AUD_START */
+#ifdef USE_WSA_AMP
 #define WSA8810_NAME_1 "wsa881x.20170211"
 #define WSA8810_NAME_2 "wsa881x.20170212"
+#endif
+/* HTC_AUD_END */
+
+/* HTC_AUD_START */
 #undef pr_debug
 #undef pr_info
 #undef pr_err
 #define pr_debug(fmt, ...) pr_aud_debug(fmt, ##__VA_ARGS__)
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+/* HTC_AUD_END */
 
+/* HTC_AUD_START */
+#ifdef USE_WSA_AMP
 enum {
 	AUX_DEV_NONE = 0,
 	WSA8810,
 	WSA8815,
 };
+#endif
+/* HTC_AUD_END */
 
 static int slim0_rx_sample_rate = SAMPLING_RATE_48KHZ;
 static int slim0_tx_sample_rate = SAMPLING_RATE_48KHZ;
 static int slim1_tx_sample_rate = SAMPLING_RATE_48KHZ;
-static int slim0_rx_bit_format = SNDRV_PCM_FORMAT_S24_LE; 
+static int slim0_rx_bit_format = SNDRV_PCM_FORMAT_S24_LE; /* HTC_AUD */
 static int slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int slim1_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int hdmi_rx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
@@ -117,7 +134,12 @@ static int hdmi_rx_sample_rate = SAMPLING_RATE_48KHZ;
 
 static bool codec_reg_done;
 
-static const char *const htc_ftm_mode[] = {"Default", "FTM"}; 
+/* HTC_AUD_START */
+static const char *const htc_ftm_mode[] = {"Default", "FTM"};
+static const char *const htc_as20_vol_index[] = {"None", "Zero", "One", "Two", "Three", "Four",
+						"Five", "Six", "Seven", "Eight", "Nine",
+						"Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen"};
+/* HTC_AUD_END */
 static const char *const hifi_function[] = {"Off", "On"};
 static const char *const pin_states[] = {"Disable", "active"};
 static const char *const spk_function[] = {"Off", "On"};
@@ -166,19 +188,21 @@ static int tert_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
 static int quat_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
 
 static int pri_mi2s_bit_format = SNDRV_PCM_FORMAT_S16_LE;
-static int sec_mi2s_bit_format = SNDRV_PCM_FORMAT_S24_LE; 
+static int sec_mi2s_bit_format = SNDRV_PCM_FORMAT_S24_LE; /* HTC_AUD */
 static int tert_mi2s_bit_format = SNDRV_PCM_FORMAT_S16_LE;
-static int quat_mi2s_bit_format = SNDRV_PCM_FORMAT_S24_LE;
+static int quat_mi2s_bit_format = SNDRV_PCM_FORMAT_S24_LE;/* HTC_AUD */
 
 static int msm_pri_mi2s_tx_ch = 2;
 static int msm_pri_mi2s_rx_ch = 2;
 static int msm_sec_mi2s_tx_ch = 2;
-static int msm_sec_mi2s_rx_ch = 2; 
+static int msm_sec_mi2s_rx_ch = 2; /* HTC_AUD */
 static int msm_tert_mi2s_tx_ch = 2;
 static int msm_tert_mi2s_rx_ch = 2;
 static int msm_quat_mi2s_tx_ch = 2;
 static int msm_quat_mi2s_rx_ch = 2;
 
+/* HTC_AUD_START */
+/*FTM BT test start*/
 struct htc_request_gpio {
 	unsigned gpio_no;
 	const char* gpio_name;
@@ -192,33 +216,16 @@ static struct aud_btpcm_config {
 	.init = 0,
 	.ftm = 0,
 	.gpio = {
-		{ .gpio_name = "ftm-btpcm-dout",},	
-		{ .gpio_name = "ftm-btpcm-din",},	
-		{ .gpio_name = "ftm-btpcm-clock",},	
-		{ .gpio_name = "ftm-btpcm-sync",},	
+		{ .gpio_name = "ftm-btpcm-dout",},	/* BT to MSM */
+		{ .gpio_name = "ftm-btpcm-din",},	/* MSM to BT */
+		{ .gpio_name = "ftm-btpcm-clock",},	/* bit clock */
+		{ .gpio_name = "ftm-btpcm-sync",},	/* frame sync */
 	},
 };
+/*FTM BT test end*/
+/* HTC_AUD_END */
 
-int msm8994_enable_24b_audio(void)
-{
-	return 1;
-}
-
-static int hw_compon = 0;
-static int htc_msm8996_get_hw_component(void)
-{
-	return hw_compon;
-}
-
-static struct acoustic_ops acoustic = {
-	.get_hw_component = htc_msm8996_get_hw_component,
-	.enable_24b_audio = msm8994_enable_24b_audio,
-};
-
-static struct mutex htc_adaptivesound_enable_mutex;
-int htc_adaptivesound_enable = 0;
-int htc_onedotone_enable = 0;
-
+/* Maintain struct aligned with the one from msm-dai-q6-v2.h */
 struct msm_mi2s_pdata {
 	u16 rx_sd_lines;
 	u16 tx_sd_lines;
@@ -259,7 +266,7 @@ static struct msm_mi2s_data msm_sec_mi2s_data = {
 	},
 	.mi2s_mclk = {
 		AFE_API_VERSION_I2S_CONFIG,
-		Q6AFE_LPASS_CLK_ID_MCLK_2, 
+		Q6AFE_LPASS_CLK_ID_MCLK_2, /* TBD */
 		0,
 		Q6AFE_LPASS_CLK_ATTRIBUTE_COUPLE_NO,
 		Q6AFE_LPASS_CLK_ROOT_DEFAULT,
@@ -318,6 +325,15 @@ static const char *const quat_mi2s_rx_ch_text[] = {"One", "Two", "Three", "Four"
 						   "Five", "Six", "Seven",
 						   "Eight"};
 
+/* HTC_AUD_START - AS HS {HPKB:7329} */
+static const char *const htc_as20_vol_index_text[] = {"None", "Zero", "One", "Two", "Three", "Four",
+						"Five", "Six", "Seven", "Eight", "Nine",
+						"Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen"};
+static int htc_as_offset = 0;
+static int htc_as10_offset = 0;
+/* HTC_AUD_END - AS HS {HPKB:7329} */
+
+/* HTC_AUD_START */
 #ifdef USE_WSA_AMP
 struct msm8996_wsa881x_dev_info {
 	struct device_node *of_node;
@@ -327,6 +343,7 @@ struct msm8996_wsa881x_dev_info {
 static struct snd_soc_aux_dev *msm8996_aux_dev;
 static struct snd_soc_codec_conf *msm8996_codec_conf;
 #endif
+/* HTC_AUD_END */
 
 struct msm8996_asoc_mach_data {
 	u32 mclk_freq;
@@ -334,18 +351,22 @@ struct msm8996_asoc_mach_data {
 	int hph_en1_gpio;
 	int hph_en0_gpio;
 	struct snd_info_entry *codec_root;
+/* HTC_AUD_START */
 #ifdef CONFIG_RT_REGMAP
 	int audio_1v8_hph_en_gpio;
 	int rt5503_reset_gpio;
 #endif
+/* HTC_AUD_END */
 };
 
 struct msm8996_asoc_wcd93xx_codec {
 	void* (*get_afe_config_fn)(struct snd_soc_codec *codec,
 				   enum afe_config_type config_type);
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 	void (*mbhc_hs_detect_exit)(struct snd_soc_codec *codec);
 #endif
+/* HTC_AUD_END */
 };
 
 static struct msm8996_asoc_wcd93xx_codec msm8996_codec_fn;
@@ -360,16 +381,25 @@ struct msm8996_liquid_dock_dev {
 static struct msm8996_liquid_dock_dev *msm8996_liquid_dock_dev;
 
 static void *adsp_state_notifier;
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 static void *def_tasha_mbhc_cal(void);
 #endif
+/* HTC_AUD_END */
 static int msm_snd_enable_codec_ext_clk(struct snd_soc_codec *codec,
 					int enable, bool dapm);
+/* HTC_AUD_START */
 #ifdef USE_WSA_AMP
 static int msm8996_wsa881x_init(struct snd_soc_component *component);
 #endif
+/* HTC_AUD_END */
 
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
+/*
+ * Need to report LINEIN
+ * if R/L channel impedance is larger than 5K ohm
+ */
 static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.read_fw_bin = false,
 	.calibration = NULL,
@@ -377,6 +407,7 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.mono_stero_detection = false,
 	.swap_gnd_mic = NULL,
 	.hs_ext_micbias = true,
+/* HTC_AUD_START - apply htc setting */
 #if 0
 	.key_code[0] = KEY_MEDIA,
 	.key_code[1] = KEY_VOICECOMMAND,
@@ -388,6 +419,7 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.key_code[2] = KEY_VOLUMEDOWN,
 	.key_code[3] = 0,
 #endif
+/* HTC_AUD_END */
 	.key_code[4] = 0,
 	.key_code[5] = 0,
 	.key_code[6] = 0,
@@ -395,14 +427,65 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.linein_th = 5000,
 	.moist_cfg = { V_45_MV, I_3P0_UA },
 	.mbhc_micbias = MIC_BIAS_2,
+/* HTC_AUD_START */
+#ifdef CONFIG_USE_AS_HS
+	.htc_headset_cfg.htc_headset_init = false,
+#endif
+/* HTC_AUD_END */
 };
 #endif
 
-#define CARD_TIMEOUT 30000 
+#define CARD_TIMEOUT 30000 //30 sec
 static struct delayed_work card_det_work;
 static void htc_card_det(struct work_struct *work);
 static DECLARE_DELAYED_WORK(card_det_work, htc_card_det);
 static int card_reg = -1;
+
+#ifdef CONFIG_USE_AS_HS
+static int hs_qpnp_remote_adc(int *adc,unsigned int channel)
+{
+	struct qpnp_vadc_result result;
+	enum qpnp_vadc_channels chan;
+	static struct qpnp_vadc_chip *vadc_chip;
+	int err = 0;
+
+	vadc_chip = qpnp_get_vadc(&spdev->dev, "headset");
+
+	result.physical = -EINVAL;
+	chan = channel;
+	pr_debug("%s: pdata_chann %d\n", __func__, chan);
+	err = qpnp_vadc_read(vadc_chip, chan, &result);
+	if (err < 0) {
+		pr_err("%s: Read ADC fail, ret = %d\n", __func__, err);
+		return err;
+	}
+
+	*adc = (int) result.physical;
+	*adc = *adc / 1000; /* uA to mA */
+	pr_info("%s: Remote ADC %d (%#X)\n", __func__, *adc, *adc);
+	return 1;
+}
+
+static int msm_headset_lr_event(struct snd_soc_dapm_widget *w,
+				 struct snd_kcontrol *k, int event)
+{
+	int ret = 0;
+	pr_info("%s\n", __func__);
+	if (SND_SOC_DAPM_EVENT_ON(event)) {
+		if (gpio_get_value(wcd_mbhc_cfg.htc_headset_cfg.ext_micbias) != 1) {
+			gpio_set_value(wcd_mbhc_cfg.htc_headset_cfg.ext_micbias, 1);
+			pr_info("%s: ext_micbias on\n",__func__);
+		}
+	} else {
+		if (gpio_get_value(wcd_mbhc_cfg.htc_headset_cfg.ext_micbias) != 0) {
+			gpio_set_value(wcd_mbhc_cfg.htc_headset_cfg.ext_micbias, 0);
+			pr_info("%s: ext_micbias off\n",__func__);
+		}
+	}
+	return ret;
+}
+#endif
+/* HTC_AUD_END */
 
 static inline int param_is_mask(int p)
 {
@@ -438,7 +521,7 @@ static void msm8996_liquid_docking_irq_work(struct work_struct *work)
 		gpio_get_value(dock_dev->dock_plug_gpio);
 
 	switch_set_state(&dock_dev->audio_sdev, dock_dev->dock_plug_det);
-	
+	/* notify to audio deamon */
 	sysfs_notify(&dock_dev->audio_sdev.dev->kobj, NULL, "state");
 }
 
@@ -446,7 +529,7 @@ static irqreturn_t msm8996_liquid_docking_irq_handler(int irq, void *dev)
 {
 	struct msm8996_liquid_dock_dev *dock_dev = dev;
 
-	
+	/* switch speakers should not run in interrupt context */
 	schedule_work(&dock_dev->irq_work);
 	return IRQ_HANDLED;
 }
@@ -456,7 +539,7 @@ static int msm8996_liquid_init_docking(void)
 	int ret = 0;
 	int dock_plug_gpio = 0;
 
-	
+	/* plug in docking speaker+plug in device OR unplug one of them */
 	u32 dock_plug_irq_flags = IRQF_TRIGGER_RISING |
 				  IRQF_TRIGGER_FALLING |
 				  IRQF_SHARED;
@@ -529,6 +612,397 @@ exit:
 	return ret;
 }
 
+/* HTC_AUD_START - AS HS {HPKB:7329} */
+static struct mutex htc_adaptivesound_enable_mutex;
+int htc_as20_volume_index = 0;
+/* HTC_AUD_END - AS HS {HPKB:7329} */
+
+/* HTC_AUD_START - HTC Effect {HPKB:2082}*/
+struct htc_effect_payload {
+	uint32_t payload_size;
+	void *payload;
+};
+
+static struct htc_effect_payload * htc_payload = NULL;
+
+static struct snd_kcontrol_new *htc_audio_controls;
+
+int htc_get_port_by_mask(int* port_mask) {
+
+	int port_id = 0;
+
+	if ((*port_mask) & SPK_MASK) {
+		port_id = AFE_PORT_ID_QUATERNARY_MI2S_RX;
+		(*port_mask) &= (~SPK_MASK);
+
+	} else if ((*port_mask) & HEADSET_MASK) {
+		port_id = AFE_PORT_ID_SLIMBUS_MULTI_CHAN_0_RX;
+		(*port_mask) &= (~HEADSET_MASK);
+
+	} else if ((*port_mask) & HEADSET441MASK) {
+		port_id = AFE_PORT_ID_SLIMBUS_MULTI_CHAN_5_RX;
+		(*port_mask) &= (~HEADSET441MASK);
+
+	} else if ((*port_mask) & MAIN_MIC_MASK) {
+		port_id = SLIMBUS_0_TX;
+		(*port_mask) &= (~MAIN_MIC_MASK);
+
+	}
+
+	return port_id;
+}
+
+static int htc_switch_get(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	int index = kcontrol->private_value;
+	unsigned int value = 0;
+	int *payload = NULL;
+
+	payload = (int *)htc_payload[index].payload;
+	if (payload)
+		value = *(payload+3);
+
+	ucontrol->value.integer.value[0] = value;
+	return 0;
+}
+
+static int htc_switch_put(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	int index = kcontrol->private_value;
+	unsigned int enable_flag = 0;
+	int *payload = NULL;
+	bool hd_support = false;
+	int port_id = 0;
+	bool ret = false;
+	int mask = htc_effects_array[index].port_mask;
+
+	enable_flag = ucontrol->value.integer.value[0];
+
+	if (enable_flag < 0 || enable_flag > 255)
+		return -EINVAL;
+
+	payload = (int *)htc_payload[index].payload;
+	if (payload)
+		*(payload+3) = enable_flag;
+
+	if (htc_effects_array[index].flag_mask & HD_SUPPORT)
+		hd_support = true;
+
+	if (htc_effects_array[index].flag_mask & POPP_EFFECT) {
+	/* POPP effect */
+		ret = htc_set_asm_effect(payload,
+			htc_payload[index].payload_size,
+			htc_effects_array[index].topology_id,
+			hd_support);
+	} else if (htc_effects_array[index].flag_mask & COPP_EFFECT) {
+	/* COPP effect */
+		while ((port_id = htc_get_port_by_mask(&mask))) {
+			/*ret fail only when all support port sending fail */
+			ret |= htc_set_adm_effect(htc_payload[index].payload,
+					htc_payload[index].payload_size,
+					htc_effects_array[index].topology_id,
+					hd_support,
+					port_id);
+		}
+	}
+
+	pr_info("%s: htc_effect: index %d enable %d return %s\n", __func__, index, enable_flag, ret ? "success" : "error!");
+
+	return 0;
+}
+
+static int htc_switch_info(struct snd_kcontrol *kcontrol,
+		       struct snd_ctl_elem_info *uinfo)
+{
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = 255;
+	return 0;
+}
+
+static int msm_as10_info(struct snd_kcontrol *kcontrol,
+				      struct snd_ctl_elem_info *uinfo)
+{
+	int ret = 0;
+	int index = kcontrol->private_value;
+
+	pr_debug("%s:\n", __func__);
+	if (index == (htc_as10_offset) || index == (htc_as10_offset+1) ) {
+		uinfo->type = SNDRV_CTL_ELEM_TYPE_BYTES;
+		uinfo->count = AS_MAX_SIZE;
+	} else {
+		uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+		uinfo->count = 1;
+		uinfo->value.integer.min = 0;
+		uinfo->value.integer.max = 255;
+	}
+
+	return ret;
+}
+
+static int msm_as10_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int index = kcontrol->private_value;
+	int value = 0;
+	int *payload_int = NULL;
+
+	/*only enable control could get value */
+	if (index == (htc_as10_offset + 3)) {
+		payload_int = (int *)htc_payload[htc_as10_offset].payload;
+		if (payload_int) {
+			value = *(payload_int + 3);
+		}
+	}
+
+	ucontrol->value.integer.value[0] = value;
+	return 0;
+}
+
+static int msm_as10_put(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	int index = kcontrol->private_value;
+
+	char *payload = NULL;
+	int *payload_int = NULL;
+	int array_idx = 0;
+	int addr = -1;
+	int array_size = (512 - 1);
+	int port_id = -1;
+	int mask = 0;
+	bool ret = false;
+
+	array_idx = (int)ucontrol->value.bytes.data[0];
+	addr = array_idx * array_size;
+
+	if (addr + array_size > ADAP_ONE_CHANNEL_SIZE)
+		array_size = ADAP_ONE_CHANNEL_SIZE - addr;
+
+	payload = (char *)htc_payload[index].payload;
+	/* update Left parameter */
+	if (payload && (index == htc_as10_offset))
+		memcpy((char*)(payload + 8*sizeof(uint32_t) + addr ), ucontrol->value.bytes.data + 1,
+			array_size);
+
+	/* update Right parameter */
+	if (payload && (index == (htc_as10_offset + 1)))
+		memcpy((char*)(payload + 4*sizeof(uint32_t) + addr ), ucontrol->value.bytes.data + 1,
+			array_size);
+
+	/* update gain parameter */
+	if (index == (htc_as10_offset + 2)) {
+		payload_int = (int *)htc_payload[htc_as10_offset].payload;
+		if (payload_int) {
+			*(payload_int + 15 + ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD) =
+				((int)ucontrol->value.bytes.data[0]&0xFFFF)<<16 | 0;
+		}
+	}
+
+	/* update enable parameter */
+	if (index == (htc_as10_offset + 3)) {
+		payload_int = (int *)htc_payload[htc_as10_offset].payload;
+
+		mutex_lock(&htc_adaptivesound_enable_mutex);
+		if (payload_int) {
+			*(payload_int + 3) = (int)ucontrol->value.bytes.data[0];
+			*(payload_int + 11 + ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD) = (int)ucontrol->value.bytes.data[0];
+			mask = htc_effects_array[htc_as10_offset].port_mask;
+			while ((port_id = htc_get_port_by_mask(&mask))) {
+				/* sending left ch, gain parameter */
+				if ((htc_set_adm_effect(htc_payload[htc_as10_offset].payload,
+						htc_payload[htc_as10_offset].payload_size,
+						htc_effects_array[htc_as10_offset].topology_id,
+						0, port_id)) &&
+					/* sending right ch parameter */
+					(htc_set_adm_effect(htc_payload[htc_as10_offset+1].payload,
+							htc_payload[htc_as10_offset+1].payload_size,
+							htc_effects_array[htc_as10_offset+1].topology_id,
+							0, port_id)))
+						ret = true;
+			}
+			if (!ret)
+				pr_info("%s: htc_effect set AS error on index:%d \n", __func__, index);
+		}
+		mutex_unlock(&htc_adaptivesound_enable_mutex);
+	}
+
+	return 0;
+}
+
+static int htc_create_controls(struct snd_soc_codec *codec)
+{
+	int total = ARRAY_SIZE(htc_effects_array);
+	int index = 0;
+	int as30_idx = 0;
+	int as10_left = 1;
+	int *payload_value = NULL;
+	int i = 0;
+
+	htc_audio_controls = kzalloc(sizeof(*htc_audio_controls)*total, GFP_KERNEL);
+	if (!htc_audio_controls) {
+		pr_err("%s, alloc htc control failed", __func__);
+		return -ENOMEM;
+	}
+
+	htc_payload  = kzalloc(sizeof(*htc_payload)*total, GFP_KERNEL);
+	if (!htc_payload) {
+		pr_err("%s, alloc payload array failed", __func__);
+		return -ENOMEM;
+	}
+
+	for (index = 0 ; index < total; index++) {
+		htc_audio_controls[index].name = htc_effects_array[index].effect_name;
+		htc_audio_controls[index].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
+		htc_audio_controls[index].private_value = index;
+
+		if ((htc_effects_array[index].flag_mask & SWITCH_CTL)
+			|| (htc_effects_array[index].flag_mask & PARAM_CTL)) {
+			/* initial related effect paylod */
+			htc_payload[index].payload_size = 4*sizeof(uint32_t);
+			htc_payload[index].payload = kzalloc(htc_payload[index].payload_size, GFP_KERNEL);
+			if (!htc_payload[index].payload) {
+				pr_err("%s, alloc payload %d failed", __func__, index);
+				return -ENOMEM;
+			}
+
+			payload_value = (int *)htc_payload[index].payload;
+			*payload_value++ = htc_effects_array[index].module_id;
+			*payload_value++ = htc_effects_array[index].param_id;
+			*payload_value++ = sizeof(uint32_t);
+			*payload_value = 0;
+
+			/* initial related effect control */
+			htc_audio_controls[index].info = htc_switch_info;
+			htc_audio_controls[index].get = htc_switch_get;
+			htc_audio_controls[index].put = htc_switch_put;
+
+		} else if (htc_effects_array[index].flag_mask & AaptiveSound) { /* HTC_AUD - AS HS {HPKB:7329}*/
+			/* initial related AS3.0 effect payload */
+			htc_payload[index].payload_size = (3+256)*sizeof(uint32_t);
+			htc_payload[index].payload = kzalloc(htc_payload[index].payload_size, GFP_KERNEL);
+			if (!htc_payload[index].payload) {
+				pr_err("%s, alloc payload %d failed", __func__, index);
+				return -ENOMEM;
+			}
+
+			/* restore for AS3.0 payload index */
+			if (as30_idx == 0) {
+				htc_as_offset = index;
+				as30_idx = 1;
+			}
+
+			htc_audio_controls[index].info = htc_switch_info;
+
+		} else if (htc_effects_array[index].flag_mask & AaptiveSound10) { /* HTC_AUD - AS10 {HPKB:7329}*/
+			htc_audio_controls[index].info = msm_as10_info;
+			htc_audio_controls[index].get = msm_as10_get;
+			htc_audio_controls[index].put = msm_as10_put;
+
+			if (as10_left) {
+				/* AS10 Left channel and gain, enable paylod */
+				htc_payload[index].payload_size = 4*sizeof(uint32_t)
+					+ 3*sizeof(uint32_t) + sizeof(uint) + ADAP_ONE_CHANNEL_SIZE
+					+ 4*sizeof(uint32_t)
+					+ 3*sizeof(uint32_t) + sizeof(short) + sizeof(ushort);
+				htc_payload[index].payload = kzalloc(htc_payload[index].payload_size, GFP_KERNEL);
+
+				htc_as10_offset = index;
+				as10_left = 0;
+
+				/* init payload value */
+				payload_value = (int *)htc_payload[index].payload;
+				*payload_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M1;
+				*payload_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M1_EN;
+				*payload_value++ = sizeof(uint32_t);
+				*payload_value++ = 0;
+
+				*payload_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M1;
+				*payload_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M1_CONF_L;
+				*payload_value++ = sizeof(uint) + ADAP_ONE_CHANNEL_SIZE;
+				*payload_value++ = ADAP_ONE_CHANNEL_CONF_NUM;
+				for (i = 0; i < ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD; i++)
+					*payload_value++ = (int)0;
+
+				*payload_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M2;
+				*payload_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M2_EN;
+				*payload_value++ = sizeof(uint32_t);
+				*payload_value++ = 0;
+
+				*payload_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M2;
+				*payload_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M2_CONF;
+				*payload_value++ = sizeof(short) + sizeof(ushort);
+				*payload_value++ = 0;
+
+			} else if (index == (htc_as10_offset + 1)) {
+				/* AS10 Right channel */
+				htc_payload[index].payload_size = 3*sizeof(uint32_t)+sizeof(uint) + ADAP_ONE_CHANNEL_SIZE;
+				htc_payload[index].payload = kzalloc(htc_payload[index].payload_size, GFP_KERNEL);
+				payload_value = (int *)htc_payload[index].payload;
+
+				/* init payload value */
+				*payload_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M1;
+				*payload_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M1_CONF_R;
+				*payload_value++ = sizeof(uint) + ADAP_ONE_CHANNEL_SIZE;
+				*payload_value++ = ADAP_ONE_CHANNEL_CONF_NUM;//amount of R channel
+				for (i = 0; i < ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD; i++) {
+					*payload_value++ = 0;
+				}
+			}
+		}
+	}
+
+	return snd_soc_add_codec_controls(codec, htc_audio_controls,
+					 total);
+}
+
+void htc_effect_by_adm_open(int port_id, int topology) {
+	int mask_flag = 0;
+	bool hd_flag = false;
+	int index = 0;
+
+	switch (port_id) {
+	case AFE_PORT_ID_QUATERNARY_MI2S_RX:
+		mask_flag = SPK_MASK;
+		break;
+	case AFE_PORT_ID_SLIMBUS_MULTI_CHAN_0_RX:
+		mask_flag |= HEADSET_MASK;
+		break;
+	case AFE_PORT_ID_SLIMBUS_MULTI_CHAN_5_RX:
+		mask_flag |= HEADSET441MASK;
+		break;
+	case SLIMBUS_0_TX:
+		mask_flag |= MAIN_MIC_MASK;
+	default:
+		mask_flag = 0;
+		break;
+	}
+
+	for (index = 0; index < ARRAY_SIZE(htc_effects_array); index++) {
+		if (htc_effects_array[index].flag_mask & HD_SUPPORT)
+			hd_flag = true;
+
+		if (htc_effects_array[index].flag_mask & POPP_EFFECT) {
+			htc_set_asm_effect(htc_payload[index].payload,
+				htc_payload[index].payload_size,
+				htc_effects_array[index].topology_id,
+				hd_flag);
+		} else if (htc_effects_array[index].flag_mask & COPP_EFFECT) {
+				if ((htc_effects_array[index].port_mask & mask_flag)
+					&& ((htc_effects_array[index].topology_id == topology) || hd_flag))
+					htc_set_adm_effect(htc_payload[index].payload,
+						htc_payload[index].payload_size,
+						htc_effects_array[index].topology_id,
+						hd_flag,
+						port_id);
+		}
+	}
+}
+/* HTC_AUD_END - HTC Effect */
+
 static void msm8996_ext_control(struct snd_soc_codec *codec)
 {
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
@@ -587,7 +1061,7 @@ static int msm8996_hifi_ctrl(struct snd_soc_codec *codec)
 	mutex_lock(&codec->mutex);
 	if (msm_hifi_control == MSM8996_HIFI_ON) {
 		gpio_direction_output(pdata->hph_en1_gpio, 1);
-		
+		/* 5msec delay needed as per HW requirement */
 		usleep_range(5000, 5010);
 	} else {
 		gpio_direction_output(pdata->hph_en1_gpio, 0);
@@ -763,6 +1237,17 @@ err:
 	return ret;
 }
 
+/* HTC_AUD_START - add delay to avoid dmic enable pop sound */
+static int msm_dmic_event(struct snd_soc_dapm_widget *w,
+				struct snd_kcontrol *k, int event)
+{
+	if (SND_SOC_DAPM_EVENT_ON(event))
+		usleep_range(10000, 10000);
+
+	return 0;
+}
+/* HTC_AUD_END */
+
 static const struct snd_soc_dapm_widget msm8996_dapm_widgets[] = {
 
 	SND_SOC_DAPM_SUPPLY("MCLK",  SND_SOC_NOPM, 0, 0,
@@ -779,8 +1264,20 @@ static const struct snd_soc_dapm_widget msm8996_dapm_widgets[] = {
 	SND_SOC_DAPM_SPK("hifi amp", msm_hifi_ctrl_event),
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
+/* HTC_AUD_START - AS HS change */
+#if 0
 	SND_SOC_DAPM_MIC("ANCRight Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", NULL),
+#else
+#ifdef CONFIG_USE_AS_HS
+	SND_SOC_DAPM_MIC("ANCRight Headset Mic", msm_headset_lr_event),
+	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", msm_headset_lr_event),
+#else
+	SND_SOC_DAPM_MIC("ANCRight Headset Mic", NULL),
+	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", NULL),
+#endif
+#endif
+/* HTC_AUD_END */
 	SND_SOC_DAPM_MIC("Analog Mic4", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic6", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic7", NULL),
@@ -793,6 +1290,9 @@ static const struct snd_soc_dapm_widget msm8996_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Digital Mic4", NULL),
 	SND_SOC_DAPM_MIC("Digital Mic5", NULL),
 	SND_SOC_DAPM_MIC("Digital Mic6", NULL),
+/* HTC_AUD_START - add delay to avoid dmic enable pop sound */
+	SND_SOC_DAPM_MIC("Digital Mic", msm_dmic_event),
+/* HTC_AUD_END */
 };
 
 static struct snd_soc_dapm_route wcd9335_audio_paths[] = {
@@ -2034,6 +2534,8 @@ static void legacy_msm8996_mi2s_snd_shutdown(struct snd_pcm_substream *substream
 		pr_err("%s: afe lpass clock failed, err:%d\n", __func__, ret);
 }
 
+/* HTC_AUD_START */
+/* FTM BT test */
 static int msm_htc_ftm_put(struct snd_kcontrol *kcontrol,
 				    struct snd_ctl_elem_value *ucontrol)
 {
@@ -2098,6 +2600,32 @@ static int msm_htc_ftm_get(struct snd_kcontrol *kcontrol,
 			 __func__, ucontrol->value.integer.value[0]);
 	return 0;
 }
+
+/* AS20 - volume index during playing white noise */
+static int msm_htc_as20_vol_index_put(struct snd_kcontrol *kcontrol,
+				    struct snd_ctl_elem_value *ucontrol)
+{
+	int value = ucontrol->value.integer.value[0];
+
+	if (value < 0 || value > ARRAY_SIZE(htc_as20_vol_index) -1)
+		htc_as20_volume_index = 0;
+	else
+		htc_as20_volume_index = value;
+
+	pr_info("%s, value %d, htc_as20_volume_index %d\n", __func__ , value, htc_as20_volume_index);
+
+	return 0;
+}
+
+static int msm_htc_as20_vol_index_get(struct snd_kcontrol *kcontrol,
+				    struct snd_ctl_elem_value *ucontrol)
+{
+	pr_info("%s, htc_as20_volume_index %d\n", __func__ , htc_as20_volume_index);
+	ucontrol->value.integer.value[0] = htc_as20_volume_index;
+
+	return 0;
+}
+/* HTC_AUD_END */
 
 static struct snd_soc_ops legacy_msm8996_mi2s_be_ops = {
 	.startup = legacy_msm8996_mi2s_snd_startup,
@@ -2273,6 +2801,9 @@ static u32 msm8996_get_mi2s_bit_clock(int mi2s_bit_format, int sample_rate)
 			case SAMPLING_RATE_32KHZ:
 				bit_clock = Q6AFE_LPASS_IBIT_CLK_2_P048_MHZ;
 				break;
+			/*case SAMPLING_RATE_24KHZ:
+				bit_clock = Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ;
+				break;*/
 			case SAMPLING_RATE_16KHZ:
 				bit_clock = Q6AFE_LPASS_IBIT_CLK_1_P024_MHZ;
 				break;
@@ -2283,7 +2814,7 @@ static u32 msm8996_get_mi2s_bit_clock(int mi2s_bit_format, int sample_rate)
 				bit_clock = Q6AFE_LPASS_IBIT_CLK_3_P072_MHZ;
 		}
 	} else {
-		
+		/* bit clock is calculated based on 16 bit */
 		switch(sample_rate) {
 			case SAMPLING_RATE_192KHZ:
 				bit_clock = Q6AFE_LPASS_IBIT_CLK_6_P144_MHZ;
@@ -2297,6 +2828,9 @@ static u32 msm8996_get_mi2s_bit_clock(int mi2s_bit_format, int sample_rate)
 			case SAMPLING_RATE_32KHZ:
 				bit_clock = Q6AFE_LPASS_IBIT_CLK_1_P024_MHZ;
 				break;
+			/*case SAMPLING_RATE_24KHZ:
+				bit_clock = Q6AFE_LPASS_IBIT_CLK_768_KHZ;
+				break;*/
 			case SAMPLING_RATE_16KHZ:
 				bit_clock = Q6AFE_LPASS_IBIT_CLK_512_KHZ;
 				break;
@@ -2340,23 +2874,25 @@ static int msm8996_mi2s_snd_startup(struct snd_pcm_substream *substream,
 			dai_format = SND_SOC_DAIFMT_CBS_CFS;
 
 			if (ext_mclk_rate) {
-				
+				/* TBD: Need confirmation from HW team */
 				msm_mi2s_data->mi2s_mclk.enable = 1;
 				msm_mi2s_data->mi2s_mclk.clk_freq_in_hz = ext_mclk_rate;
 
 				pr_debug("%s: Enabling mclk, clk_freq_in_hz = %u\n",
-					__func__, msm_mi2s_data->mi2s_mclk.clk_freq_in_hz); 
+					__func__, msm_mi2s_data->mi2s_mclk.clk_freq_in_hz); /* HTC_AUD */
 
 				ret = afe_set_lpass_clock_v2(port_id,
 						    &msm_mi2s_data->mi2s_mclk);
 				if (ret < 0) {
 					pr_err("%s: afe lpass mclk failed, err:%d\n",
 						__func__, ret);
-					atomic_dec_return(&msm_mi2s_data->mi2s_rsc_ref); 
+					atomic_dec_return(&msm_mi2s_data->mi2s_rsc_ref); /* HTC_AUD */
 					goto err;
 				}
 			}
 		} else {
+			/* Adding plus 1 will change Q6AFE_LPASS_CLK_ID_xxx_MI2S_IBIT
+			 * to Q6AFE_LPASS_CLK_ID_xxx_MI2S_EBIT */
 			msm_mi2s_data->mi2s_clk.clk_id += 1;
 			dai_format = SND_SOC_DAIFMT_CBM_CFM;
 		}
@@ -2367,7 +2903,9 @@ static int msm8996_mi2s_snd_startup(struct snd_pcm_substream *substream,
 		ret = afe_set_lpass_clock_v2(port_id, &msm_mi2s_data->mi2s_clk);
 		if (ret < 0) {
 			pr_err("%s: afe lpass clock failed, err:%d\n", __func__, ret);
-			atomic_dec_return(&msm_mi2s_data->mi2s_rsc_ref); 
+			/* HTC_AUD - Prevent no sound case due to BE open fail,
+			 * but afe count not be release */
+			atomic_dec_return(&msm_mi2s_data->mi2s_rsc_ref);
 			goto err;
 		}
 
@@ -2425,7 +2963,7 @@ static void msm8996_mi2s_snd_shutdown(struct snd_pcm_substream *substream,
 			pr_err("%s: afe lpass clock failed, err:%d\n",
 				__func__, ret);
 
-		
+		/* Need to decrement it to restore original value */
 		if (mi2s_pdata->slave)
 			msm_mi2s_data->mi2s_clk.clk_id -= 1;
 
@@ -2506,6 +3044,8 @@ static int msm_pri_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   pri_mi2s_bit_format);
 	rate->min = rate->max = pri_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	 * See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_pri_mi2s_rx_ch;
 
 	 pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2526,6 +3066,8 @@ static int msm_pri_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   pri_mi2s_bit_format);
 	rate->min = rate->max = pri_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	 * See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_pri_mi2s_tx_ch;
 
 	 pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2546,6 +3088,8 @@ static int msm_sec_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   sec_mi2s_bit_format);
 	rate->min = rate->max = sec_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	 * See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_sec_mi2s_rx_ch;
 
 	 pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2566,6 +3110,8 @@ static int msm_sec_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   sec_mi2s_bit_format);
 	rate->min = rate->max = sec_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	 * See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_sec_mi2s_tx_ch;
 
 	 pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2586,6 +3132,8 @@ static int msm_tert_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   tert_mi2s_bit_format);
 	rate->min = rate->max = tert_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	 * See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_tert_mi2s_rx_ch;
 
 	 pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2595,6 +3143,7 @@ static int msm_tert_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	return 0;
 }
 
+/* HTC_AUD_START */
 #if 0
 static int msm_tert_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 					    struct snd_pcm_hw_params *params)
@@ -2607,6 +3156,8 @@ static int msm_tert_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   tert_mi2s_bit_format);
 	rate->min = rate->max = tert_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	 * See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_tert_mi2s_tx_ch;
 
 	 pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2616,6 +3167,7 @@ static int msm_tert_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	return 0;
 }
 #endif
+/* HTC_AUD_END */
 
 static int msm_quat_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 					    struct snd_pcm_hw_params *params)
@@ -2628,6 +3180,8 @@ static int msm_quat_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   quat_mi2s_bit_format);
 	rate->min = rate->max = quat_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	 * See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_quat_mi2s_rx_ch;
 
 	pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2648,6 +3202,8 @@ static int msm_quat_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				quat_mi2s_bit_format);
 	rate->min = rate->max = quat_mi2s_sample_rate;
+	/* TODO: Should we validate channels with sd_lines?
+	* See msm_dai_q6_mi2s_hw_params() */
 	channels->min = channels->max = msm_quat_mi2s_tx_ch;
 
 	pr_debug("%s: format = %d, rate = %d, channels = %d\n",
@@ -2678,7 +3234,8 @@ static const struct soc_enum msm_snd_enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(slim6_rx_bit_format_text),
 			    slim6_rx_bit_format_text),
 	SOC_ENUM_SINGLE_EXT(2, slim6_rx_ch_text),
-	SOC_ENUM_SINGLE_EXT(2, htc_ftm_mode), 
+	SOC_ENUM_SINGLE_EXT(2, htc_ftm_mode), /* HTC_AUD */
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(htc_as20_vol_index), htc_as20_vol_index), /* HTC_AUD */
 };
 
 static const struct snd_kcontrol_new msm_snd_controls[] = {
@@ -2757,8 +3314,12 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 			msm8996_hifi_put),
 	SOC_ENUM_EXT("VI_FEED_TX Channels", msm_snd_enum[12],
 			msm_vi_feed_tx_ch_get, msm_vi_feed_tx_ch_put),
-	SOC_ENUM_EXT("HTC_FTM_BT MODE", msm_snd_enum[13],
+/* HTC_AUD_START */
+	SOC_ENUM_EXT("HTC_FTM_BT MODE", msm_snd_enum[16],
 			msm_htc_ftm_get, msm_htc_ftm_put),
+	SOC_ENUM_EXT("HTC_AS20_VOL Index", msm_snd_enum[17],
+			msm_htc_as20_vol_index_get, msm_htc_as20_vol_index_put),
+/* HTC_AUD_END */
 };
 
 #ifdef CONFIG_USE_CODEC_MBHC
@@ -2861,6 +3422,11 @@ static int msm8996_wcd93xx_codec_up(struct snd_soc_codec *codec)
 		if (!q6core_is_adsp_ready()) {
 			pr_err_ratelimited("%s: ADSP Audio isn't ready\n",
 					   __func__);
+			/*
+			 * ADSP will be coming up after subsystem restart and
+			 * it might not be fully up when the control reaches
+			 * here. So, wait for 50msec before checking ADSP state
+			 */
 			msleep(50);
 		} else {
 			pr_debug("%s: ADSP Audio is ready\n", __func__);
@@ -2894,6 +3460,7 @@ static int msm8996_tasha_codec_event_cb(struct snd_soc_codec *codec,
 	}
 }
 
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 static int msm8996_config_hph_en0_gpio(struct snd_soc_codec *codec, bool high)
 {
@@ -2917,392 +3484,7 @@ static int msm8996_config_hph_en0_gpio(struct snd_soc_codec *codec, bool high)
 	return 1;
 }
 #endif
-
-static int htc_set_adaptivesound_effect(uint32_t value)
-{
-	int rc, i;
-	char *params_value = NULL;
-	int *update_params_value = NULL;
-	uint32_t params_length = 0;
-
-	mutex_lock(&htc_adaptivesound_enable_mutex);
-
-	params_length = 4*sizeof(uint32_t) 
-		+ 3*sizeof(uint32_t) + sizeof(uint) + ADAP_ONE_CHANNEL_SIZE 
-		+ 4*sizeof(uint32_t) 
-		+ 3*sizeof(uint32_t) + sizeof(short) + sizeof(ushort); 
-	pr_debug("%s: value = %d, params_length = %d\n", __func__, value, params_length);
-
-	params_value = kzalloc(params_length, GFP_KERNEL);
-	if (!params_value) {
-		pr_err("%s, params memory alloc failed", __func__);
-		mutex_unlock(&htc_adaptivesound_enable_mutex);
-		return -ENOMEM;
-	}
-	htc_adaptivesound_enable = value;
-
-	update_params_value = (int *)params_value;
-	pr_debug("%s: update_params_value 0x%p, length=%d\n", __func__, ( void * )update_params_value, params_length);
-
-	
-	*update_params_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M1;
-	*update_params_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M1_EN;
-	*update_params_value++ = sizeof(uint32_t);
-	*update_params_value++ = value;
-
-	
-	*update_params_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M1;
-	*update_params_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M1_CONF_L;
-	*update_params_value++ = sizeof(uint) + ADAP_ONE_CHANNEL_SIZE;
-	*update_params_value++ = ADAP_ONE_CHANNEL_CONF_NUM;
-	for (i = 0; i < ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD; i++) {
-		*update_params_value++ = g_AdapConfLchannel[i];
-		if (i == 0 || i == ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD-1)
-			pr_debug("%s: g_AdapConfLchannel[%d]=0x%x update_params_value=0x%x\n",
-				__func__, i, g_AdapConfLchannel[i], *(update_params_value-1));
-	}
-
-	
-	*update_params_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M2;
-	*update_params_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M2_EN;
-	*update_params_value++ = sizeof(uint32_t);
-	*update_params_value++ = value;
-
-	
-	pr_debug("%s, gain=%d\n", __func__, g_gain);
-	*update_params_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M2;
-	*update_params_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M2_CONF;
-	*update_params_value++ = sizeof(short) + sizeof(ushort);
-	*update_params_value++ = (g_gain&0xFFFF)<<16 | 0;
-
-
-	rc = htc_adm_effect_control(HTC_ADM_EFFECT_ADAPTIVEAUDIO_DATA1,
-				AFE_PORT_ID_SLIMBUS_MULTI_CHAN_0_RX,
-				AFE_COPP_ID_ADAPTIVE_AUDIO,
-				params_length,
-				params_value);
-
-	if (rc)
-		pr_err("%s: call q6adm_enable_effect to port 0x%x, rc %d\n",
-			__func__,AFE_PORT_ID_SLIMBUS_MULTI_CHAN_0_RX,rc);
-
-	memset(params_value, 0x0, params_length);
-	update_params_value = (int *)params_value;
-	params_length= 3*sizeof(uint32_t)+sizeof(uint) + ADAP_ONE_CHANNEL_SIZE;
-	pr_debug("%s: update_params_value 0x%p, length=%d\n", __func__, (void *)update_params_value, params_length);
-
-	
-	*update_params_value++ = AFE_MODULE_ADAPTIVE_AUDIO_M1;
-	*update_params_value++ = AFE_PARAM_ID_ADAPTIVE_AUDIO_M1_CONF_R;
-	*update_params_value++ = sizeof(uint) + ADAP_ONE_CHANNEL_SIZE;
-	*update_params_value++ = ADAP_ONE_CHANNEL_CONF_NUM;
-	for (i = 0; i < ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD; i++) {
-		*update_params_value++ = g_AdapConfRchannel[i];
-		if (i == 0 || i == ADAP_ONE_CHANNEL_CONF_NUM_BY_DWORD-1)
-			pr_debug("%s: g_AdapConfRchannel[%d]=0x%x update_params_value=0x%x\n",
-				__func__, i, g_AdapConfRchannel[i], *(update_params_value-1));
-	}
-
-	rc = htc_adm_effect_control(HTC_ADM_EFFECT_ADAPTIVEAUDIO_DATA2,
-				AFE_PORT_ID_SLIMBUS_MULTI_CHAN_0_RX,
-				AFE_COPP_ID_ADAPTIVE_AUDIO,
-				params_length,
-				params_value);
-
-	if (rc)
-		pr_err("%s: call q6adm_enable_effect to port 0x%x, rc %d\n",
-			__func__, AFE_PORT_ID_SLIMBUS_MULTI_CHAN_0_RX, rc);
-
-	kfree(params_value);
-	mutex_unlock(&htc_adaptivesound_enable_mutex);
-
-	return rc;
-}
-
-static int msm_adaptivesound_Conf_Path(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	int i = 0, sz = 0;
-	struct file *file = NULL;
-	loff_t lofft = 0;
-
-	for (i = 0; i < ((struct soc_multi_mixer_control *)kcontrol->private_value)->count; i++) {
-		g_AdapConfFilePath[i] = ucontrol->value.integer.value[i];
-	}
-	g_AdapConfFilePath[((struct soc_multi_mixer_control *)kcontrol->private_value)->count-1] = '\0';
-	pr_debug("[%s]path = %s\n", __func__, g_AdapConfFilePath);
-
-	mutex_lock(&htc_adaptivesound_enable_mutex);
-
-	if (*g_AdapConfFilePath)
-		file = filp_open(g_AdapConfFilePath, O_RDONLY, 0);
-
-	if (IS_ERR_OR_NULL(file)) { 
-		pr_err("[%s]file %s open failed\n err=%ld", __func__, g_AdapConfFilePath, PTR_ERR(file));
-		mutex_unlock(&htc_adaptivesound_enable_mutex);
-		return -ENOENT;
-	} else {
-		sz = kernel_read(file, lofft, (char *)g_AdapConfLchannel, ADAP_ONE_CHANNEL_SIZE);
-		lofft += ADAP_ONE_CHANNEL_SIZE;
-		sz += kernel_read(file, lofft, (char *)g_AdapConfRchannel, ADAP_ONE_CHANNEL_SIZE);
-		pr_debug("[%s]g_AdapConfLchannel[0] = 0x%x\n", __func__, g_AdapConfLchannel[0]);
-		pr_debug("[%s]g_AdapConfRchannel[0] = 0x%x\n", __func__, g_AdapConfRchannel[0]);
-		pr_debug("[%s]file %s size = %d\n", __func__, g_AdapConfFilePath, sz);
-		filp_close(file, NULL);
-	}
-
-	mutex_unlock(&htc_adaptivesound_enable_mutex);
-
-	return 0;
-}
-
-static int msm_adaptivesound_Conf_Gain_Path(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	int i = 0;
-	struct file *file = NULL;
-	loff_t lofft=0;
-
-	for (i = 0; i < ((struct soc_multi_mixer_control *)kcontrol->private_value)->count; i++)
-		g_AdapGainFilePath[i] = ucontrol->value.integer.value[i];
-	g_AdapGainFilePath[((struct soc_multi_mixer_control *)kcontrol->private_value)->count-1] = '\0';
-	pr_debug("[%s]path = %s", __func__, g_AdapGainFilePath);
-
-	mutex_lock(&htc_adaptivesound_enable_mutex);
-
-	if (*g_AdapGainFilePath)
-		file = filp_open(g_AdapGainFilePath, O_RDONLY, 0);
-
-	if (IS_ERR_OR_NULL(file)) { 
-		pr_err("[%s]file %s open failed err=%ld\n", __func__, g_AdapGainFilePath, PTR_ERR(file));
-		mutex_unlock(&htc_adaptivesound_enable_mutex);
-		return -ENOENT;
-	} else {
-		kernel_read(file, lofft, (char *)&g_gain, 1);
-		pr_debug("[%s]g_gain = %d\n", __func__, g_gain);
-		filp_close(file, NULL);
-	}
-
-	mutex_unlock(&htc_adaptivesound_enable_mutex);
-	return 0;
-}
-
-static int htc_set_onedotone_effect(uint32_t value)
-{
-    int rc;
-    char *params_value;
-    int *update_params_value;
-    uint32_t params_length = 4*sizeof(uint32_t);
-
-    pr_debug("%s: value = %d, params_length = %d\n", __func__, value, params_length);
-
-    params_value = kzalloc(params_length, GFP_KERNEL);
-    if (!params_value) {
-        pr_err("%s, params memory alloc failed", __func__);
-        return -ENOMEM;
-    }
-
-    htc_onedotone_enable = value;
-
-    update_params_value = (int *)params_value;
-    *update_params_value++ = AFE_MODULE_ONEDOTONE_AUDIO;
-    *update_params_value++ = AFE_PARAM_ID_ONEDOTONE_AUDIO_EN;
-    *update_params_value++ = sizeof(uint32_t);
-    *update_params_value = value;
-
-    rc = htc_adm_effect_control(HTC_ADM_EFFECT_ONEDOTONE,
-                AFE_PORT_ID_QUATERNARY_MI2S_RX,
-                AFE_COPP_ID_ONEDOTONE_AUDIO,
-                params_length,
-                params_value);
-    if (rc) {
-        pr_err("%s: call htc_adm_effect_control to port 0x%x, rc %d\n",
-                __func__, AFE_PORT_ID_QUATERNARY_MI2S_RX, rc);
-    }
-
-    kfree(params_value);
-
-    return rc;
-}
-
-static int msm_adaptivesound_enable_put(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	unsigned int enable_flag = 0;
-	int rc = 0;
-
-	pr_debug("%s, ucontrol->value.integer.value[0]=%d\n", __func__ ,(unsigned int)ucontrol->value.integer.value[0]);
-
-	if ((ucontrol->value.integer.value[0] == 0) || (ucontrol->value.integer.value[0] == 1))
-		enable_flag = ucontrol->value.integer.value[0];
-	else
-		return -EINVAL;
-
-	rc = htc_set_adaptivesound_effect(enable_flag);
-
-	return 0;
-}
-
-static int msm_adaptivesound_enable_get(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	ushort usEffect = get_adm_custom_effect_status();
-
-	if ((usEffect & 0x1<<HTC_ADM_EFFECT_ADAPTIVEAUDIO_DATA1) &&
-	    (usEffect & 0x1<<HTC_ADM_EFFECT_ADAPTIVEAUDIO_DATA2))
-		ucontrol->value.integer.value[0] = 1;
-	else
-		ucontrol->value.integer.value[0] = 0;
-
-	pr_debug("%s: adaptivesound_enable = %d 0x%x\n", __func__, htc_adaptivesound_enable, usEffect);
-	return 0;
-}
-
-static int msm_onedotone_enable_put(struct snd_kcontrol *kcontrol,
-                                            struct snd_ctl_elem_value *ucontrol)
-{
-    unsigned int enable_flag = 0;
-    int rc = 0;
-
-    pr_debug("%s, ucontrol->value.integer.value[0]=%d\n", __func__ ,(unsigned int)ucontrol->value.integer.value[0]);
-
-    if ((ucontrol->value.integer.value[0] == 0) || (ucontrol->value.integer.value[0] == 1))
-        enable_flag = ucontrol->value.integer.value[0];
-    else
-        return -EINVAL;
-
-    rc = htc_set_onedotone_effect(enable_flag);
-
-    return 0;
-}
-
-static int msm_onedotone_get(struct snd_kcontrol *kcontrol,
-                                   struct snd_ctl_elem_value *ucontrol)
-{
-    ushort usEffect = get_adm_custom_effect_status();
-
-    if (usEffect & (0x1<<HTC_ADM_EFFECT_ONEDOTONE))
-        ucontrol->value.integer.value[0] = 1;
-    else
-        ucontrol->value.integer.value[0] = 0;
-
-    pr_debug("%s: htc_onedotone_enable = %d 0x%x\n", __func__, htc_onedotone_enable, usEffect);
-    return 0;
-}
-
-static int msm_admmiscvolramping_enable_put(struct snd_kcontrol *kcontrol,
-                                            struct snd_ctl_elem_value *ucontrol)
-{
-    unsigned int enable_flag = 0;
-    char *params_value = NULL;
-    int *update_params_value = NULL;
-    uint32_t params_length = 4*sizeof(uint32_t);
-
-    pr_err("%s, ucontrol->value.integer.value[0]=%d\n", __func__ ,
-            (unsigned int)ucontrol->value.integer.value[0]);
-
-    if ((ucontrol->value.integer.value[0] == 0) || (ucontrol->value.integer.value[0] == 1))
-        enable_flag = ucontrol->value.integer.value[0];
-    else
-        return -EINVAL;
-
-    params_value = kzalloc(params_length, GFP_KERNEL);
-    if (!params_value) {
-        pr_err("%s, params memory alloc failed", __func__);
-        return -ENOMEM;
-    }
-
-    update_params_value = (int *)params_value;
-    *update_params_value++ = AFE_MODULE_ID_MISC_EFFECT;
-    *update_params_value++ = AFE_PARAM_ID_MISC_SET_ACOUSTIC_SHOCK_RAMP;
-    *update_params_value++ = sizeof(uint32_t);
-    *update_params_value = enable_flag;
-
-    htc_adm_effect_control(HTC_ADM_EFFECT_ONEDOTONE_RAMPING,
-                AFE_PORT_ID_QUATERNARY_MI2S_RX,
-                AFE_COPP_ID_ONEDOTONE_AUDIO,
-                params_length,
-                params_value);
-
-    kfree(params_value);
-
-    return 0;
-}
-
-static int msm_admmiscvolramping_get(struct snd_kcontrol *kcontrol,
-                                   struct snd_ctl_elem_value *ucontrol)
-{
-    return 0;
-}
-
-static int msm_admmiscvolmute_enable_put(struct snd_kcontrol *kcontrol,
-                                            struct snd_ctl_elem_value *ucontrol)
-{
-    unsigned int enable_flag = 0;
-    char *params_value = NULL;
-    int *update_params_value = NULL;
-    uint32_t params_length = 4*sizeof(uint32_t);
-
-    pr_err("%s, ucontrol->value.integer.value[0]=%d\n", __func__,
-            (unsigned int)ucontrol->value.integer.value[0]);
-
-    if ((ucontrol->value.integer.value[0] == 0) || (ucontrol->value.integer.value[0] == 1))
-        enable_flag = ucontrol->value.integer.value[0];
-    else
-        return -EINVAL;
-
-    params_value = kzalloc(params_length, GFP_KERNEL);
-    if (!params_value) {
-        pr_err("%s, params memory alloc failed", __func__);
-        return -ENOMEM;
-    }
-
-    update_params_value = (int *)params_value;
-    *update_params_value++ = AFE_MODULE_ID_MISC_EFFECT;
-    *update_params_value++ = AFE_PARAM_ID_MISC_SET_ACOUSTIC_SHOCK_MUTE;
-    *update_params_value++ = sizeof(uint32_t);
-    *update_params_value = enable_flag;
-
-    htc_adm_effect_control(HTC_ADM_EFFECT_ONEDOTONE_MUTE,
-                AFE_PORT_ID_QUATERNARY_MI2S_RX,
-                AFE_COPP_ID_ONEDOTONE_AUDIO,
-                params_length,
-                params_value);
-
-    kfree(params_value);
-
-    return 0;
-}
-
-static int msm_admmiscvolmute_get(struct snd_kcontrol *kcontrol,
-                                   struct snd_ctl_elem_value *ucontrol)
-{
-    return 0;
-}
-
-
-static const struct snd_kcontrol_new htc_adaptivesound_params_control[] = {
-    SOC_SINGLE_MULTI_EXT("AdaptiveSound CONFIG PATH", SND_SOC_NOPM,
-    0, 0xFFFFFFFF, 0, 128, NULL, msm_adaptivesound_Conf_Path),
-
-    SOC_SINGLE_MULTI_EXT("AdaptiveSound GAIN PATH", SND_SOC_NOPM,
-    0, 0xFFFFFFFF, 0, 128, NULL, msm_adaptivesound_Conf_Gain_Path),
-
-    SOC_SINGLE_EXT("AdaptiveSound Enable", SND_SOC_NOPM,
-    0, 1, 0, msm_adaptivesound_enable_get, msm_adaptivesound_enable_put),
-};
-
-static const struct snd_kcontrol_new htc_onedotone_params_control[] = {
-    SOC_SINGLE_EXT("OneDotOne Enable", SND_SOC_NOPM,
-    0, 1, 0, msm_onedotone_get, msm_onedotone_enable_put),
-};
-
-static const struct snd_kcontrol_new htc_adm_misc_vol_params_control[] = {
-    SOC_SINGLE_EXT("AdmMiscVolRamping", SND_SOC_NOPM,
-    0, 1, 0, msm_admmiscvolramping_get, msm_admmiscvolramping_enable_put),
-    SOC_SINGLE_EXT("AdmMiscVolMute", SND_SOC_NOPM,
-    0, 1, 0, msm_admmiscvolmute_get, msm_admmiscvolmute_enable_put),
-};
+/* HTC_AUD_END */
 
 static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 {
@@ -3312,15 +3494,27 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
+/* HTC_AUD_START */
+#ifdef USE_WSA_AMP
 	struct snd_soc_pcm_runtime *rtd_aux = rtd->card->rtd_aux;
+#endif
+/* HTC_AUD_END */
+
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 	void *mbhc_calibration;
 #endif
+/* HTC_AUD_END */
 	struct snd_card *card;
 	struct snd_info_entry *entry;
 	struct msm8996_asoc_mach_data *pdata =
 				snd_soc_card_get_drvdata(rtd->card);
 
+	/* Codec SLIMBUS configuration
+	 * RX1, RX2, RX3, RX4, RX5, RX6, RX7, RX8, RX9, RX10, RX11, RX12, RX13
+	 * TX1, TX2, TX3, TX4, TX5, TX6, TX7, TX8, TX9, TX10, TX11, TX12, TX13
+	 * TX14, TX15, TX16
+	 */
 	unsigned int rx_ch[TASHA_RX_MAX] = {144, 145, 146, 147, 148, 149, 150,
 					    151, 152, 153, 154, 155, 156};
 	unsigned int tx_ch[TASHA_TX_MAX] = {128, 129, 130, 131, 132, 133,
@@ -3339,29 +3533,15 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		return err;
 	}
 
-	err = snd_soc_add_codec_controls(codec, htc_adaptivesound_params_control,
-					 ARRAY_SIZE(htc_adaptivesound_params_control));
+/* HTC_AUD_START - HTC Effect {HPKB:2082}*/
+	err = htc_create_controls(codec);
 	if (err < 0) {
-		pr_err("%s: add_codec_controls htc_adaptivesound_params_control failed, err %d\n",
+		pr_err("%s: add htc effect controls failed, err %d\n",
 			__func__, err);
 		return err;
 	}
+/* HTC_AUD_END */
 
-	err = snd_soc_add_codec_controls(codec, htc_onedotone_params_control,
-					 ARRAY_SIZE(htc_onedotone_params_control));
-	if (err < 0) {
-		pr_err("%s: add_codec_controls htc_onedotone_params_control failed, err %d\n",
-			__func__, err);
-		return err;
-	}
-
-	err = snd_soc_add_codec_controls(codec, htc_adm_misc_vol_params_control,
-					 ARRAY_SIZE(htc_adm_misc_vol_params_control));
-	if (err < 0) {
-		pr_err("%s: add_codec_controls htc_adm_misc_vol_params_control failed, err %d\n",
-			__func__, err);
-		return err;
-	}
 
 
 	err = msm8996_liquid_init_docking();
@@ -3437,15 +3617,20 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "ANC LINEOUT2");
 	snd_soc_dapm_ignore_suspend(dapm, "AIF4 VI");
 	snd_soc_dapm_ignore_suspend(dapm, "VIINPUT");
+/* HTC_AUD_START - add delay to avoid dmic enable pop sound */
+	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic");
+/* HTC_AUD_END */
 
 	snd_soc_dapm_sync(dapm);
 
 	snd_soc_dai_set_channel_map(codec_dai, ARRAY_SIZE(tx_ch),
 				    tx_ch, ARRAY_SIZE(rx_ch), rx_ch);
 	msm8996_codec_fn.get_afe_config_fn = tasha_get_afe_config;
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 	msm8996_codec_fn.mbhc_hs_detect_exit = tasha_mbhc_hs_detect_exit;
 #endif
+/* HTC_AUD_END */
 
 	err = msm_afe_set_config(codec);
 	if (err) {
@@ -3484,7 +3669,8 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 			goto out;
 		}
 	}
-	
+	/* Start mbhc */
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 	tasha_mbhc_zdet_gpio_ctrl(msm8996_config_hph_en0_gpio, rtd->codec);
 	mbhc_calibration = def_tasha_mbhc_cal();
@@ -3502,20 +3688,29 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		goto out;
 	}
 #endif
+/* HTC_AUD_END */
 	adsp_state_notifier = subsys_notif_register_notifier("adsp",
 						&adsp_state_notifier_block);
 	if (!adsp_state_notifier) {
 		pr_err("%s: Failed to register adsp state notifier\n",
 		       __func__);
 		err = -EFAULT;
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 		msm8996_codec_fn.mbhc_hs_detect_exit(codec);
 #endif
+/* HTC_AUD_END */
 		goto out;
 	}
 
 	tasha_event_register(msm8996_tasha_codec_event_cb, rtd->codec);
 
+/* HTC_AUD_START */
+#ifdef USE_WSA_AMP
+	/*
+	 * Send speaker configuration only for WSA8810.
+	 * Defalut configuration is for WSA8815.
+	 */
 	if (rtd_aux && rtd_aux->component)
 		if (!strcmp(rtd_aux->component->name, WSA8810_NAME_1) ||
 		    !strcmp(rtd_aux->component->name, WSA8810_NAME_2)) {
@@ -3523,6 +3718,9 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 			tasha_set_spkr_gain_offset(rtd->codec,
 						   RX_GAIN_OFFSET_M1P5_DB);
 	}
+#endif
+/* HTC_AUD_END */
+
 	codec_reg_done = true;
 
 	card = rtd->card->snd_card;
@@ -3542,6 +3740,7 @@ out:
 	return err;
 }
 
+/* HTC_AUD_START */
 #ifdef CONFIG_USE_CODEC_MBHC
 static void *def_tasha_mbhc_cal(void)
 {
@@ -3557,7 +3756,7 @@ static void *def_tasha_mbhc_cal(void)
 	}
 
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(tasha_wcd_cal)->X) = (Y))
-	S(v_hs_max, 1600); 
+	S(v_hs_max, 1600); /* HTC_AUD - 1500->1600 */
 #undef S
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(tasha_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
@@ -3567,6 +3766,7 @@ static void *def_tasha_mbhc_cal(void)
 	btn_high = ((void *)&btn_cfg->_v_btn_low) +
 		(sizeof(btn_cfg->_v_btn_low[0]) * btn_cfg->num_btn);
 
+/* HTC_AUD_START */
 	btn_high[0] = 88;
 	btn_high[1] = 213;
 	btn_high[2] = 438;
@@ -3575,10 +3775,12 @@ static void *def_tasha_mbhc_cal(void)
 	btn_high[5] = 438;
 	btn_high[6] = 438;
 	btn_high[7] = 438;
+/* HTC_AUD_END */
 
 	return tasha_wcd_cal;
 }
 #endif
+/* HTC_AUD_END */
 
 static int msm_snd_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_pcm_hw_params *params)
@@ -3633,13 +3835,17 @@ static int msm_snd_hw_params(struct snd_pcm_substream *substream,
 				__func__, ret);
 			goto end;
 		}
-		
+		/* For <codec>_tx1 case */
 		if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_0_TX)
 			user_set_tx_ch = msm_slim_0_tx_ch;
-		
+		/* For <codec>_tx3 case */
 		else if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_1_TX)
 			user_set_tx_ch = msm_slim_1_tx_ch;
 		else if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_3_TX)
+			/* DAI 5 is used for external EC reference from codec.
+			 * Since Rx is fed as reference for EC, the config of
+			 * this DAI is based on that of the Rx path.
+			 */
 			user_set_tx_ch = msm_slim_0_rx_ch;
 		else if (dai_link->be_id == MSM_BACKEND_DAI_SLIMBUS_4_TX)
 			user_set_tx_ch = msm_vi_feed_tx_ch;
@@ -3775,7 +3981,7 @@ static int msm8996_get_ll_qos_val(struct snd_pcm_runtime *runtime)
 {
 	int usecs;
 
-	
+	/* take 10% of period time as the deadline */
 	usecs = (100000 / runtime->rate) * runtime->period_size;
 	usecs += ((100000 % runtime->rate) * runtime->period_size) /
 		runtime->rate;
@@ -3797,8 +4003,9 @@ static struct snd_soc_ops msm8996_mm5_ops = {
 	.prepare = msm8996_mm5_prepare,
 };
 
+/* Digital audio interface glue - connects codec <---> CPU */
 static struct snd_soc_dai_link msm8996_common_dai_links[] = {
-	
+	/* FrontEnd DAI Links */
 	{
 		.name = "MSM8996 Media1",
 		.stream_name = "MultiMedia1",
@@ -3813,7 +4020,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA1
 	},
@@ -3830,7 +4037,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
 			SND_SOC_DPCM_TRIGGER_POST},
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA2,
 	},
@@ -3864,7 +4071,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_VOIP,
 	},
@@ -3882,11 +4089,11 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
 	},
-	
+	/* Hostless PCM purpose */
 	{
 		.name = "SLIMBUS_0 Hostless",
 		.stream_name = "SLIMBUS_0 Hostless",
@@ -3899,7 +4106,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		 
+		 /* this dailink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -3907,7 +4114,10 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 	{
 		.name = "Tertiary MI2S TX_Hostless",
 		.stream_name = "Tertiary MI2S_TX Hostless Capture",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "TERT_MI2S_TX_HOSTLESS",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-hostless",
 		.dynamic = 1,
 		.dpcm_capture = 1,
@@ -3927,7 +4137,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_dai_name = "msm-stub-rx",
 		.platform_name = "msm-pcm-afe",
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 	},
 	{
@@ -3954,7 +4164,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA4,
 	},
 	{
@@ -3969,7 +4179,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -3986,7 +4196,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		 
+		 /* this dailink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -4003,7 +4213,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		 
+		 /* this dailink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -4020,7 +4230,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		 
+		 /* this dailink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -4037,7 +4247,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -4057,7 +4267,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
 				SND_SOC_DPCM_TRIGGER_POST},
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA5,
 		.ops = &msm8996_mm5_ops,
@@ -4078,7 +4288,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.be_id = MSM_FRONTEND_DAI_LSM1,
 	},
-	
+	/* Multiple Tunnel instances */
 	{
 		.name = "MSM8996 Compress2",
 		.stream_name = "Compress2",
@@ -4092,7 +4302,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA7,
 	},
 	{
@@ -4108,7 +4318,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA10,
 	},
 	{
@@ -4125,7 +4335,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA8,
 	},
 	{
@@ -4140,13 +4350,13 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.be_id = MSM_FRONTEND_DAI_QCHAT,
 	},
-	
+	/* HDMI Hostless */
 	{
 		.name = "HDMI_RX_HOSTLESS",
 		.stream_name = "HDMI_RX_HOSTLESS",
@@ -4191,7 +4401,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -4210,11 +4420,11 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.ignore_suspend = 1,
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA6,
 	},
-	
+	/* LSM FE */
 	{
 		.name = "Listen 2 Audio Service",
 		.stream_name = "Listen 2 Audio Service",
@@ -4340,7 +4550,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA9,
 	},
@@ -4374,7 +4584,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA11,
 	},
 	{
@@ -4390,7 +4600,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA12,
 	},
 	{
@@ -4406,7 +4616,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA13,
 	},
 	{
@@ -4422,7 +4632,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA14,
 	},
 	{
@@ -4438,7 +4648,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA15,
 	},
 	{
@@ -4454,7 +4664,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
-		 
+		 /* this dainlink has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA16,
 	},
 	{
@@ -4471,7 +4681,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_CS_VOICE,
 	},
@@ -4487,7 +4697,7 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
@@ -4526,7 +4736,10 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 	{
 		.name = "Secondary MI2S RX_Hostless",
 		.stream_name = "Secondary MI2S_RX Hostless Playback",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "SEC_MI2S_RX_HOSTLESS",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-hostless",
 		.dynamic = 1,
 		.dpcm_playback = 1,
@@ -4541,7 +4754,10 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 	{
 		.name = "Secondary MI2S TX_Hostless",
 		.stream_name = "Secondary MI2S_TX Hostless Capture",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "SEC_MI2S_TX_HOSTLESS",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-hostless",
 		.dynamic = 1,
 		.dpcm_capture = 1,
@@ -4556,7 +4772,10 @@ static struct snd_soc_dai_link msm8996_common_dai_links[] = {
 	{
 		.name = "Tertiary MI2S RX_Hostless",
 		.stream_name = "Tertiary MI2S_RX Hostless Playback",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "TERT_MI2S_RX_HOSTLESS",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-hostless",
 		.dynamic = 1,
 		.dpcm_playback = 1,
@@ -4614,7 +4833,7 @@ static struct snd_soc_dai_link msm8996_tasha_fe_dai_links[] = {
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
 	},
-	
+	/* Ultrasound RX DAI Link */
 	{
 		.name = "SLIMBUS_2 Hostless Playback",
 		.stream_name = "SLIMBUS_2 Hostless Playback",
@@ -4626,7 +4845,7 @@ static struct snd_soc_dai_link msm8996_tasha_fe_dai_links[] = {
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ops = &msm8996_slimbus_2_be_ops,
 	},
-	
+	/* Ultrasound TX DAI Link */
 	{
 		.name = "SLIMBUS_2 Hostless Capture",
 		.stream_name = "SLIMBUS_2 Hostless Capture",
@@ -4638,7 +4857,7 @@ static struct snd_soc_dai_link msm8996_tasha_fe_dai_links[] = {
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ops = &msm8996_slimbus_2_be_ops,
 	},
-	
+	/* CPE LSM direct dai-link */
 	{
 		.name = "CPE Listen service",
 		.stream_name = "CPE Listen Audio Service",
@@ -4653,7 +4872,7 @@ static struct snd_soc_dai_link msm8996_tasha_fe_dai_links[] = {
 		.codec_name = "tasha_codec",
 		.ops = &msm8996_cpe_ops,
 	},
-	
+	/* slimbus rx 6 hostless */
 	{
 		.name = "SLIMBUS_6 Hostless Playback",
 		.stream_name = "SLIMBUS_6 Hostless",
@@ -4665,12 +4884,12 @@ static struct snd_soc_dai_link msm8996_tasha_fe_dai_links[] = {
 			    SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
 		.ignore_suspend = 1,
-		 
+		 /* this dailink has playback support */
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 	},
-	
+	/* CPE LSM EC PP direct dai-link */
 	{
 		.name = "CPE Listen service ECPP",
 		.stream_name = "CPE Listen Audio Service ECPP",
@@ -4687,7 +4906,7 @@ static struct snd_soc_dai_link msm8996_tasha_fe_dai_links[] = {
 };
 
 static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
-	
+	/* Backend AFE DAI Links */
 	{
 		.name = LPASS_BE_AFE_PCM_RX,
 		.stream_name = "AFE Playback",
@@ -4699,7 +4918,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_AFE_PCM_RX,
 		.be_hw_params_fixup = msm_proxy_rx_be_hw_params_fixup,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 	},
@@ -4716,7 +4935,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.be_hw_params_fixup = msm_proxy_tx_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
-	
+	/* Primary AUX PCM Backend DAI Links */
 	{
 		.name = LPASS_BE_AUXPCM_RX,
 		.stream_name = "AUX PCM Playback",
@@ -4730,7 +4949,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
-		
+		/* this dainlink has playback support */
 	},
 	{
 		.name = LPASS_BE_AUXPCM_TX,
@@ -4745,7 +4964,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
 		.ignore_suspend = 1,
 	},
-	
+	/* Incall Record Uplink BACK END DAI Link */
 	{
 		.name = LPASS_BE_INCALL_RECORD_TX,
 		.stream_name = "Voice Uplink Capture",
@@ -4759,7 +4978,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
-	
+	/* Incall Record Downlink BACK END DAI Link */
 	{
 		.name = LPASS_BE_INCALL_RECORD_RX,
 		.stream_name = "Voice Downlink Capture",
@@ -4773,7 +4992,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
-	
+	/* Incall Music BACK END DAI Link */
 	{
 		.name = LPASS_BE_VOICE_PLAYBACK_TX,
 		.stream_name = "Voice Farend Playback",
@@ -4787,7 +5006,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
-	
+	/* Incall Music 2 BACK END DAI Link */
 	{
 		.name = LPASS_BE_VOICE2_PLAYBACK_TX,
 		.stream_name = "Voice2 Farend Playback",
@@ -4804,10 +5023,17 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 	{
 		.name = LPASS_BE_TERT_MI2S_TX,
 		.stream_name = "Tertiary MI2S Capture",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "msm-dai-q6-mi2s.2",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-routing",
+/* HTC_AUD_START */
+/*		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",*/
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
@@ -4820,8 +5046,12 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.stream_name = "Primary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.0",
 		.platform_name = "msm-pcm-routing",
+/* HTC_AUD_START */
+/*		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",*/
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_PRI_MI2S_RX,
@@ -4834,8 +5064,12 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.stream_name = "Primary MI2S Capture",
 		.cpu_dai_name = "msm-dai-q6-mi2s.0",
 		.platform_name = "msm-pcm-routing",
+/* HTC_AUD_START */
+/*		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",*/
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.be_id = MSM_BACKEND_DAI_PRI_MI2S_TX,
@@ -4846,8 +5080,12 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 	{
 		.name = LPASS_BE_SEC_MI2S_RX,
 		.stream_name = "Secondary MI2S Playback",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "msm-dai-q6-mi2s.1",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-routing",
+/* HTC_AUD_START */
 #ifdef CONFIG_RT_REGMAP
 		.codec_name = "rt5503.7-0052",
 		.codec_dai_name = "rt5503-aif1",
@@ -4855,6 +5093,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
 #endif
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
@@ -4865,10 +5104,17 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 	{
 		.name = LPASS_BE_SEC_MI2S_TX,
 		.stream_name = "Secondary MI2S Capture",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "msm-dai-q6-mi2s.1",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-routing",
+/* HTC_AUD_START */
+/*		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",*/
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.be_id = MSM_BACKEND_DAI_SECONDARY_MI2S_TX,
@@ -4879,10 +5125,17 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 	{
 		.name = LPASS_BE_TERT_MI2S_RX,
 		.stream_name = "Tertiary MI2S Playback",
+/* HTC_AUD_START */
+//		.cpu_dai_name = "msm-dai-q6-mi2s.2",
 		.cpu_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.platform_name = "msm-pcm-routing",
+/* HTC_AUD_START */
+/*		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",*/
 		.codec_name = "snd-soc-dummy",
 		.codec_dai_name = "snd-soc-dummy-dai",
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
@@ -4895,8 +5148,15 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 		.stream_name = "Quaternary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.3",
 		.platform_name = "msm-pcm-routing",
-		.codec_name = "tfa98xx.7-0034",
-		.codec_dai_name = "tfa98xx-aif-7-34",
+/* HTC_AUD_START */
+#ifdef CONFIG_SND_SOC_TFA98XX
+		.codec_name = "tfa-codec",
+		.codec_dai_name = "tfa98xx-aif",
+#else
+		.codec_name = "snd-soc-dummy",
+		.codec_dai_name = "snd-soc-dummy-dai",
+#endif
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
@@ -4921,7 +5181,7 @@ static struct snd_soc_dai_link msm8996_common_be_dai_links[] = {
 };
 
 static struct snd_soc_dai_link msm8996_tasha_be_dai_links[] = {
-	
+	/* Backend DAI Links */
 	{
 		.name = LPASS_BE_SLIMBUS_0_RX,
 		.stream_name = "Slimbus Playback",
@@ -4934,7 +5194,7 @@ static struct snd_soc_dai_link msm8996_tasha_be_dai_links[] = {
 		.be_id = MSM_BACKEND_DAI_SLIMBUS_0_RX,
 		.init = &msm_audrx_init,
 		.be_hw_params_fixup = msm_slim_0_rx_be_hw_params_fixup,
-		
+		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 		.ops = &msm8996_be_ops,
@@ -4965,7 +5225,7 @@ static struct snd_soc_dai_link msm8996_tasha_be_dai_links[] = {
 		.be_id = MSM_BACKEND_DAI_SLIMBUS_1_RX,
 		.be_hw_params_fixup = msm_slim_0_rx_be_hw_params_fixup,
 		.ops = &msm8996_be_ops,
-		
+		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 	},
@@ -4995,7 +5255,7 @@ static struct snd_soc_dai_link msm8996_tasha_be_dai_links[] = {
 		.be_id = MSM_BACKEND_DAI_SLIMBUS_3_RX,
 		.be_hw_params_fixup = msm_slim_0_rx_be_hw_params_fixup,
 		.ops = &msm8996_be_ops,
-		
+		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 	},
@@ -5025,7 +5285,7 @@ static struct snd_soc_dai_link msm8996_tasha_be_dai_links[] = {
 		.be_id = MSM_BACKEND_DAI_SLIMBUS_4_RX,
 		.be_hw_params_fixup = msm_slim_0_rx_be_hw_params_fixup,
 		.ops = &msm8996_be_ops,
-		
+		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 	},
@@ -5041,11 +5301,11 @@ static struct snd_soc_dai_link msm8996_tasha_be_dai_links[] = {
 		.be_id = MSM_BACKEND_DAI_SLIMBUS_5_RX,
 		.be_hw_params_fixup = msm_slim_5_rx_be_hw_params_fixup,
 		.ops = &msm8996_be_ops,
-		
+		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 	},
-	
+	/* MAD BE */
 	{
 		.name = LPASS_BE_SLIMBUS_5_TX,
 		.stream_name = "Slimbus5 Capture",
@@ -5072,14 +5332,14 @@ static struct snd_soc_dai_link msm8996_tasha_be_dai_links[] = {
 		.be_id = MSM_BACKEND_DAI_SLIMBUS_6_RX,
 		.be_hw_params_fixup = msm_slim_6_rx_be_hw_params_fixup,
 		.ops = &msm8996_be_ops,
-		
+		/* dai link has playback support */
 		.ignore_pmdown_time = 1,
 		.ignore_suspend = 1,
 	},
 };
 
 static struct snd_soc_dai_link msm8996_hdmi_dai_link[] = {
-	
+	/* HDMI BACK END DAI Link */
 	{
 		.name = LPASS_BE_HDMI,
 		.stream_name = "HDMI Playback",
@@ -5103,6 +5363,7 @@ static struct snd_soc_dai_link msm8996_tasha_dai_links[
 			 ARRAY_SIZE(msm8996_tasha_be_dai_links) +
 			 ARRAY_SIZE(msm8996_hdmi_dai_link)];
 
+/* HTC_AUD_START */
 #ifdef USE_WSA_AMP
 static int msm8996_wsa881x_init(struct snd_soc_component *component)
 {
@@ -5154,6 +5415,7 @@ static int msm8996_wsa881x_init(struct snd_soc_component *component)
 	return 0;
 }
 #endif
+/* HTC_AUD_END */
 
 struct snd_soc_card snd_soc_card_tasha_msm8996 = {
 	.name		= "msm8996-tasha-snd-card",
@@ -5176,7 +5438,7 @@ static int msm8996_populate_dai_link_component_of_node(
 		if (dai_link[i].platform_of_node && dai_link[i].cpu_of_node)
 			continue;
 
-		
+		/* populate platform_of_node for snd card dai links */
 		if (dai_link[i].platform_name &&
 		    !dai_link[i].platform_of_node) {
 			index = of_property_match_string(cdev->of_node,
@@ -5201,7 +5463,7 @@ static int msm8996_populate_dai_link_component_of_node(
 			dai_link[i].platform_name = NULL;
 		}
 
-		
+		/* populate cpu_of_node for snd card dai links */
 		if (dai_link[i].cpu_dai_name && !dai_link[i].cpu_of_node) {
 			index = of_property_match_string(cdev->of_node,
 						 "asoc-cpu-names",
@@ -5221,7 +5483,7 @@ static int msm8996_populate_dai_link_component_of_node(
 			}
 		}
 
-		
+		/* populate codec_of_node for snd card dai links */
 		if (dai_link[i].codec_name && !dai_link[i].codec_of_node) {
 			index = of_property_match_string(cdev->of_node,
 						 "asoc-codec-names",
@@ -5305,8 +5567,8 @@ static const struct of_device_id msm8996_asoc_machine_of_match[]  = {
 static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 {
 	struct snd_soc_card *card = NULL;
-	struct snd_soc_dai_link *dailink = NULL; 
-	int len_1 = 0, len_2 = 0, len_3 = 0, len_4 = 0; 
+	struct snd_soc_dai_link *dailink = NULL; /* HTC_AUD - klocwork */
+	int len_1 = 0, len_2 = 0, len_3 = 0, len_4 = 0; /* HTC_AUD - klocwork */
 	const struct of_device_id *match;
 
 	match = of_match_node(msm8996_asoc_machine_of_match, dev->of_node);
@@ -5357,6 +5619,7 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	return card;
 }
 
+/* HTC_AUD_START */
 #ifdef USE_WSA_AMP
 static int msm8996_init_wsa_dev(struct platform_device *pdev,
 				struct snd_soc_card *card)
@@ -5371,7 +5634,7 @@ static int msm8996_init_wsa_dev(struct platform_device *pdev,
 	int i;
 	int ret;
 
-	
+	/* Get maximum WSA device count for this platform */
 	ret = of_property_read_u32(pdev->dev.of_node,
 				   "qcom,wsa-max-devs", &wsa_max_devs);
 	if (ret) {
@@ -5387,7 +5650,7 @@ static int msm8996_init_wsa_dev(struct platform_device *pdev,
 		return 0;
 	}
 
-	
+	/* Get count of WSA device phandles for this platform */
 	wsa_dev_cnt = of_count_phandle_with_args(pdev->dev.of_node,
 						 "qcom,wsa-devs", NULL);
 	if (wsa_dev_cnt == -ENOENT) {
@@ -5401,6 +5664,11 @@ static int msm8996_init_wsa_dev(struct platform_device *pdev,
 		return -EINVAL;
 	}
 
+	/*
+	 * Expect total phandles count to be NOT less than maximum possible
+	 * WSA count. However, if it is less, then assign same value to
+	 * max count as well.
+	 */
 	if (wsa_dev_cnt < wsa_max_devs) {
 		dev_dbg(&pdev->dev,
 			"%s: wsa_max_devs = %d cannot exceed wsa_dev_cnt = %d\n",
@@ -5408,7 +5676,7 @@ static int msm8996_init_wsa_dev(struct platform_device *pdev,
 		wsa_max_devs = wsa_dev_cnt;
 	}
 
-	
+	/* Make sure prefix string passed for each WSA device */
 	ret = of_property_count_strings(pdev->dev.of_node,
 					"qcom,wsa-aux-dev-prefix");
 	if (ret != wsa_dev_cnt) {
@@ -5418,24 +5686,34 @@ static int msm8996_init_wsa_dev(struct platform_device *pdev,
 		return -EINVAL;
 	}
 
+	/*
+	 * Alloc mem to store phandle and index info of WSA device, if already
+	 * registered with ALSA core
+	 */
 	wsa881x_dev_info = devm_kcalloc(&pdev->dev, wsa_max_devs,
 					sizeof(struct msm8996_wsa881x_dev_info),
 					GFP_KERNEL);
 	if (!wsa881x_dev_info)
 		return -ENOMEM;
 
+	/*
+	 * search and check whether all WSA devices are already
+	 * registered with ALSA core or not. If found a node, store
+	 * the node and the index in a local array of struct for later
+	 * use.
+	 */
 	for (i = 0; i < wsa_dev_cnt; i++) {
 		wsa_of_node = of_parse_phandle(pdev->dev.of_node,
 					    "qcom,wsa-devs", i);
 		if (unlikely(!wsa_of_node)) {
-			
+			/* we should not be here */
 			dev_err(&pdev->dev,
 				"%s: wsa dev node is not present\n",
 				__func__);
 			return -EINVAL;
 		}
 		if (soc_find_component(wsa_of_node, NULL)) {
-			
+			/* WSA device registered with ALSA core */
 			wsa881x_dev_info[found].of_node = wsa_of_node;
 			wsa881x_dev_info[found].index = i;
 			found++;
@@ -5457,14 +5735,14 @@ static int msm8996_init_wsa_dev(struct platform_device *pdev,
 	card->num_aux_devs = wsa_max_devs;
 	card->num_configs = wsa_max_devs;
 
-	
+	/* Alloc array of AUX devs struct */
 	msm8996_aux_dev = devm_kcalloc(&pdev->dev, card->num_aux_devs,
 				       sizeof(struct snd_soc_aux_dev),
 				       GFP_KERNEL);
 	if (!msm8996_aux_dev)
 		return -ENOMEM;
 
-	
+	/* Alloc array of codec conf struct */
 	msm8996_codec_conf = devm_kcalloc(&pdev->dev, card->num_aux_devs,
 					  sizeof(struct snd_soc_codec_conf),
 					  GFP_KERNEL);
@@ -5505,11 +5783,16 @@ static int msm8996_init_wsa_dev(struct platform_device *pdev,
 	return 0;
 }
 #endif
+/* HTC_AUD_END */
 
+/* HTC_AUD_START */
+//FTM BT test
 static int msm8994_init_ftm_btpcm(struct platform_device *pdev,
 				struct aud_btpcm_config *pconfig)
 {
 	int i = 0;
+	int ret = 0;
+
 	if(!pconfig || !pdev) {
 		pr_err("%s: %d pdev or pconfig is null\n",__func__,i);
 		return -1;
@@ -5521,13 +5804,14 @@ static int msm8994_init_ftm_btpcm(struct platform_device *pdev,
 			return -1;
 		}
 
-		pconfig->gpio[i].gpio_no = of_get_named_gpio(pdev->dev.of_node,
-						pconfig->gpio[i].gpio_name, 0);
+		ret = of_get_named_gpio(pdev->dev.of_node,
+				pconfig->gpio[i].gpio_name, 0);
 
-		if (pconfig->gpio[i].gpio_no < 0) {
+		if (ret < 0) {
 			pr_err( "property %s not detected in node\n", pconfig->gpio[i].gpio_name);
 			return -1;
 		} else {
+			pconfig->gpio[i].gpio_no = ret;
 			pr_info("%s: btpcm gpio %s no %d\n",__func__, pconfig->gpio[i].gpio_name, pconfig->gpio[i].gpio_no);
 		}
 	}
@@ -5541,6 +5825,230 @@ static void htc_card_det(struct work_struct *work)
 	BUG();
 }
 
+#ifdef CONFIG_USE_AS_HS
+static int headset_dt_parser(struct platform_device *pdev, struct wcd_mbhc_config *wcd_mbhc_cfg){
+	int i = 0;
+	int id_gpio_count = 0;
+	int switch_gpio_count = 0;
+	uint32_t min_max_array[2]; //[0] : min [1] :max
+	const char *id_gpio_name = "htc,aud_gpio_ids";
+	const char *switch_gpio_name = "htc,aud_gpio_switches";
+	const char *hsmic_bias_string = "htc,hsmic_2v85_en";
+	const char *adapter_35mm_string = "htc,adapter_35mm_threshold";
+	const char *adapter_25mm_string = "htc,adapter_25mm_threshold";
+	const char *adc_channel_string = "htc,headset_adc_channel";
+	const char *name;
+	int ret = 0;
+
+	pr_debug("%s: start parser\n", __func__);
+
+	id_gpio_count = of_property_count_strings(pdev->dev.of_node, id_gpio_name);
+	switch_gpio_count = of_property_count_strings(pdev->dev.of_node, switch_gpio_name);
+	if (IS_ERR_VALUE(id_gpio_count) && IS_ERR_VALUE(switch_gpio_count)) {
+		pr_err("%s: Failed to get %s = %d, %s = %d\n", __func__,
+			id_gpio_name, id_gpio_count,
+			switch_gpio_name, switch_gpio_count);
+		return -EINVAL;
+	}
+
+	if (id_gpio_count != TYPEC_ID_MAX) {
+		id_gpio_count = TYPEC_ID_MAX;
+		pr_err("%s: id_gpio_count incorrect, please check dts config", __func__);
+		return -EINVAL;
+	}
+
+	if (switch_gpio_count != HEADSET_SWITCH_MAX) {
+		switch_gpio_count = TYPEC_ID_MAX;
+		pr_err("%s: switch_gpio_count incorrect, please check dts config", __func__);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < id_gpio_count; i++){
+		ret = of_property_read_string_index(pdev->dev.of_node, id_gpio_name, i, &name);
+		if (ret) {
+			pr_err("%s: of read string %s index %d error %d\n",
+				__func__, id_gpio_name, i, ret);
+			return ret;
+		}
+
+		wcd_mbhc_cfg->htc_headset_cfg.id_gpio[i] = of_get_named_gpio(pdev->dev.of_node,
+			name, 0);
+		if (gpio_is_valid(wcd_mbhc_cfg->htc_headset_cfg.id_gpio[i])) {
+			pr_info("%s: gpio %s parse success gpio no %d\n", __func__,
+				name, wcd_mbhc_cfg->htc_headset_cfg.id_gpio[i]);
+			ret = gpio_request_one(wcd_mbhc_cfg->htc_headset_cfg.id_gpio[i],
+				GPIOF_DIR_IN, name);
+			if (ret) {
+				pr_err("%s: gpio %s request failed with err %d\n", __func__,
+					name, ret);
+				return ret;
+			}
+		} else {
+			pr_err("%s: gpio %s parse fail\n", __func__, name);
+			return -EINVAL;
+		}
+	}
+
+	for (i = 0; i < switch_gpio_count; i++){
+		ret = of_property_read_string_index(pdev->dev.of_node, switch_gpio_name, i, &name);
+		if (ret) {
+			pr_err("%s: of read string %s index %d error %d\n",
+				__func__, switch_gpio_name, i, ret);
+			return ret;
+		}
+		wcd_mbhc_cfg->htc_headset_cfg.switch_gpio[i] = of_get_named_gpio(pdev->dev.of_node,
+			name, 0);
+		if (gpio_is_valid(wcd_mbhc_cfg->htc_headset_cfg.switch_gpio[i])) {
+			pr_info("%s: gpio %s parse success gpio no %d\n", __func__,
+				name, wcd_mbhc_cfg->htc_headset_cfg.switch_gpio[i]);
+			if (i == 1) { /* hpmic_agnd_flip_en_s1: O(H) */
+				ret = gpio_request_one(wcd_mbhc_cfg->htc_headset_cfg.switch_gpio[i],
+					GPIOF_OUT_INIT_HIGH, name);
+			} else {
+				ret = gpio_request_one(wcd_mbhc_cfg->htc_headset_cfg.switch_gpio[i],
+					GPIOF_OUT_INIT_LOW, name);
+			}
+			if (ret) {
+				pr_err("%s: gpio %s request failed with err %d\n", __func__,
+					name, ret);
+				return ret;
+			}
+		} else {
+			pr_err("%s: gpio %s parse fail\n", __func__, name);
+			return -EINVAL;
+		}
+	}
+
+	wcd_mbhc_cfg->htc_headset_cfg.ext_micbias = of_get_named_gpio(pdev->dev.of_node,
+		hsmic_bias_string, 0);
+	if (gpio_is_valid(wcd_mbhc_cfg->htc_headset_cfg.ext_micbias)) {
+		pr_info("%s: gpio %s parse success gpio no %d\n", __func__,
+			hsmic_bias_string,
+			wcd_mbhc_cfg->htc_headset_cfg.ext_micbias);
+		ret = gpio_request_one(wcd_mbhc_cfg->htc_headset_cfg.ext_micbias,
+			GPIOF_OUT_INIT_LOW, hsmic_bias_string);
+		if (ret) {
+			pr_err("%s: gpio %s request failed with err %d\n", __func__,
+				hsmic_bias_string, ret);
+			return ret;
+		}
+	} else {
+		pr_err("%s: gpio %s parse fail\n", __func__,
+			hsmic_bias_string);
+		return -EINVAL;
+	}
+
+	ret = of_property_read_u32_array(pdev->dev.of_node,
+			adapter_35mm_string,
+			min_max_array, 2);
+
+	if (ret < 0) {
+			pr_err("%s: adapter_35mm_string parser err\n", __func__);
+		} else {
+			wcd_mbhc_cfg->htc_headset_cfg.adc_35mm_min = min_max_array[0];
+			wcd_mbhc_cfg->htc_headset_cfg.adc_35mm_max = min_max_array[1];
+			pr_info("%s: adapter_35mm_string  min: = %d max: = %d\n", __func__, wcd_mbhc_cfg->htc_headset_cfg.adc_35mm_min , wcd_mbhc_cfg->htc_headset_cfg.adc_35mm_max);
+		}
+
+
+	ret = of_property_read_u32_array(pdev->dev.of_node,
+			adapter_25mm_string,
+			min_max_array, 2);
+
+	if (ret < 0) {
+			pr_err("%s: adapter_25mm_string parser err\n", __func__);
+		} else {
+			wcd_mbhc_cfg->htc_headset_cfg.adc_25mm_min = min_max_array[0];
+			wcd_mbhc_cfg->htc_headset_cfg.adc_25mm_max = min_max_array[1];
+			pr_info("%s: adapter_25mm_string  min: = %d max: = %d\n", __func__, wcd_mbhc_cfg->htc_headset_cfg.adc_25mm_min , wcd_mbhc_cfg->htc_headset_cfg.adc_25mm_max);
+		}
+
+	ret = of_property_read_u32(pdev->dev.of_node, adc_channel_string, &wcd_mbhc_cfg->htc_headset_cfg.adc_channel);
+	if (ret < 0) {
+		pr_err("%s: adc channel parser err\n", __func__);
+	} else
+		pr_info("%s: adc_channel = %d\n", __func__, wcd_mbhc_cfg->htc_headset_cfg.adc_channel);
+
+	wcd_mbhc_cfg->htc_headset_cfg.get_adc_value = hs_qpnp_remote_adc;
+	wcd_mbhc_cfg->htc_headset_cfg.htc_headset_init = true;
+
+	pr_debug("%s: parse end\n", __func__);
+	return 0;
+}
+
+static int msm8996_setparam(htc_adsp_params_ioctl_t *ctrl)
+{
+	bool ret = false;
+	int type = ctrl->type;
+	int total_size = ctrl->size;
+	int port_id = -1;
+	int index = 0;
+	int mask = 0;
+
+	if (type < eEF_as2_coef_left_im || type > eEF_as2_rtc) {
+		pr_err("%s error type %d", __func__, type);
+		return -EINVAL;
+	}
+
+	index = type + htc_as_offset;
+	mask = htc_effects_array[index].port_mask;
+
+	mutex_lock(&htc_adaptivesound_enable_mutex);
+	if (htc_payload[index].payload) {
+		memcpy(htc_payload[index].payload, (void *)ctrl->params, total_size);
+		while ((port_id = htc_get_port_by_mask(&mask))) {
+			/*ret fail only when all support port sending fail */
+			ret |= htc_set_adm_effect(htc_payload[index].payload,
+					htc_payload[index].payload_size,
+					htc_effects_array[index].topology_id,
+					0,
+					port_id);
+		}
+		if (!ret)
+			pr_info("%s: htc_effect set AS error on index:%d return fail!\n", __func__, index);
+	}
+	mutex_unlock(&htc_adaptivesound_enable_mutex);
+
+	return 0;
+}
+
+static int msm8996_get_headsetType(void)
+{
+    int ret = 0;
+    struct snd_soc_codec *codec;
+
+    list_for_each_entry(codec,
+            &snd_soc_card_tasha_msm8996.codec_dev_list, card_list) {
+        pr_debug("%s: sound card codec name %s\n",
+                 __func__, dev_name(codec->dev));
+        if (!strncmp(dev_name(codec->dev),
+            "tasha_codec", sizeof("tasha_codec")))
+            return tasha_get_headsetType(codec);
+    }
+
+    return ret;
+
+}
+
+#endif /* CONFIG_USE_AS_HS */
+
+/*HW component start*/
+static int hw_compon;
+static int htc_msm8996_get_hw_component(void)
+{
+	return hw_compon;
+}
+/*HW component end*/
+
+static struct acoustic_ops acoustic = {
+	.get_hw_component = htc_msm8996_get_hw_component,
+#ifdef CONFIG_USE_AS_HS
+	.msm_setparam = msm8996_setparam,
+	.get_headsetType = msm8996_get_headsetType,
+#endif
+};
+/* HTC_AUD_END */
+
 static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card;
@@ -5549,13 +6057,15 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 	char *mclk_freq_prop_name;
 	const struct of_device_id *match;
 	int ret;
-	int tfa9888_dev = 0, rt5503_dev = 0; 
+	int tfa9888_dev = 0, rt5503_dev = 0; /* HTC_AUD */
 
+/* HTC_AUD_START */
 	if((apr_get_q6_state() == APR_SUBSYS_LOADED) && card_reg == -1) {
 		pr_info("%s: schedule_delayed_work with card_det_work\n", __func__);
 		schedule_delayed_work(&card_det_work, msecs_to_jiffies(CARD_TIMEOUT));
 		card_reg = 0;
 	}
+/* HTC_AUD_END */
 
 	if (!pdev->dev.of_node) {
 		dev_err(&pdev->dev, "No platform supplied from device tree\n");
@@ -5627,6 +6137,7 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 
 	spdev = pdev;
 
+/* HTC_AUD_START */
 #ifdef CONFIG_RT_REGMAP
 	pdata->audio_1v8_hph_en_gpio = of_get_named_gpio(pdev->dev.of_node,
 				"qcom,audio-1v8-hph-en-gpio", 0);
@@ -5668,17 +6179,25 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 		pr_warn("%s: init ftm btpcm failed with %d (Non-issue for non-BRCM BT chip.)", __func__, ret);
 	}
 
+#ifdef CONFIG_USE_AS_HS
+	if (!wcd_mbhc_cfg.htc_headset_cfg.htc_headset_init) {
+		headset_dt_parser(pdev, &wcd_mbhc_cfg);
+	}
+#endif
+/* HTC_AUD_END */
 
 	ret = msm8996_populate_dai_link_component_of_node(card);
 	if (ret) {
 		ret = -EPROBE_DEFER;
 		goto err;
 	}
+/* HTC_AUD_START */
 #ifdef USE_WSA_AMP
 	ret = msm8996_init_wsa_dev(pdev, card);
 	if (ret)
 		goto err;
 #endif
+/* HTC_AUD_END */
 
 	pdata->hph_en1_gpio = of_get_named_gpio(pdev->dev.of_node,
 						"qcom,hph-en1-gpio", 0);
@@ -5710,8 +6229,10 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 	}
 	dev_info(&pdev->dev, "Sound card %s registered\n", card->name);
 
+/* HTC_AUD_START */
 	pr_info("%s:  cancel_delayed_work with card_det_work\n", __func__);
 	cancel_delayed_work_sync(&card_det_work);
+/* HTC_AUD_END */
 
 	ret = of_property_read_string(pdev->dev.of_node,
 		"qcom,mbhc-audio-jack-type", &mbhc_audio_jack_type);
@@ -5731,6 +6252,11 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 			dev_dbg(&pdev->dev, "Unknown value, set to default");
 		}
 	}
+	/*
+	 * Parse US-Euro gpio info from DT. Report no error if us-euro
+	 * entry is not found in DT file as some targets do not support
+	 * US-Euro detection
+	 */
 	pdata->us_euro_gpio = of_get_named_gpio(pdev->dev.of_node,
 				"qcom,us-euro-gpios", 0);
 	if (pdata->us_euro_gpio < 0) {
@@ -5750,6 +6276,7 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "msm8996_prepare_us_euro failed (%d)\n",
 			ret);
 
+/* HTC_AUD_START */
 	mutex_init(&htc_adaptivesound_enable_mutex);
 
 	ret = of_property_read_u32(pdev->dev.of_node, "htc-tfa9888", &tfa9888_dev);
@@ -5773,6 +6300,7 @@ static int msm8996_asoc_machine_probe(struct platform_device *pdev)
 		}
 	}
 	htc_acoustic_register_ops(&acoustic);
+/* HTC_AUD_END */
 	pr_info("%s: probe successfully\n", __func__);
 
 	return 0;
@@ -5795,6 +6323,7 @@ err:
 		gpio_free(pdata->hph_en0_gpio);
 		pdata->hph_en0_gpio = 0;
 	}
+/* HTC_AUD_START */
 #ifdef CONFIG_RT_REGMAP
 	if (pdata->audio_1v8_hph_en_gpio > 0) {
 		gpio_free(pdata->audio_1v8_hph_en_gpio);
@@ -5805,6 +6334,7 @@ err:
 		pdata->rt5503_reset_gpio = 0;
 	}
 #endif
+/* HTC_AUD_END */
 	devm_kfree(&pdev->dev, pdata);
 	return ret;
 }
@@ -5815,7 +6345,9 @@ static int msm8996_asoc_machine_remove(struct platform_device *pdev)
 	struct msm8996_asoc_mach_data *pdata =
 				snd_soc_card_get_drvdata(card);
 
+/* HTC_AUD_START */
 	mutex_destroy(&htc_adaptivesound_enable_mutex);
+/* HTC_AUD_END */
 
 	if (gpio_is_valid(ext_us_amp_gpio))
 		gpio_free(ext_us_amp_gpio);

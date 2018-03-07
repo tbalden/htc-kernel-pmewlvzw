@@ -21,6 +21,11 @@ struct nanohub_platform_data {
 	struct nanohub_flash_bank *flash_banks;
 	u32 num_shared_flash_banks;
 	struct nanohub_flash_bank *shared_flash_banks;
+
+/* HTC_START */
+	u32 handshaking_gpio;
+	u32 vibrate_ms;
+/* HTC_END */
 };
 
-#endif 
+#endif /* __LINUX_PLATFORM_DATA_NANOHUB_H */

@@ -876,7 +876,13 @@ uint16_t tfaContBfEnum(const char *name, unsigned short rev);
  */
 uint16_t tfaContBfEnumAny(const char *name);
 
+//HTC_AUD_START
+#if 0
 #define TFA_FAM(dev_idx, fieldname) ((tfa98xx_dev_family(dev_idx) == 1) ? TFA1_BF_##fieldname :  TFA2_BF_##fieldname)
+#else
+#define TFA_FAM(dev_idx, fieldname) TFA2_BF_##fieldname
+#endif
+//HTC_AUD_END
 #define TFA_FAM_FW(dev_idx, fwname) ((tfa98xx_dev_family(dev_idx) == 1) ? TFA1_FW_##fwname :  TFA2_FW_##fwname)
 
 /* set/get bit fields to HW register*/

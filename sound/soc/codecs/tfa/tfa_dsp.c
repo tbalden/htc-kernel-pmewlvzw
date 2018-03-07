@@ -107,10 +107,19 @@ int tfa_get_calibration_info(Tfa98xx_handle_t handle, int channel) {
  */
 static void tfa_set_query_info (int dev_idx) {
 
+/* HTC_AUD_START: Klocwork */
+#if 0
 	if (dev_idx > MAX_HANDLES) {
 		_ASSERT(dev_idx > MAX_HANDLES);
 		return;
 	}
+#else
+	if (dev_idx >= MAX_HANDLES) {
+		_ASSERT(dev_idx >= MAX_HANDLES);
+		return;
+	}
+#endif
+/* HTC_AUD_END */
 	
 	/* invalidate  device struct cached values */
 	handles_local[dev_idx].hw_feature_bits = -1;
@@ -1426,7 +1435,11 @@ enum Tfa98xx_Error tfa_dsp_msg_status(Tfa98xx_handle_t handle, int *pRpcStatus) 
 const char* tfa98xx_get_i2c_status_id_string(int status)
 {
         const char* p_id_str;
+/* HTC_AUD_START: Klocwork */
+/*
         char latest_errorstr[64];
+*/
+/* HTC_AUD_END */
 
         switch (status)
         {
@@ -1458,8 +1471,14 @@ const char* tfa98xx_get_i2c_status_id_string(int status)
                         p_id_str = "I2C buffer has overflowed: host has sent too many parameters, memory integrity is not guaranteed";
                         break;
                 default:
+/* HTC_AUD_START: Klocwork */
+#if 0
                         sprintf(latest_errorstr, "Unspecified error (%d)", (int)status);
                         p_id_str = latest_errorstr;
+#else
+                        p_id_str = "Unspecified error";
+#endif
+/* HTC_AUD_END */
                         break;
         }
 
@@ -2703,7 +2722,13 @@ enum Tfa98xx_Error tfaRunStartup(Tfa98xx_handle_t handle, int profile)
 	int tries, status, i, noinit=0;
 
 	/* process the device list to see if the user implemented the noinit */
+/* HTC_AUD_START: Klocwork */
+#if 0
 	for(i=0;i<dev->length;i++) {
+#else
+	for (i = 0; (dev != NULL) && i < dev->length; i++) {
+#endif
+/* HTC_AUD_END */
 		if (dev->list[i].type == dscNoInit) {
 			noinit=1;
 			break;
@@ -3136,6 +3161,154 @@ enum tfa_error tfa_reset(void)
 
 	return err;
 }
+
+//HTC_AUD_START: add for calibration
+const char* Tfa98xx_GetErrorString(enum Tfa98xx_Error error)
+{
+	const char* pErrStr;
+
+	switch (error)
+	{
+		case Tfa98xx_Error_Ok:
+			pErrStr = "Ok";
+			break;
+		case Tfa98xx_Error_Fail:
+			pErrStr = "generic_failure";
+			break;
+		case Tfa98xx_Error_NoClock:
+			pErrStr = "No_I2S_Clock";
+			break;
+		case Tfa98xx_Error_AmpOn:
+			pErrStr = "amp_still_running";
+			break;
+		case Tfa98xx_Error_DSP_not_running:
+			pErrStr = "DSP_not_running";
+			break;
+		case Tfa98xx_Error_Bad_Parameter:
+			pErrStr = "Bad_Parameter";
+			break;
+		case Tfa98xx_Error_NotOpen:
+			pErrStr = "NotOpen";
+			break;
+		case Tfa98xx_Error_InUse:
+			pErrStr = "InUse";
+			break;
+		case Tfa98xx_Error_RpcBusy:
+			pErrStr = "RpcBusy";
+			break;
+		case Tfa98xx_Error_RpcModId:
+			pErrStr = "RpcModId";
+			break;
+		case Tfa98xx_Error_RpcParamId:
+			pErrStr = "RpcParamId";
+			break;
+		case Tfa98xx_Error_RpcInfoId:
+			pErrStr = "RpcInfoId";
+			break;
+		case Tfa98xx_Error_RpcNotAllowedSpeaker:
+			pErrStr = "RpcNotAllowedSpeaker";
+			break;
+		case Tfa98xx_Error_Not_Supported:
+			pErrStr = "Not_Supported";
+			break;
+		case Tfa98xx_Error_I2C_Fatal:
+			pErrStr = "I2C_Fatal";
+			break;
+		case Tfa98xx_Error_I2C_NonFatal:
+			pErrStr = "I2C_NonFatal";
+			break;
+		case Tfa98xx_Error_StateTimedOut:
+			pErrStr = "WaitForState_TimedOut";
+			break;
+		default:
+			pErrStr = "Unspecified error";
+			break;
+	}
+	return pErrStr;
+}
+
+enum Tfa98xx_Error tfa_htc_resetMtpEx(void)
+{
+	enum Tfa98xx_Error err = Tfa98xx_Error_Ok;
+	int dev, devcount = tfa98xx_cnt_max_device();
+	if ( devcount < 1 ) {
+		pr_err("No or wrong container file loaded\n");
+		return Tfa98xx_Error_Bad_Parameter;
+	}
+
+	for( dev=0; dev < devcount; dev++) {
+		err = tfaContOpen(dev);
+		if ( err != Tfa98xx_Error_Ok)
+			break;
+		err = tfa_calibrate(dev);
+		if ( err != Tfa98xx_Error_Ok)
+			break;
+	}
+
+	for( dev=0; dev < devcount; dev++)
+		tfaContClose(dev);
+
+	return err;
+}
+
+enum Tfa98xx_Error tfa_htc_set_imp(int impedanceL, int impedanceR)
+{
+	enum Tfa98xx_Error err = Tfa98xx_Error_Ok;
+	int dev, devcount = tfa98xx_cnt_max_device();
+	if ( devcount < 1 ) {
+		pr_err("No or wrong container file loaded\n");
+		return Tfa98xx_Error_Bad_Parameter;
+	}
+
+	for( dev=0; dev < devcount; dev++) {
+		err = tfaContOpen(dev);
+		if ( err != Tfa98xx_Error_Ok)
+			break;
+		err = tfa98xx_powerdown(dev, 0);
+		if ( err != Tfa98xx_Error_Ok)
+			break;
+
+		TFA_SET_BF(dev, R25CL, impedanceL);
+		TFA_SET_BF(dev, R25CR, impedanceR);
+		TFA_SET_BF(dev, MTPOTC, 1);
+		TFA_SET_BF(dev,MTPEX, 1);
+		TFA_SET_BF(dev,CIMTP, 1);
+	}
+
+	for( dev=0; dev < devcount; dev++)
+		tfaContClose(dev);
+
+	return err;
+}
+
+enum Tfa98xx_Error tfa_htc_get_imp(int* val_l, int* val_r)
+{
+	enum Tfa98xx_Error err = Tfa98xx_Error_Ok;
+	int dev, devcount = tfa98xx_cnt_max_device();
+
+	for( dev=0; dev < devcount; dev++) {
+		err = tfaContOpen(dev);
+		if ( err != Tfa98xx_Error_Ok) {
+			pr_err("last status: %d (%s)\n", err, Tfa98xx_GetErrorString(err));
+			break;
+		}
+
+		err = tfa_dsp_get_calibration_impedance(dev);
+		if ( err != Tfa98xx_Error_Ok) {
+			pr_err("Get imp fail: %d (%s)\n", err, Tfa98xx_GetErrorString(err));
+			break;
+		}
+		*val_l = tfa_get_calibration_info(dev, 0);
+		*val_r = tfa_get_calibration_info(dev, 1);
+	}
+
+	for( dev=0; dev < devcount; dev++) {
+		tfaContClose(dev);
+	}
+
+	return err;
+}
+//HTC_AUD_END
 
 /*
  * Write all the bytes specified by num_bytes and data

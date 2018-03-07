@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,7 +25,9 @@
 #include <linux/string.h>
 #include <linux/sysfs.h>
 #include <linux/interrupt.h>
-#include <linux/spinlock.h>
+#ifdef CONFIG_TOUCHSCREEN_SIW
+#include <linux/input/siw_touch_notify.h>
+#endif
 
 #include "mdss_fb.h"
 #include "mdss_dsi.h"
@@ -49,8 +51,6 @@ struct dsi_status_data *pstatus_data;
 static void check_dsi_ctrl_status(struct work_struct *work)
 {
 	struct dsi_status_data *pdsi_status = NULL;
-	struct te_data *te = NULL;
-	unsigned long flag;
 
 	pdsi_status = container_of(to_delayed_work(work),
 		struct dsi_status_data, check_status);
@@ -70,17 +70,6 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 		return;
 	}
 
-	te = &(pstatus_data->te);
-	pr_info("%s: count=%d, irq_en=%d\n", __func__, te->count, te->irq_enabled);
-
-	spin_lock_irqsave(&pstatus_data->te.spinlock, flag);
-	if (!te->irq_enabled) {
-		te->count = 0;
-		te->irq_enabled = true;
-		enable_irq(te->irq);
-	}
-	spin_unlock_irqrestore(&pstatus_data->te.spinlock, flag);
-
 	pdsi_status->mfd->mdp.check_dsi_status(work, interval);
 }
 
@@ -98,9 +87,6 @@ irqreturn_t hw_vsync_handler(int irq, void *data)
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata =
 			(struct mdss_dsi_ctrl_pdata *)data;
 
-	struct te_data *te = NULL;
-	unsigned long flag;
-
 	if (!ctrl_pdata) {
 		pr_err("%s: DSI ctrl not available\n", __func__);
 		return IRQ_HANDLED;
@@ -108,28 +94,17 @@ irqreturn_t hw_vsync_handler(int irq, void *data)
 
 	if (pstatus_data) {
 		if (ctrl_pdata->status_mode == ESD_TE) {
+			pr_info("%s: count=%d\n", __func__, atomic_read(&ctrl_pdata->te_irq_ready));
 			mod_delayed_work(system_wq, &pstatus_data->check_status,
 				msecs_to_jiffies(interval));
-		} else if (ctrl_pdata->status_mode == ESD_TE_V2) {
-			spin_lock_irqsave(&pstatus_data->te.spinlock, flag);
-			te = &(pstatus_data->te);
-			te->count++;
-			if (te->irq_enabled) {
-				if (te->count > 2) {
-					te->irq_enabled = false;
-					disable_irq_nosync(te->irq);
-				}
-			} else {
-				pr_info("%s: TE IRQ was already disabled\n", __func__);
-			}
-			pr_info("%s: count=%d\n", __func__, te->count);
-			spin_unlock_irqrestore(&pstatus_data->te.spinlock, flag);
 		}
 	} else
 		pr_err("Pstatus data is NULL\n");
 
-	if (!atomic_read(&ctrl_pdata->te_irq_ready))
-		atomic_inc(&ctrl_pdata->te_irq_ready);
+	atomic_inc(&ctrl_pdata->te_irq_ready);
+	if (atomic_read(&ctrl_pdata->te_irq_ready) >= 3)
+		complete_all(&ctrl_pdata->te_irq_comp);
+
 
 	return IRQ_HANDLED;
 }
@@ -154,9 +129,6 @@ static int fb_event_callback(struct notifier_block *self,
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo;
 	struct msm_fb_data_type *mfd;
-	struct mipi_panel_info *mipi;
-	bool use_te_esd = false;
-	unsigned long flags;
 
 	if (!evdata) {
 		pr_err("%s: event data not available\n", __func__);
@@ -187,49 +159,54 @@ static int fb_event_callback(struct notifier_block *self,
 
 	pdata->mfd = evdata->info->par;
 
-	mipi  = &pinfo->mipi;
-	if ((pinfo->type == MIPI_CMD_PANEL) &&
-		mipi->vsync_enable && mipi->hw_vsync_mode) {
-		if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
-			use_te_esd = true;
-			pdata->te.irq = gpio_to_irq(ctrl_pdata->disp_te_gpio);
-		}
-	}
-
 	if (event == FB_EVENT_BLANK) {
 		int *blank = evdata->data;
 
-		spin_lock_irqsave(&pdata->te.spinlock, flags);
 		switch (*blank) {
 		case FB_BLANK_UNBLANK:
-			if (use_te_esd) {
-				pdata->te.irq_enabled = true;
-				enable_irq(pdata->te.irq);
-			}
+			pdata->vendor_esd_error = false;
 			schedule_delayed_work(&pdata->check_status,
 				msecs_to_jiffies(1000));
 			break;
-		case FB_BLANK_POWERDOWN:
-		case FB_BLANK_HSYNC_SUSPEND:
 		case FB_BLANK_VSYNC_SUSPEND:
 		case FB_BLANK_NORMAL:
+			pr_debug("%s : ESD thread running\n", __func__);
+			break;
+		case FB_BLANK_POWERDOWN:
+		case FB_BLANK_HSYNC_SUSPEND:
 			cancel_delayed_work(&pdata->check_status);
-			if (use_te_esd && pdata->te.irq_enabled) {
-				disable_irq_nosync(pdata->te.irq);
-				pdata->te.irq_enabled = false;
-				pdata->te.count = 99;
-				atomic_set(&ctrl_pdata->te_irq_ready, 0);
-			}
 			break;
 		default:
 			pr_err("Unknown case in FB_EVENT_BLANK event\n");
 			break;
 		}
-		spin_unlock_irqrestore(&pdata->te.spinlock, flags);
 		pr_info("%s: fb%d, event=%lu, blank=%d\n", __func__, mfd->index, event, *blank);
 	}
 	return 0;
 }
+
+#ifdef CONFIG_TOUCHSCREEN_SIW
+static int mdss_siw_event_callback(struct notifier_block *self,
+	unsigned long event, void *data)
+{
+	struct dsi_status_data *pdata = container_of(self,
+				struct dsi_status_data, vendor_notifier);
+	struct msm_fb_data_type *mfd = pdata->mfd;
+
+	pr_info("%s: mfd=%p, event=%lu\n", __func__, mfd, event);
+	if (mfd && mfd->index == 0) {
+		switch (event) {
+		case LCD_EVENT_TOUCH_ESD_DETECTED:
+			pdata->vendor_esd_error = true;
+			schedule_delayed_work(&pdata->check_status,
+				msecs_to_jiffies(50));
+		break;
+		}
+	}
+
+	return 0;
+}
+#endif
 
 static int param_dsi_status_disable(const char *val, struct kernel_param *kp)
 {
@@ -286,9 +263,11 @@ int __init mdss_dsi_status_init(void)
 		return -EPERM;
 	}
 
-	pstatus_data->te.irq = -1;
-	pstatus_data->te.irq_enabled = false;
-	spin_lock_init(&pstatus_data->te.spinlock);
+#ifdef CONFIG_TOUCHSCREEN_SIW
+	pstatus_data->vendor_notifier.notifier_call = mdss_siw_event_callback;
+	if (siw_touch_atomic_notifier_register(&pstatus_data->vendor_notifier) != 0)
+		pr_err("Failed to register callback\n");
+#endif
 
 	pr_info("%s: DSI status check interval:%d\n", __func__,	interval);
 
@@ -301,6 +280,9 @@ int __init mdss_dsi_status_init(void)
 
 void __exit mdss_dsi_status_exit(void)
 {
+#ifdef CONFIG_TOUCHSCREEN_SIW
+	siw_touch_atomic_notifier_unregister(&pstatus_data->vendor_notifier);
+#endif
 	fb_unregister_client(&pstatus_data->fb_notifier);
 	cancel_delayed_work_sync(&pstatus_data->check_status);
 	kfree(pstatus_data);

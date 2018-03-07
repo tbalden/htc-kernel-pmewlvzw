@@ -96,10 +96,12 @@ KERNEL_MODULES_OUT := $(TARGET_OUT)/lib/modules
 
 TARGET_PREBUILT_KERNEL := $(TARGET_PREBUILT_INT_KERNEL)
 
+ifeq ($(TUXERA_EXFAT_SUPPORT), true)
 KERNEL_ENABLE_EXFAT ?= $(shell cat $(TARGET_KERNEL_SOURCE)/arch/$(KERNEL_ARCH)/configs/$(KERNEL_DEFCONFIG) | egrep -v "^\s*\#" | egrep "CONFIG_EXFAT_FS" | sed 's/^\s*CONFIG_EXFAT_FS\s*=\s*//' )
 KERNEL_EXFAT_PATH ?= $(shell cat $(TARGET_KERNEL_SOURCE)/arch/$(KERNEL_ARCH)/configs/$(KERNEL_DEFCONFIG) | egrep -v "^\s*\#" | egrep "CONFIG_EXFAT_PATH" | sed 's/^\s*CONFIG_EXFAT_PATH\s*=\s*\"//' | sed 's/\".*//' )
 KERNEL_EXFAT_VERSION ?= $(shell cat $(TARGET_KERNEL_SOURCE)/arch/$(KERNEL_ARCH)/configs/$(KERNEL_DEFCONFIG) | egrep -v "^\s*\#" | egrep "CONFIG_EXFAT_VERSION" | sed 's/^\s*CONFIG_EXFAT_VERSION\s*=\s*\"//' | sed 's/\".*//' )
 BUILD_PATH ?= $(shell pwd)
+endif
 
 define mv-modules
 mdpath=`find $(KERNEL_MODULES_OUT) -type f -name modules.dep`;\

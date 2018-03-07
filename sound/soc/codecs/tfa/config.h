@@ -16,6 +16,8 @@
 #define pr_debug(fmt, ...) pr_aud_debug(fmt, ##__VA_ARGS__)
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+#define LEFT_DEFAULT 8000
+#define RIGHT_DEFAULT 6000
 //HTC_AUD_END
 
 /* 
@@ -115,6 +117,7 @@ struct tfa98xx {
 	int irq_gpio;
 
 //HTC_AUD_START
+	struct delayed_work loading_work;
 	int spk_source;
 //HTC_AUD_END
 

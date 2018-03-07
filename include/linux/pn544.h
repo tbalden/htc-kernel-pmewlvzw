@@ -19,4 +19,6 @@ struct pn544_i2c_platform_data {
 	unsigned int pvdd_en;
 	uint32_t pvdd_en_flags;
 	unsigned int ven_isinvert;
+	unsigned int clkreq_gpio;
+	const char *clk_src_name;
 };

@@ -62,6 +62,8 @@ extern int (*htc_torch_main_sync)(int, int, bool);
 extern int (*htc_flash_front)(int, int);
 extern int (*htc_torch_front)(int, int);
 
+void backlight_callback_register( void (*)(int) );
+
 #ifdef __KERNEL__
 #ifdef CONFIG_HTC_FLASHLIGHT
 int register_htc_flashlight(struct htc_flashlight_dev *);

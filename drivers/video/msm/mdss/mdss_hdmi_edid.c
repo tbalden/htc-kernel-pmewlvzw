@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -134,6 +134,7 @@ struct hdmi_edid_ctrl {
 	u16 video_latency;
 	u32 present_3d;
 	u32 page_id;
+	bool basic_audio_supp;
 	u8 audio_data_block[MAX_NUMBER_ADB * MAX_AUDIO_DATA_BLOCK_SIZE];
 	int adb_size;
 	u8 spkr_alloc_data_block[MAX_SPKR_ALLOC_DATA_BLOCK_SIZE];
@@ -460,8 +461,10 @@ static ssize_t hdmi_edid_sysfs_wta_res_info(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	int rc, page_id;
+	u32 i = 0, j, page;
 	ssize_t ret = strnlen(buf, PAGE_SIZE);
 	struct hdmi_edid_ctrl *edid_ctrl = hdmi_edid_get_ctrl(dev);
+	struct msm_hdmi_mode_timing_info info = {0};
 
 	if (!edid_ctrl) {
 		DEV_ERR("%s: invalid input\n", __func__);
@@ -474,7 +477,22 @@ static ssize_t hdmi_edid_sysfs_wta_res_info(struct device *dev,
 		return rc;
 	}
 
-	edid_ctrl->page_id = page_id;
+	if (page_id > MSM_HDMI_INIT_RES_PAGE) {
+		page = MSM_HDMI_INIT_RES_PAGE;
+		while (page < page_id) {
+			j = 1;
+			while (sizeof(info) * j < PAGE_SIZE) {
+				i++;
+				j++;
+			}
+			page++;
+		}
+	}
+
+	if (i < HDMI_VFRMT_MAX)
+		edid_ctrl->page_id = page_id;
+	else
+		DEV_ERR("%s: invalid page id\n", __func__);
 
 	DEV_DBG("%s: %d\n", __func__, edid_ctrl->page_id);
 	return ret;
@@ -808,7 +826,7 @@ static const u8 *hdmi_edid_find_block(const u8 *in_buf, u32 start_offset,
 		if ((offset + block_len <= dbc_offset) &&
 		    (in_buf[offset] >> 5) == type) {
 			*len = block_len;
-			DEV_DBG("%s: EDID: block=%d found @ 0x%x w/ len=%d\n",
+			DEV_DBG("%s: EDID: type=%d block found @ 0x%x w/ len=%d\n",
 				__func__, type, offset, block_len);
 
 			return in_buf + offset;
@@ -1286,6 +1304,12 @@ static void hdmi_edid_extract_vendor_id(struct hdmi_edid_ctrl *edid_ctrl)
 	char *vendor_id;
 	u32 id_codes;
 
+	u32 product;
+	u8 const *edid;
+	int offset;
+#define STRING_SIZE 13
+	char serial_string[STRING_SIZE+1] = "(n/a)", name_string[STRING_SIZE+1] = "(n/a)";
+
 	if (!edid_ctrl) {
 		DEV_ERR("%s: invalid input\n", __func__);
 		return;
@@ -1299,6 +1323,36 @@ static void hdmi_edid_extract_vendor_id(struct hdmi_edid_ctrl *edid_ctrl)
 	vendor_id[1] = 'A' - 1 + ((id_codes >> 5) & 0x1F);
 	vendor_id[2] = 'A' - 1 + (id_codes & 0x1F);
 	vendor_id[3] = 0;
+
+	edid = edid_ctrl->edid_buf;
+	product = edid[11] << 8 | edid[10];
+
+	for (offset = 0x36; offset < 0x80; offset += 18) {
+		if (edid[offset] == 0x0 && edid[offset+1] == 0x0 && edid[offset+2] == 0x0) {
+			int i = 0;
+			if (edid[offset+3] == 0xFF) {
+				for (i = 0; i < STRING_SIZE; i++) {
+					serial_string[i] = edid[offset+5+i];
+					if (serial_string[i] == 0x0A)
+						break;
+				}
+				serial_string[i] = '\0';
+			} else if (edid[offset+3] == 0xFC) {
+				for (i = 0; i < STRING_SIZE; i++) {
+					name_string[i] = edid[offset+5+i];
+					if (name_string[i] == 0x0A)
+						break;
+				}
+				name_string[i] = '\0';
+			}
+		}
+	}
+
+	DEV_INFO("EDID(0) - Vendor: %s, Product: %04X, S/N: %02X%02X%02X%02X, Date: %d/%d\n",
+		 vendor_id, product, edid[15], edid[14], edid[13], edid[12], edid[17] + 1990, edid[16]);
+	DEV_INFO("EDID(0) - Serial: %s, Name: %s\n", serial_string, name_string);
+
+#undef STRING_SIZE
 } /* hdmi_edid_extract_vendor_id */
 
 static u32 hdmi_edid_check_header(const u8 *edid_buf)
@@ -2139,7 +2193,7 @@ int hdmi_edid_parser(void *input)
 {
 	u8 *edid_buf = NULL;
 	u32 num_of_cea_blocks = 0;
-	u16 ieee_reg_id;
+	u32 ieee_reg_id = 0;
 	int status = 0;
 	u32 i = 0;
 	struct hdmi_edid_ctrl *edid_ctrl = (struct hdmi_edid_ctrl *)input;
@@ -2168,7 +2222,7 @@ int hdmi_edid_parser(void *input)
 
 	/* EDID_CEA_EXTENSION_FLAG[0x7E] - CEC extension byte */
 	num_of_cea_blocks = edid_buf[EDID_BLOCK_SIZE - 2];
-	DEV_DBG("%s: No. of CEA blocks is  [%u]\n", __func__,
+	DEV_DBG("%s: %u CEA blocks found.\n", __func__,
 		num_of_cea_blocks);
 
 	/* Find out any CEA extension blocks following block 0 */
@@ -2178,6 +2232,13 @@ int hdmi_edid_parser(void *input)
 		DEV_DBG("HDMI DVI mode: %s\n",
 			edid_ctrl->sink_mode ? "no" : "yes");
 		goto bail;
+	}
+
+	/* Find out if CEA extension blocks exceeding max limit */
+	if (num_of_cea_blocks >= MAX_EDID_BLOCKS) {
+		DEV_WARN("%s: HDMI EDID exceeded max CEA blocks limit\n",
+				__func__);
+		num_of_cea_blocks = MAX_EDID_BLOCKS - 1;
 	}
 
 	/* check for valid CEA block */
@@ -2195,6 +2256,14 @@ int hdmi_edid_parser(void *input)
 		edid_ctrl->sink_mode = SINK_MODE_HDMI;
 	else
 		edid_ctrl->sink_mode = SINK_MODE_DVI;
+
+        /* Check if sink supports basic audio */
+        if (edid_buf[3] & BIT(6))
+                edid_ctrl->basic_audio_supp = true;
+        else
+                edid_ctrl->basic_audio_supp = false;
+        DEV_INFO("%s: basic audio supported: %s, sink_mode=%s\n", __func__,
+                edid_ctrl->basic_audio_supp ? "true" : "false", edid_ctrl->sink_mode == SINK_MODE_DVI ? "DVI" : "HDMI");
 
 	hdmi_edid_extract_sink_caps(edid_ctrl, edid_buf);
 	hdmi_edid_extract_latency_fields(edid_ctrl, edid_buf);
@@ -2420,6 +2489,17 @@ void hdmi_edid_set_video_resolution(void *input, u32 resolution, bool reset)
 		edid_ctrl->sink_data.disp_mode_list[0].rgb_support = true;
 	}
 } /* hdmi_edid_set_video_resolution */
+
+bool hdmi_edid_is_audio_supported(void *input)
+{
+	struct hdmi_edid_ctrl *edid_ctrl = (struct hdmi_edid_ctrl *)input;
+	/*
+	 * return true if basic audio is supported or if an audio
+	 * data block was successfully parsed.
+	 */
+
+	return (edid_ctrl->basic_audio_supp || edid_ctrl->adb_size);
+}
 
 void hdmi_edid_deinit(void *input)
 {

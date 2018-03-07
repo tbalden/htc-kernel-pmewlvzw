@@ -1,4 +1,5 @@
-/* Copyright (c) 2012-2014, 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, 2016-2017, The Linux Foundation. All
+ * rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,7 +20,6 @@
 #include <sound/control.h>
 #include <sound/q6adm-v2.h>
 #include <sound/asound.h>
-#include <sound/msm-dts-eagle.h>
 #include "msm-dts-srs-tm-config.h"
 #include "msm-pcm-routing-v2.h"
 
@@ -165,7 +165,13 @@ static int msm_dts_srs_trumedia_control_mi2s_set(struct snd_kcontrol *kcontrol,
 
 	pr_debug("SRS control MI2S called\n");
 	msm_pcm_routing_acquire_lock();
+//HTC_AUD_START
+#if 0
 	port_id = AFE_PORT_ID_PRIMARY_MI2S_RX;
+#else
+	port_id = AFE_PORT_ID_QUATERNARY_MI2S_RX;
+#endif
+//HTC_AUD_END
 	ret = msm_dts_srs_trumedia_control_set_(port_id, kcontrol, ucontrol);
 	msm_pcm_routing_release_lock();
 	return ret;
@@ -319,8 +325,16 @@ static void unreg_ion_mem(void)
 
 void msm_dts_srs_tm_deinit(int port_id)
 {
+//HTC_AUD_START
+#if 0
 	set_port_id(port_id, -1);
 	atomic_dec(&ref_cnt);
+#else
+	atomic_dec(&ref_cnt);
+	if(atomic_read(&ref_cnt) == 0)
+		set_port_id(port_id, -1);
+#endif
+//HTC_END_END
 	if (po.kvaddr != NULL) {
 		if (!atomic_read(&ref_cnt)) {
 			pr_debug("%s: calling unreg_ion_mem()\n", __func__);
@@ -333,14 +347,24 @@ void msm_dts_srs_tm_deinit(int port_id)
 void msm_dts_srs_tm_init(int port_id, int copp_idx)
 {
 	int cur_ref_cnt = 0;
-
+//HTC_AUD_START
+#if 0
 	if (set_port_id(port_id, copp_idx) < 0) {
 		pr_err("%s: Invalid port_id: %d\n", __func__, port_id);
 		return;
 	}
-
+#endif
+//HTC_AUD_END
 	cur_ref_cnt = atomic_read(&ref_cnt);
 	atomic_inc(&ref_cnt);
+//HTC_AUD_START
+	if(cur_ref_cnt == 0) {
+		if (set_port_id(port_id, copp_idx) < 0) {
+			pr_err("%s: Invalid port_id: %d\n", __func__, port_id);
+			return;
+		}
+	}
+//HTC_AUD_END
 	if (!cur_ref_cnt && po.kvaddr == NULL) {
 		pr_debug("%s: calling reg_ion_mem()\n", __func__);
 		if (reg_ion_mem() != 0) {
@@ -352,3 +376,16 @@ void msm_dts_srs_tm_init(int port_id, int copp_idx)
 	msm_dts_srs_tm_send_params(port_id, 1);
 	return;
 }
+
+//HTC_AUD_START
+static int __init msm_dts_srs_init(void)
+{
+       int i;
+       for(i=0; i<AFE_MAX_PORTS; i++) {
+               srs_port_id[i] = -1;
+               srs_copp_idx[i] = -1;
+       }
+       return 0;
+}
+module_init(msm_dts_srs_init);
+//HTC_AUD_END

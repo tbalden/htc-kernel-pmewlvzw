@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -123,6 +123,8 @@
 #define ADRENO_QUIRK_FAULT_DETECT_MASK BIT(3)
 /* Disable RB sampler datapath clock gating optimization */
 #define ADRENO_QUIRK_DISABLE_RB_DP2CLOCKGATING BIT(4)
+/* Disable local memory(LM) feature to avoid corner case error */
+#define ADRENO_QUIRK_DISABLE_LMLOADKILL BIT(5)
 
 /* Flags to control command packet settings */
 #define KGSL_CMD_FLAGS_NONE             0
@@ -180,6 +182,7 @@ enum adreno_gpurev {
 #define ADRENO_TIMEOUT_FAULT BIT(2)
 #define ADRENO_IOMMU_PAGE_FAULT BIT(3)
 #define ADRENO_PREEMPT_FAULT BIT(4)
+#define ADRENO_CTX_DETATCH_TIMEOUT_FAULT BIT(5)
 
 #define ADRENO_SPTP_PC_CTRL 0
 #define ADRENO_PPD_CTRL     1
@@ -195,6 +198,10 @@ struct adreno_gpudev;
 
 /* Time to allow preemption to complete (in ms) */
 #define ADRENO_PREEMPT_TIMEOUT 10000
+
+#define ADRENO_INT_BIT(a, _bit) (((a)->gpucore->gpudev->int_bits) ? \
+		(adreno_get_int(a, _bit) < 0 ? 0 : \
+		BIT(adreno_get_int(a, _bit))) : 0)
 
 /**
  * enum adreno_preempt_states
@@ -342,6 +349,7 @@ struct adreno_gpu_core {
  * @ram_cycles_lo: Number of DDR clock cycles for the monitor session
  * @perfctr_pwr_lo: Number of cycles VBIF is stalled by DDR
  * @halt: Atomic variable to check whether the GPU is currently halted
+ * @pending_irq_refcnt: Atomic variable to keep track of running IRQ handlers
  * @ctx_d_debugfs: Context debugfs node
  * @pwrctrl_flag: Flag to hold adreno specific power attributes
  * @cmdbatch_profile_buffer: Memdesc holding the cmdbatch profiling buffer
@@ -399,6 +407,7 @@ struct adreno_device {
 	unsigned int starved_ram_lo;
 	unsigned int perfctr_pwr_lo;
 	atomic_t halt;
+	atomic_t pending_irq_refcnt;
 	struct dentry *ctx_d_debugfs;
 	unsigned long pwrctrl_flag;
 
@@ -556,6 +565,8 @@ enum adreno_regs {
 	ADRENO_REG_RBBM_RBBM_CTL,
 	ADRENO_REG_UCHE_INVALIDATE0,
 	ADRENO_REG_UCHE_INVALIDATE1,
+	ADRENO_REG_RBBM_PERFCTR_RBBM_0_LO,
+	ADRENO_REG_RBBM_PERFCTR_RBBM_0_HI,
 	ADRENO_REG_RBBM_PERFCTR_LOAD_VALUE_LO,
 	ADRENO_REG_RBBM_PERFCTR_LOAD_VALUE_HI,
 	ADRENO_REG_RBBM_SECVID_TRUST_CONTROL,
@@ -570,6 +581,11 @@ enum adreno_regs {
 	ADRENO_REG_VBIF_XIN_HALT_CTRL1,
 	ADRENO_REG_VBIF_VERSION,
 	ADRENO_REG_REGISTER_MAX,
+};
+
+enum adreno_int_bits {
+	ADRENO_INT_RBBM_AHB_ERROR,
+	ADRENO_INT_BITS_MAX,
 };
 
 /**
@@ -587,6 +603,7 @@ struct adreno_reg_offsets {
 #define ADRENO_REG_UNUSED	0xFFFFFFFF
 #define ADRENO_REG_SKIP	0xFFFFFFFE
 #define ADRENO_REG_DEFINE(_offset, _reg) [_offset] = _reg
+#define ADRENO_INT_DEFINE(_offset, _val) ADRENO_REG_DEFINE(_offset, _val)
 
 /*
  * struct adreno_vbif_data - Describes vbif register value pair
@@ -724,6 +741,7 @@ struct adreno_gpudev {
 	 * so define them in the structure and use them as variables.
 	 */
 	const struct adreno_reg_offsets *reg_offsets;
+	unsigned int *const int_bits;
 	const struct adreno_ft_perf_counters *ft_perf_counters;
 	unsigned int ft_perf_counters_count;
 
@@ -1086,6 +1104,23 @@ static inline unsigned int adreno_getreg(struct adreno_device *adreno_dev,
 	if (!adreno_checkreg_off(adreno_dev, offset_name))
 		return ADRENO_REG_REGISTER_MAX;
 	return gpudev->reg_offsets->offsets[offset_name];
+}
+
+/*
+ * adreno_get_int() - Returns the offset value of an interrupt bit from
+ * the interrupt bit array in the gpudev node
+ * @adreno_dev:		Pointer to the the adreno device
+ * @bit_name:		The interrupt bit enum whose bit is returned
+ */
+static inline unsigned int adreno_get_int(struct adreno_device *adreno_dev,
+				enum adreno_int_bits bit_name)
+{
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
+
+	if (bit_name >= ADRENO_INT_BITS_MAX)
+		return -ERANGE;
+
+	return gpudev->int_bits[bit_name];
 }
 
 /**
@@ -1457,4 +1492,25 @@ static inline void adreno_ringbuffer_set_pagetable(struct adreno_ringbuffer *rb,
 	spin_unlock_irqrestore(&rb->preempt_lock, flags);
 }
 
+static inline bool is_power_counter_overflow(struct adreno_device *adreno_dev,
+	unsigned int reg, unsigned int prev_val, unsigned int *perfctr_pwr_hi)
+{
+	unsigned int val;
+	bool ret = false;
+
+	/*
+	 * If prev_val is zero, it is first read after perf counter reset.
+	 * So set perfctr_pwr_hi register to zero.
+	 */
+	if (prev_val == 0) {
+		*perfctr_pwr_hi = 0;
+		return ret;
+	}
+	adreno_readreg(adreno_dev, ADRENO_REG_RBBM_PERFCTR_RBBM_0_HI, &val);
+	if (val != *perfctr_pwr_hi) {
+		*perfctr_pwr_hi = val;
+		ret = true;
+	}
+	return ret;
+}
 #endif /*__ADRENO_H */

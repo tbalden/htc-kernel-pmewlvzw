@@ -6,6 +6,18 @@
 #include <linux/vmalloc.h>
 #include <linux/reboot.h>
 
+#ifdef CONFIG_HTC_POWER_DEBUG
+#include "power/power.h"
+
+static struct delayed_work pm_notify_monitor_debug_work;
+static int pm_notify_monitor_debug_count = 0;
+static int pm_notify_monitor_debug_init = 0;
+static int pm_notify_debug = 0;
+#define PM_NOTIFY_STR_BUFFER 128
+static char pm_notify_debug_str[PM_NOTIFY_STR_BUFFER];
+static char *pm_notify_state_str[2] = {"Suspend", "Resume"};
+#endif
+
 /*
  *	Notifier list for kernel code which wants to be called
  *	at shutdown. This is used to stop any idling DMA operations
@@ -59,6 +71,20 @@ static int notifier_chain_unregister(struct notifier_block **nl,
 	return -ENOENT;
 }
 
+#ifdef CONFIG_HTC_POWER_DEBUG
+static void pm_notify_monitor_debug(struct work_struct *work)
+{
+	pr_err("[PM_NOTIFY] %s, count: %d\n", pm_notify_debug_str,
+		   pm_notify_monitor_debug_count);
+	if (pm_notify_monitor_debug_count == 5) {
+		printk("[PM_NOTIFY] monitor exit: reached 30s\n");
+	} else {
+		pm_notify_monitor_debug_count++;
+		schedule_delayed_work(&pm_notify_monitor_debug_work, msecs_to_jiffies(5000));
+	}
+}
+#endif
+
 /**
  * notifier_call_chain - Informs the registered notifiers about an event.
  *	@nl:		Pointer to head of the blocking notifier chain
@@ -76,9 +102,32 @@ static int notifier_call_chain(struct notifier_block **nl,
 			       int nr_to_call, int *nr_calls)
 {
 	int ret = NOTIFY_DONE;
+#ifdef CONFIG_HTC_POWER_DEBUG
+	int is_pm_notify_chain;
+#endif
 	struct notifier_block *nb, *next_nb;
 
 	nb = rcu_dereference_raw(*nl);
+
+#ifdef CONFIG_HTC_POWER_DEBUG
+	is_pm_notify_chain = 0;
+	if(nb == get_pm_chain_head()->head) {
+		if(pm_notify_debug)
+			printk("[PM_NOTIFY] is pm notify chain\n");
+		if(val == PM_SUSPEND_PREPARE ||
+		   val == PM_POST_SUSPEND) {
+			is_pm_notify_chain = 1;
+		} else {
+			if(pm_notify_debug)
+				printk("[PM_NOTIFY] this notify is not in Suspend/Resume flow\n");
+		}
+	}
+
+	if (pm_notify_monitor_debug_init == 0) {
+		INIT_DELAYED_WORK(&pm_notify_monitor_debug_work, pm_notify_monitor_debug);
+		pm_notify_monitor_debug_init++;
+	}
+#endif
 
 	while (nb && nr_to_call) {
 		next_nb = rcu_dereference_raw(nb->next);
@@ -90,8 +139,30 @@ static int notifier_call_chain(struct notifier_block **nl,
 			continue;
 		}
 #endif
+#ifdef CONFIG_HTC_POWER_DEBUG
+		if(is_pm_notify_chain) {
+			void *func = nb->notifier_call;
+			memset(pm_notify_debug_str, 0, sizeof(pm_notify_debug_str));
+			snprintf(pm_notify_debug_str, PM_NOTIFY_STR_BUFFER,
+					 "%s: func: %pF, addr: %p",
+					 val == PM_SUSPEND_PREPARE ?
+					 pm_notify_state_str[0] : pm_notify_state_str[1],
+					 func, func);
+			schedule_delayed_work(&pm_notify_monitor_debug_work, msecs_to_jiffies(5000));
+			if(pm_notify_debug)
+				printk("[PM_NOTIFY] %s\n", pm_notify_debug_str);
+		}
+#endif
 		ret = nb->notifier_call(nb, val, v);
+#ifdef CONFIG_HTC_POWER_DEBUG
+		if(is_pm_notify_chain) {
+			if(pm_notify_debug)
+				printk("[PM_NOTIFY] Finish: %s\n", pm_notify_debug_str);
 
+			cancel_delayed_work_sync(&pm_notify_monitor_debug_work);
+			pm_notify_monitor_debug_count = 0;
+		}
+#endif
 		if (nr_calls)
 			(*nr_calls)++;
 

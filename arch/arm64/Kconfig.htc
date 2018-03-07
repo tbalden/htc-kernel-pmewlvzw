@@ -27,6 +27,10 @@ config HTC_POWER_DEBUG
 	  clock/gpio/qpnp pin dump, wakeup source, kerenl top and autosuspend
 	  stage footprint
 
+config HTC_FD_MONITOR
+	bool "fd operation monitor mechanism"
+	default n
+
 comment "HTC features"
 menuconfig HTC_FEATURES
 	bool "HTC Implement Features"
@@ -90,3 +94,21 @@ config LMK_ZYGOTE_PROTECT
 	default n
 	help
 	  Say Y here if you want the HTC style for protecting zygote to be killed by LMK with invalid adj values
+
+comment "HTC Projects"
+
+menu "MSM Board Selection"
+
+config MACH_OCE
+  depends on ARCH_MSM8996
+  bool "MSM8996SG OCE"
+  help
+    Support for HTC MSM8996 OCE
+
+config MACH_AIO
+  depends on ARCH_MSM8996
+  bool "MSM8996SG AIO"
+  help
+    Support for HTC MSM8996 AIO
+
+endmenu

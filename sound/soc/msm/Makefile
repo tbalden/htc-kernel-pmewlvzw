@@ -32,19 +32,19 @@ obj-$(CONFIG_SND_SOC_MSM8X16) += snd-soc-msm8x16.o
 #HTC_AUD_START
 obj-$(CONFIG_I2C_RT5503) += rt5503-i2c.o rt5503-pdev.o rt5503-regmap.o
 
-obj-$(CONFIG_SND_SOC_MSM8996) += htc_acoustic_alsa.o
+obj-$(CONFIG_SND_HTC_ACOUSTIC_ALSA) += htc_acoustic_alsa.o
 #HTC_AUD_END
 
-# for MDM Californium sound card driver
-snd-soc-mdmcalifornium-objs := mdmcalifornium.o
-obj-$(CONFIG_SND_SOC_MDMCALIFORNIUM) += snd-soc-mdmcalifornium.o
+# for MDM 9650 sound card driver
+snd-soc-mdm9650-objs := mdm9650.o mdm9650-auto.o
+obj-$(CONFIG_SND_SOC_MDM9650) += snd-soc-mdm9650.o
 
 # for MDM 9607 sound card driver
 snd-soc-mdm9607-objs := mdm9607.o
 obj-$(CONFIG_SND_SOC_MDM9607) += snd-soc-mdm9607.o
 
 # for MSM 8909 sound card driver
-snd-soc-msm8909-objs := msm8952.o msm-audio-pinctrl.o
+snd-soc-msm8909-objs := msm8952.o msm-audio-pinctrl.o apq8009-i2s-ext-codec.o
 obj-$(CONFIG_SND_SOC_MSM8909) += snd-soc-msm8909.o
 
 # for MDM9640 sound card driver

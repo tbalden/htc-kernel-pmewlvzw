@@ -8,10 +8,12 @@ Required properties:
 
 Optional properties:
   - bl-name: Backlight device name (string)
-  - init-brt: Initial value of backlight brightness (u8)
+  - init-brt: Initial value of backlight brightness (u32)
   - pwm-period: PWM period value. Set only PWM input mode used (u32)
   - rom-addr: Register address of ROM area to be updated (u8)
   - rom-val: Register value to be updated (u8)
+  - boot-on: Register was already configured in bootloader/bios
+  - torch-brt: torch brightness when flash mode used
 
 Example:
 
@@ -49,7 +51,7 @@ Example:
 
 		bl-name = "lcd-bl";
 		dev-ctrl = /bits/ 8 <0x85>;
-		init-brt = /bits/ 8 <0x10>;
+		init-brt = <0x10>;
 	};
 
 	/* LP8557 */
@@ -58,7 +60,7 @@ Example:
 		reg = <0x2c>;
 
 		dev-ctrl = /bits/ 8 <0x41>;
-		init-brt = /bits/ 8 <0x0a>;
+		init-brt = <0x0a>;
 
 		/* 4V OV, 4 output LED string enabled */
 		rom_14h {

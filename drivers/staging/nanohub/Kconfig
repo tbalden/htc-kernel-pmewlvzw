@@ -30,4 +30,29 @@ config NANOHUB_I2C
 
 	  If in doubt, say N here.
 
+config NANOHUB_CONTEXTHUB_HAL
+	bool "Nanohub ContextHub HAL"
+	default N
+	help
+	  Enable contextHub HAL support.
+
+config NANOHUB_TP_SWITCH
+	bool "TP switch pin status synchronization"
+	default n
+	help
+	  TP switch pin status synchronization
+
+config NANOHUB_SECOND_DISP
+	bool "Second Disp"
+	default n
+	depends on NANOHUB_TP_SWITCH
+	help
+	  Second Disp
+
+config NANOHUB_HTC_LOG
+	bool "Trigger dump htc log"
+	default n
+	help
+	  Trigger dump htc log
+
 endif # NANOHUB

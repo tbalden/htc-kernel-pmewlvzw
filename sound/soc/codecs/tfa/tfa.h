@@ -114,4 +114,10 @@ enum tfa_error tfa_reset(void);
 
 enum Tfa98xx_Error tfa_write_filters(int dev_idx, int prof_idx);
 
+
+//HTC_AUD_START
+enum Tfa98xx_Error tfa_htc_set_imp(int impedanceL, int impedanceR);
+enum Tfa98xx_Error tfa_htc_get_imp(int* val_l, int* val_r );
+enum Tfa98xx_Error tfa_htc_resetMtpEx(void);
+//HTC_AUD_END
 #endif /* TFA_H_ */

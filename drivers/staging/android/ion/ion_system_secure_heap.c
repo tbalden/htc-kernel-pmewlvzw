@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -68,7 +68,7 @@ int ion_system_secure_heap_unassign_sg(struct sg_table *sgt, int source_vmid)
 
 int ion_system_secure_heap_assign_sg(struct sg_table *sgt, int dest_vmid)
 {
-	u32 source_vmid = VMID_HLOS;
+	int source_vmid = VMID_HLOS;
 	u32 dest_perms = PERM_READ | PERM_WRITE;
 	struct scatterlist *sg;
 	int ret, i;
@@ -133,7 +133,7 @@ static void ion_system_secure_heap_prefetch_work(struct work_struct *work)
 	unsigned long flags, size;
 	struct ion_buffer *buffer;
 	int ret;
-	int vmid_flags;
+	unsigned long vmid_flags;
 
 	buffer = kzalloc(sizeof(*buffer), GFP_KERNEL);
 	if (!buffer)
@@ -156,7 +156,7 @@ static void ion_system_secure_heap_prefetch_work(struct work_struct *work)
 						PAGE_SIZE, 0);
 		if (ret) {
 			pr_debug("%s: Failed to get %zx allocation for %s, ret = %d\n",
-				__func__, info->size, secure_heap->heap.name,
+				__func__, size, secure_heap->heap.name,
 				ret);
 			spin_lock_irqsave(&secure_heap->work_lock, flags);
 			continue;

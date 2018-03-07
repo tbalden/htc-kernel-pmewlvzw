@@ -46,7 +46,7 @@
 #define WLDEV_ERROR_TEXT		"[WLAN] WLDEV-LOG) "
 #else
 #define WLDEV_ERROR_TEXT		"WLDEV-ERROR) "
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 #define	WLDEV_ERROR(args)						\
 	do {										\
 		printk(KERN_ERR WLDEV_ERROR_TEXT "%s : ", __func__);	\
@@ -82,6 +82,10 @@ s32 wldev_ioctl_get(
 {
         return wldev_ioctl(dev, cmd, (void *)arg, len, 0);
 }
+/* Format a iovar buffer, not bsscfg indexed. The bsscfg index will be
+ * taken care of in dhd_ioctl_entry. Internal use only, not exposed to
+ * wl_iw, wl_cfg80211 and wl_cfgp2p
+ */
 static s32 wldev_mkiovar(
 	const s8 *iovar_name, s8 *param, s32 paramlen,
 	s8 *iovar_buf, u32 buflen)
@@ -101,7 +105,7 @@ s32 wldev_iovar_getbuf(
 		mutex_lock(buf_sync);
 	}
 	if (buf && (buflen > 0)) {
-		
+		/* initialize the response buffer */
 		memset(buf, 0, buflen);
 	} else {
 		ret = BCME_BADARG;
@@ -171,6 +175,10 @@ s32 wldev_iovar_getint(
 	return err;
 }
 
+/** Format a bsscfg indexed iovar buffer. The bsscfg index will be
+ *  taken care of in dhd_ioctl_entry. Internal use only, not exposed to
+ *  wl_iw, wl_cfg80211 and wl_cfgp2p
+ */
 s32 wldev_mkiovar_bsscfg(
 	const s8 *iovar_name, s8 *param, s32 paramlen,
 	s8 *iovar_buf, s32 buflen, s32 bssidx)
@@ -181,7 +189,7 @@ s32 wldev_mkiovar_bsscfg(
 	u32 namelen;
 	u32 iolen;
 
-	
+	/* initialize buffer */
 	if (!iovar_buf || buflen == 0)
 		return BCME_BADARG;
 	memset(iovar_buf, 0, buflen);
@@ -191,8 +199,8 @@ s32 wldev_mkiovar_bsscfg(
 			iovar_buf, buflen);
 	}
 
-	prefixlen = (u32) strlen(prefix); 
-	namelen = (u32) strlen(iovar_name) + 1; 
+	prefixlen = (u32) strlen(prefix); /* lengh of bsscfg prefix */
+	namelen = (u32) strlen(iovar_name) + 1; /* lengh of iovar  name + null */
 	iolen = prefixlen + namelen + sizeof(u32) + paramlen;
 
 	if (buflen < 0 || iolen > (u32)buflen)
@@ -203,20 +211,20 @@ s32 wldev_mkiovar_bsscfg(
 
 	p = (s8 *)iovar_buf;
 
-	
+	/* copy prefix, no null */
 	memcpy(p, prefix, prefixlen);
 	p += prefixlen;
 
-	
+	/* copy iovar name including null */
 	memcpy(p, iovar_name, namelen);
 	p += namelen;
 
-	
+	/* bss config index as first param */
 	bssidx = htod32(bssidx);
 	memcpy(p, &bssidx, sizeof(u32));
 	p += sizeof(u32);
 
-	
+	/* parameter buffer follows */
 	if (paramlen)
 		memcpy(p, param, paramlen);
 
@@ -305,7 +313,7 @@ int wldev_get_link_speed(
 	if (unlikely(error))
 		return error;
 
-	
+	/* Convert internal 500Kbps to Kbps */
 	*plink_speed *= 500;
 	return error;
 }
@@ -440,7 +448,7 @@ int wldev_set_country(
 	int error = -1;
 #ifdef CUSTOMER_HW_ONE
 	wl_country_t cspec_fw = {{0}, 0, {0}};
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 	wl_country_t cspec = {{0}, 0, {0}};
 	scb_val_t scbval;
 	char smbuf[WLC_IOCTL_SMLEN];
@@ -471,7 +479,7 @@ int wldev_set_country(
 	if ((error < 0) ||
 			dhd_force_country_change(dev) ||
 	    (strncmp(country_code, cspec.country_abbrev, WLC_CNTRY_BUF_SZ) != 0)) {
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 		if (user_enforced) {
 			bzero(&scbval, sizeof(scb_val_t));
 			error = wldev_ioctl_set(dev, WLC_DISASSOC,
@@ -487,7 +495,7 @@ int wldev_set_country(
 		memcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
 		memcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
 		dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
 			smbuf, sizeof(smbuf), NULL);
 		if (error < 0) {

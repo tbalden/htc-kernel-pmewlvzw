@@ -1,0 +1,184 @@
+/* 8996 Ocean Audio Config */
+
+&pm8994_vadc {
+	chan@13 {
+		label = "hs_remote_sensor_mpp1";
+		reg = <0x13>;
+		qcom,decimation = <0>;			//512 sampling rate
+		qcom,pre-div-channel-scaling = <0>;	//1:1 scaling
+		qcom,calibration-type = "absolute";	//Use 625mV & 1.25V reference voltage
+		qcom,scale-function = <0>;		//convert raw adc code to voltage
+		qcom,hw-settle-time = <2>;		//200us
+		qcom,fast-avg-setup = <0>;		//with only 1 average measurement
+	};
+};
+
+&pmi8994_mpps {
+	mpp@a000 {
+		reg = <0xa000 0x100>;
+		qcom,pin-num = <1>;
+		qcom,mode = <4>;		//QPNP_PIN_MODE_AIN
+		qcom,src-sel = <0>;     //QPNP_PIN_SEL_FUNC_CONSTANT
+		qcom,vin-sel = <2>;
+		qcom,ain-route = <3>;   //QPNP_PIN_AIN_AMUX_CH
+		qcom,master-en = <1>;   //ENABLE FEATURE
+		qcom,invert = <1>;
+		status = "okay";
+	};
+};
+
+&pmi8994_gpios {
+	gpio@c100 {
+		reg = <0xc100 0x100>;
+		qcom,pin-num = <2>;
+		qcom,mode = <0>;		/* Digital input */
+		qcom,pull = <5>;		/* No Pull */
+		qcom,src-sel = <0>;		/* GPIO */
+		qcom,master-en = <1>;	/* Enable GPIO */
+		qcom,vin-sel = <2>;
+		qcom,invert = <0>;
+		status = "okay";
+	};
+
+	gpio@c200 {
+		reg = <0xc200 0x100>;
+		qcom,pin-num = <3>;
+		qcom,mode = <0>;		/* Digital input */
+		qcom,pull = <5>;		/* No Pull */
+		qcom,src-sel = <0>;		/* GPIO */
+		qcom,master-en = <1>;	/* Enable GPIO */
+		qcom,vin-sel = <2>;
+		status = "okay";
+	};
+
+	gpio@c300 {
+		reg = <0xc300 0x100>;
+		qcom,pin-num = <4>;
+		qcom,mode = <0>;		/* Digital input */
+		qcom,pull = <5>;		/* No Pull */
+		qcom,src-sel = <0>;		/* GPIO */
+		qcom,master-en = <1>;	/* Enable GPIO */
+		qcom,vin-sel = <2>;
+		qcom,invert = <0>;
+
+		status = "okay";
+	};
+
+	gpio@c400 {
+		reg = <0xc400 0x100>;
+		qcom,pin-num = <5>;
+		qcom,mode = <0>;		/* Digital input */
+		qcom,pull = <5>;		/* No Pull */
+		qcom,src-sel = <0>;		/* GPIO */
+		qcom,master-en = <1>;	/* Enable GPIO */
+		qcom,vin-sel = <2>;
+		qcom,invert = <0>;
+		status = "okay";
+	};
+
+	gpio@c700 {
+		reg = <0xc700 0x100>;
+		qcom,pin-num = <8>;
+		qcom,mode = <1>;		/* Digital output */
+		qcom,src-sel = <0>;		/* GPIO */
+		qcom,master-en = <1>;	/* Enable GPIO */
+		qcom,vin-sel = <2>;
+		qcom,invert = <0>;
+		status = "okay";
+	};
+
+	gpio@c800 {
+		reg = <0xc800 0x100>;
+		qcom,pin-num = <9>;
+		qcom,mode = <1>;		/* Digital output */
+		qcom,src-sel = <0>;		/* GPIO */
+		qcom,master-en = <1>;	/* Enable GPIO */
+		qcom,vin-sel = <2>;
+		qcom,invert = <0>;
+		status = "okay";
+	};
+};
+
+&pm8994_l17 {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	qcom,init-voltage = <3300000>;
+	regulator-boot-on;
+	regulator-always-on;
+	status = "okay";
+};
+
+&soc {
+	sound-9335 {
+		qcom,audio-routing =
+			"AIF4 VI", "MCLK",
+			"RX_BIAS", "MCLK",
+/* HTC_AUD_START */
+			"AMIC2", "MIC BIAS2",
+			"MIC BIAS2", "Headset Mic",
+			"AMIC3", "ANCLeft Headset Mic",
+			"ANCLeft Headset Mic", "MCLK",
+			"AMIC4", "ANCRight Headset Mic",
+			"ANCRight Headset Mic", "MCLK",
+			"DMIC0", "MIC BIAS1",
+			"MIC BIAS1", "Digital Mic",
+			"DMIC1", "MIC BIAS1",
+			"MIC BIAS1", "Digital Mic",
+			"DMIC2", "MIC BIAS3",
+			"MIC BIAS3", "Digital Mic",
+			"DMIC3", "MIC BIAS3",
+			"MIC BIAS3", "Digital Mic",
+			"DMIC4", "MIC BIAS4",
+			"MIC BIAS4", "Digital Mic",
+			"DMIC5", "MIC BIAS4",
+			"MIC BIAS4", "Digital Mic";
+/* HTC_AUD_END */
+
+		qcom,msm-mbhc-hphl-swh = <1>; /* HTC_AUD: 1 for NO, 0 for NC */
+		qcom,msm-mbhc-gnd-swh = <1>; /* HTC_AUD: 1 for NO, 0 for NC */
+		qcom,audio-1v8-hph-en-gpio = <&pm8994_mpps 6 0>;
+//		qcom,tfa9888-reset-gpio = <&pm8994_gpios 4 0>;
+//		qcom,right-speaker-id-gpio = <&pmi8994_gpios 5 0>;
+
+		ftm-btpcm-clock	= <&tlmm 65 0>;
+		ftm-btpcm-sync	= <&tlmm 66 0>;
+		ftm-btpcm-dout	= <&tlmm 67 0>;
+		ftm-btpcm-din	= <&tlmm 68 0>;
+		htc-tfa9888 = <1>;
+//		mbhc-swap-detect = <0>;
+
+		htc,aud_gpio_ids = "htc,aud_typec_id1",
+				"htc,aud_typec_id2",
+				"htc,aud_usb_position";
+
+		htc,aud_gpio_switches = "htc,hpmic_agnd_flip_en_s0",
+				"htc,hpmic_agnd_flip_en_s1",
+				"htc,miclr_flip_en",
+				"htc,miclr_dgnd_sw_en";
+
+		htc,aud_usb_position = <&pmi8994_gpios 2 0>;
+		htc,aud_typec_id1 = <&pmi8994_gpios 4 0>;
+		htc,aud_typec_id2 = <&pmi8994_gpios 5 0>;
+		htc,hpmic_agnd_flip_en_s0= <&tlmm 62 0>;
+		htc,hpmic_agnd_flip_en_s1= <&tlmm 91 0>;
+		htc,miclr_flip_en = <&pmi8994_gpios 8 0>;
+		htc,miclr_dgnd_sw_en = <&pmi8994_gpios 9 0>;
+		htc,hsmic_2v85_en = <&tca6418 4 0>;
+		htc,aud_remote_sensor = <&pmi8994_mpps 1 0>;
+
+		htc,adapter_35mm_threshold = <330 800>;
+		htc,adapter_25mm_threshold = <1250 2850>;
+
+		htc,headset_adc_channel = <19>;
+
+		qcom,headset-vadc = <&pm8994_vadc>;
+	};
+
+	i2c@75b6000 { /* BLSP2 QUP2 i2c_8*/
+		nxp_tfa9888_amp@35 {
+			compatible = "nxp,tfa98xx";
+			reg = <0x35>;
+			reset-gpio = <&pm8994_gpios 4 0>;
+		};
+	};
+};

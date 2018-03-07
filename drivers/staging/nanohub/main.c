@@ -40,6 +40,16 @@
 #include "bl.h"
 #include "spi.h"
 
+/* HTC_START */
+#ifdef CONFIG_VIB_TRIGGERS
+#include <linux/vibtrig.h>
+#endif
+#ifdef CONFIG_AK8789_HALLSENSOR
+#include <linux/hall_sensor.h>
+#endif
+#include <linux/nanohub_htc.h>
+/* HTC_END */
+
 #define READ_QUEUE_DEPTH	10
 #define APP_FROM_HOST_EVENTID	0x000000F8
 #define FIRST_SENSOR_EVENTID	0x00000200
@@ -53,6 +63,14 @@
 #define ERR_RESET_COUNT		70
 #define ERR_WARNING_COUNT	10
 
+/**
+ * struct gpio_config - this is a binding between platform data and driver data
+ * @label:     for diagnostics
+ * @flags:     to pass to gpio_request_one()
+ * @options:   one or more of GPIO_OPT_* flags, below
+ * @pdata_off: offset of u32 field in platform data with gpio #
+ * @data_off:  offset of int field in driver data with irq # (optional)
+ */
 struct gpio_config {
 	const char *label;
 	u16 flags;
@@ -74,6 +92,496 @@ struct gpio_config {
 	.data_off = offsetof(struct nanohub_data, name), \
 	.options = GPIO_OPT_HAS_IRQ | (_opts) \
 
+/* HTC_START */
+#define PLAT_GPIO_DEF_OPT(name, _flags, _opts) \
+	PLAT_GPIO_DEF(name, _flags), \
+	.options = _opts \
+
+static struct class *htc_optical_sensors_class;
+static struct device *htc_proximity_dev;
+static uint16_t htc_ps_adc = 0;
+static uint8_t htc_ps_pocket_mode = 0;
+
+static struct class *htc_sensorhub_class;
+static struct device *htc_sensorhub_dev;
+static struct nanohub_data *s_data;
+
+static void nanohub_reset_event_handler(struct nanohub_data *data);
+static int nanohub_comms_write_cfg_data(struct nanohub_data *data,
+		uint8_t sens_type, const uint8_t *buffer, size_t buffer_len);
+#ifdef CONFIG_NANOHUB_HTC_LOG
+static int nanohub_get_log(struct nanohub_data *data);
+
+#ifdef CONFIG_FB
+static int fb_notifier_callback(struct notifier_block *self,
+					 unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	int *blank;
+	struct nanohub_data *nanohub_data =
+		container_of(self, struct nanohub_data, fb_notifier);
+
+	pr_debug("nanohub: %s, event %ld\n", __func__, event);
+	if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK) {
+		blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+			break;
+		case FB_BLANK_POWERDOWN:
+			nanohub_get_log(nanohub_data);
+			break;
+		}
+	}
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		blank = evdata->data;
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+			nanohub_get_log(nanohub_data);
+			break;
+		case FB_BLANK_POWERDOWN:
+			break;
+		}
+	}
+	return 0;
+}
+#endif
+#endif
+
+#ifdef CONFIG_AK8789_HALLSENSOR
+static int hallsensor_status_handler_func(struct notifier_block *this,
+		unsigned long status, void *unused)
+{
+	struct nanohub_data *data = s_data;
+	int pole_dir, pole_val = 0;
+
+	if (!data) {
+		return NOTIFY_OK;
+	}
+
+	pole_val = status & 0x01;
+	pole_dir = (status & 0x02) >> HALL_POLE_BIT;
+	pr_info("nanohub: hallsensor %s[%s]\n", pole_dir ? "att_s" : "att_n", pole_val ? "Near" : "Far");
+
+	if (pole_dir == HALL_POLE_S) {
+		data->hal_cfg.s_pole_near = (pole_val == HALL_NEAR);
+	} else if (pole_dir == HALL_POLE_N) {
+		data->hal_cfg.n_pole_near = (pole_val == HALL_NEAR);
+	}
+
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HALL,
+		(uint8_t *)&data->hal_cfg, sizeof(struct hal_cfg_data));
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block hallsensor_status_handler = {
+	.notifier_call = hallsensor_status_handler_func,
+};
+#endif
+
+#ifdef CONFIG_NANOHUB_TP_SWITCH
+int nanohub_tp_status(uint8_t status)
+{
+	struct nanohub_data *data = s_data;
+
+	if (!data)
+		return -ENODEV;
+
+	pr_info("nanohub: [TP] tp_status = 0x%x\n", status);
+
+	data->tou_cfg.status = status;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH,
+		(uint8_t *)&data->tou_cfg, sizeof(struct tou_cfg_data));
+
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+	data->snd_cfg.switch_mcu = status & NANOHUB_TP_SWITCH_MCU_NORMAL;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_SECOND_DISP,
+		(uint8_t *)&data->snd_cfg, sizeof(struct snd_cfg_data));
+
+	data->pnt_cfg.switch_mcu = status & NANOHUB_TP_SWITCH_MCU_NORMAL;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH_POINT,
+		(uint8_t *)&data->pnt_cfg, sizeof(struct pnt_cfg_data));
+#endif
+
+	return 0;
+}
+
+int nanohub_tp_solution(uint8_t solution)
+{
+	struct nanohub_data *data = s_data;
+
+	if (!data)
+		return -ENODEV;
+
+	pr_info("nanohub: [TP] tp_solution = 0x%x\n", solution);
+
+	data->tou_cfg.solution = solution;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH,
+		(uint8_t *)&data->tou_cfg, sizeof(struct tou_cfg_data));
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+int nanohub_tp_mode(uint8_t mode)
+{
+	struct nanohub_data *data = s_data;
+
+	if (!data)
+		return -ENODEV;
+
+	pr_info("nanohub: [TP] tp_mode = 0x%x\n", mode);
+
+	data->tou_cfg.mode = mode;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH,
+		(uint8_t *)&data->tou_cfg, sizeof(struct tou_cfg_data));
+
+	data->pnt_cfg.lcd_mode = mode & 0x07;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH_POINT,
+		(uint8_t *)&data->pnt_cfg, sizeof(struct pnt_cfg_data));
+
+	data->eza_cfg.lcd_mode = mode & 0x07;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_EASY_ACCESS,
+		(uint8_t *)&data->eza_cfg, sizeof(struct eza_cfg_data));
+
+	return 0;
+}
+
+int nanohub_is_switch_operating(void)
+{
+	struct nanohub_data *data = s_data;
+	int gpio;
+
+	if (!data)
+		return -ENODEV;
+
+	gpio = data->pdata->handshaking_gpio;
+	return gpio_is_valid(gpio) ? gpio_get_value(gpio) : -ENXIO;
+}
+#endif
+
+int nanohub_notifier(uint8_t event_id, void *val)
+{
+	struct nanohub_data *data = s_data;
+	int ret = 0;
+
+	if (!data)
+		return -ENODEV;
+
+	switch (event_id) {
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+	case SECOND_DISP_BL_CTRL:
+		pr_info("%s: bl_ctrl=%d\n", __func__, ((uint16_t *)val)[0]);
+		data->snd_cfg.bl_ctrl = ((uint16_t *)val)[0];
+		nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_SECOND_DISP,
+			(uint8_t *)&data->snd_cfg, sizeof(struct snd_cfg_data));
+		break;
+#endif
+	default:
+		pr_info("%s: unexpected event %d\n", __func__, event_id);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+static void nanohub_reset_event_handler(struct nanohub_data *data)
+{
+	pr_warn("nanohub: RESET_EVENT\n");
+
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_EASY_ACCESS,
+		(uint8_t *)&data->eza_cfg, sizeof(struct eza_cfg_data));
+
+#ifdef CONFIG_NANOHUB_TP_SWITCH
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH,
+		(uint8_t *)&data->tou_cfg, sizeof(struct tou_cfg_data));
+#endif
+
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_SECOND_DISP,
+		(uint8_t *)&data->snd_cfg, sizeof(struct snd_cfg_data));
+
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH_POINT,
+		(uint8_t *)&data->pnt_cfg, sizeof(struct pnt_cfg_data));
+#endif
+
+#ifdef CONFIG_AK8789_HALLSENSOR
+	pr_info("nanohub: %s: write SENS_TYPE_HALL\n",__func__);
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HALL,
+		(uint8_t *)&data->hal_cfg, sizeof(struct hal_cfg_data));
+#endif
+}
+
+static void nanohub_restore_wq(struct work_struct *work)
+{
+	int i;
+	struct nanohub_data *data =
+			container_of(work, struct nanohub_data, work_restore);
+
+	pr_info("nanohub: %s\n", __func__);
+	mutex_lock(&data->cfg_lock);
+	for (i = 0; i < NANOHUB_CFG_NUM; i++) {
+		if (data->cfg_restore_type[i] == 0) {
+			continue;
+		}
+		if (data->cfg_restore_type[i] == SENS_TYPE_HTC_EASY_ACCESS) {
+			nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_EASY_ACCESS,
+				(uint8_t *)&data->eza_cfg, sizeof(struct eza_cfg_data));
+			pr_info("nanohub: restore sens_type=%d\n", data->cfg_restore_type[i]);
+			data->cfg_restore_type[i] = 0;
+			continue;
+
+		}
+#ifdef CONFIG_NANOHUB_TP_SWITCH
+		if (data->cfg_restore_type[i] == SENS_TYPE_HTC_TOUCH) {
+			nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH,
+				(uint8_t *)&data->tou_cfg, sizeof(struct tou_cfg_data));
+			pr_info("nanohub: restore sens_type=%d\n", data->cfg_restore_type[i]);
+			data->cfg_restore_type[i] = 0;
+			continue;
+		}
+#endif
+
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+		if (data->cfg_restore_type[i] == SENS_TYPE_HTC_SECOND_DISP) {
+			nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_SECOND_DISP,
+				(uint8_t *)&data->snd_cfg, sizeof(struct snd_cfg_data));
+			pr_info("nanohub: restore sens_type=%d\n", data->cfg_restore_type[i]);
+			data->cfg_restore_type[i] = 0;
+			continue;
+		}
+
+		if (data->cfg_restore_type[i] == SENS_TYPE_HTC_TOUCH_POINT) {
+			nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH_POINT,
+				(uint8_t *)&data->pnt_cfg, sizeof(struct pnt_cfg_data));
+			pr_info("nanohub: restore sens_type=%d\n", data->cfg_restore_type[i]);
+			data->cfg_restore_type[i] = 0;
+			continue;
+		}
+#endif
+
+#ifdef CONFIG_AK8789_HALLSENSOR
+		if (data->cfg_restore_type[i] == SENS_TYPE_HALL) {
+			nanohub_comms_write_cfg_data(data, SENS_TYPE_HALL,
+				(uint8_t *)&data->hal_cfg, sizeof(struct hal_cfg_data));
+			pr_info("nanohub: restore sens_type=%d\n", data->cfg_restore_type[i]);
+			data->cfg_restore_type[i] = 0;
+			continue;
+		}
+#endif
+	}
+	mutex_unlock(&data->cfg_lock);
+}
+
+static int nanohub_comms_write_cfg_data(struct nanohub_data *data,
+		uint8_t sens_type, const uint8_t *buffer, size_t buffer_len)
+{
+	int ret, i;
+	uint8_t tx_len, rx;
+	struct ConfigCmd *cmd;
+	int lock_mode;
+
+	tx_len = sizeof(struct ConfigCmd) + buffer_len;
+	cmd = (struct ConfigCmd *)vmalloc(tx_len);
+	if (!cmd) {
+		return -ENOMEM;
+	}
+
+	cmd->evtType = EVT_NO_SENSOR_CONFIG_EVENT;
+	cmd->latency = 0;
+	cmd->rate = 0;
+	cmd->sensorType = sens_type;
+	cmd->cmd = CONFIG_CMD_CFG_DATA;
+	cmd->flags = 0;
+	memcpy(cmd->data, buffer, buffer_len);
+
+	lock_mode = atomic_read(&data->lock_mode);
+	if (lock_mode != LOCK_MODE_NONE) {
+		pr_info("nanohub: write_cfg_data skipped, lock_mode=%d, sens_type=%d\n",
+			lock_mode, sens_type);
+		vfree(cmd);
+		return -EAGAIN;
+	}
+
+	ret = request_wakeup_timeout(data, WAKEUP_TIMEOUT_MS);
+	if (!ret) {
+		if (nanohub_comms_tx_rx_retrans(data, CMD_COMMS_WRITE, (uint8_t *)&cmd[0],
+			tx_len, &rx, sizeof(rx), false, 10, 10) == sizeof(rx)) {
+			if (rx)
+				ret = 0;
+			else
+				ret = -EAGAIN;
+		} else {
+			ret = -EIO;
+		}
+		release_wakeup(data);
+	}
+
+	if (ret) {
+		pr_err("nanohub: write_cfg_data failed, ret=%d, sens_type=%d, buffer_len=%lu\n",
+			ret, sens_type, buffer_len);
+	}
+	if (ret == -ERESTARTSYS) {
+		mutex_lock(&data->cfg_lock);
+		for (i = 0; i < NANOHUB_CFG_NUM; i++) {
+			if ((data->cfg_restore_type[i] == 0)
+				|| (data->cfg_restore_type[i] == sens_type)) {
+				data->cfg_restore_type[i] = sens_type;
+				break;
+			}
+		}
+		queue_work(data->wq, &data->work_restore);
+		mutex_unlock(&data->cfg_lock);
+	}
+
+	vfree(cmd);
+	return ret;
+}
+
+static ssize_t ps_adc_show(struct device *dev,
+               struct device_attribute *attr, char *buf)
+{
+        return scnprintf(buf, PAGE_SIZE, "ADC[0x%04X], ps_pocket_mode = %d, model = CM36686-MCU\n",
+                            htc_ps_adc, htc_ps_pocket_mode);
+}
+
+static DEVICE_ATTR(ps_adc, 0440, ps_adc_show, NULL);
+
+static ssize_t ps_pocket_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int error;
+	long temp_data = 0;
+
+	error = kstrtol(buf, 10, &temp_data);
+	if (error) {
+	pr_err("%s: kstrtol fails, error = %d\n", __func__, error);
+		return error;
+	}
+
+	htc_ps_pocket_mode = temp_data;
+
+	return count;
+}
+
+static DEVICE_ATTR(ps_pocket, 0220, NULL, ps_pocket_store);
+
+static ssize_t get_firmware_version(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE,
+		"Firmware Architecture version %u, Sense version %u, Cywee lib version %u, "
+		"Water number %u, Active Engine %u, Project Mapping %u\n",
+		255, 80, 6, 86, 1, 9);
+}
+
+static ssize_t set_gesture_motion(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct nanohub_data *data = dev_get_drvdata(dev);
+	int ret;
+	uint32_t val;
+
+	ret = kstrtou32(buf, 16, &val);
+	if (ret) {
+		return ret;
+	}
+
+	pr_info("nanohub: gesture setting = 0x%08x\n", val);
+
+	memcpy(data->eza_cfg.setting, &val, sizeof(data->eza_cfg.setting));
+
+	ret = nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_EASY_ACCESS,
+		(uint8_t *)&data->eza_cfg, sizeof(struct eza_cfg_data));
+
+	return count;
+}
+
+static ssize_t trig_vibrate_ms(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct nanohub_data *data = dev_get_drvdata(dev);
+
+	if (!data->pdata->vibrate_ms)
+		return -EINVAL;
+
+	if (!data->vib_trigger) {
+		pr_err("nanohub: not found vib_trigger\n");
+		return -ENODEV;
+	}
+
+#ifdef CONFIG_VIB_TRIGGERS
+	vib_trigger_event(data->vib_trigger, data->pdata->vibrate_ms);
+#endif
+
+	return 0;
+}
+
+static ssize_t set_vibrate_ms(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct nanohub_data *data = dev_get_drvdata(dev);
+	int ret;
+	uint32_t val;
+
+	ret = kstrtou32(buf, 10, &val);
+	if (ret) {
+		return ret;
+	}
+
+	pr_info("nanohub: vibrate_ms = %u\n", val);
+
+	data->pdata->vibrate_ms = val;
+
+	return count;
+}
+
+#ifdef CONFIG_NANOHUB_HTC_LOG
+static int nanohub_get_log(struct nanohub_data *data)
+{
+	uint8_t buffer;
+	struct timespec ts;
+
+	if (request_wakeup_timeout(data, WAKEUP_TIMEOUT_MS))
+		return -ERESTARTSYS;
+
+	if (nanohub_comms_tx_rx_retrans
+		(data, CMD_COMMS_GET_HTC_LOG, NULL, 0, &buffer,
+		sizeof(buffer), false, 10, 10) == sizeof(buffer)) {
+		get_monotonic_boottime(&ts);
+		pr_info("nanohub: %s: time: %ld.%03ld\n", __func__, ts.tv_sec, ts.tv_nsec/1000000);
+	} else {
+		pr_debug("nanohub: %s: error:%d\n", __func__, buffer);
+	}
+
+	release_wakeup(data);
+	return 0;
+}
+
+static ssize_t dump_log(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct nanohub_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = nanohub_get_log(data);
+	if (ret < 0)
+		return ret;
+
+	return count;
+}
+#endif
+
+static struct device_attribute htc_sensorhub_attributes[] = {
+	__ATTR(firmware_version, 0440, get_firmware_version, NULL),
+	__ATTR(gesture_motion, 0220, NULL, set_gesture_motion),
+	__ATTR(vibrate_ms, 0660, trig_vibrate_ms, set_vibrate_ms),
+#ifdef CONFIG_NANOHUB_HTC_LOG
+	__ATTR(dump_log, 0220, NULL, dump_log),
+#endif
+};
+/* HTC_END */
+
 static int nanohub_open(struct inode *, struct file *);
 static ssize_t nanohub_read(struct file *, char *, size_t, loff_t *);
 static ssize_t nanohub_write(struct file *, const char *, size_t, loff_t *);
@@ -90,6 +598,9 @@ static const struct gpio_config gconf[] = {
 	{ PLAT_GPIO_DEF(boot0, GPIOF_OUT_INIT_LOW) },
 	{ PLAT_GPIO_DEF_IRQ(irq1, GPIOF_DIR_IN, 0) },
 	{ PLAT_GPIO_DEF_IRQ(irq2, GPIOF_DIR_IN, GPIO_OPT_OPTIONAL) },
+/* HTC_START */
+	{ PLAT_GPIO_DEF_OPT(handshaking, GPIOF_DIR_IN, GPIO_OPT_OPTIONAL) },
+/* HTC_END */
 };
 
 static const struct iio_info nanohub_iio_info = {
@@ -130,7 +641,7 @@ static inline bool nanohub_has_priority_lock_locked(struct nanohub_data *data)
 static inline void nanohub_notify_thread(struct nanohub_data *data)
 {
 	atomic_set(&data->kthread_run, 1);
-	
+	/* wake_up implementation works as memory barrier */
 	wake_up_interruptible_sync(&data->kthread_wait);
 }
 
@@ -268,7 +779,7 @@ static inline void nanohub_handle_irq2(struct nanohub_data *data)
 
 static inline bool mcu_wakeup_try_lock(struct nanohub_data *data, int key)
 {
-	
+	/* implementation contains memory barrier */
 	return atomic_cmpxchg(&data->wakeup_acquired, 0, key) == 0;
 }
 
@@ -282,15 +793,16 @@ static inline void mcu_wakeup_unlock(struct nanohub_data *data, int key)
 static inline void nanohub_set_state(struct nanohub_data *data, int state)
 {
 	atomic_set(&data->thread_state, state);
-	smp_mb__after_atomic(); 
+	smp_mb__after_atomic(); /* updated thread state is now visible */
 }
 
 static inline int nanohub_get_state(struct nanohub_data *data)
 {
-	smp_mb__before_atomic(); 
+	smp_mb__before_atomic(); /* wait for all updates to finish */
 	return atomic_read(&data->thread_state);
 }
 
+/* the following fragment is based on wait_event_* code from wait.h */
 #define wait_event_interruptible_timeout_locked(q, cond, tmo)		\
 ({									\
 	long __ret = (tmo);						\
@@ -320,7 +832,7 @@ static inline int nanohub_get_state(struct nanohub_data *data)
 		if (!list_empty(&__wait.task_list))			\
 			list_del_init(&__wait.task_list);		\
 		else if (__ret == -ERESTARTSYS &&			\
-			 \
+			 /*reimplementation of wait_abort_exclusive() */\
 			 waitqueue_active(&(q)))			\
 			__wake_up_locked_key(&(q), TASK_INTERRUPTIBLE,	\
 			NULL);						\
@@ -382,6 +894,9 @@ int nanohub_wait_for_interrupt(struct nanohub_data *data)
 {
 	int ret = -EFAULT;
 
+	/* release the wakeup line, and wait for nanohub to send
+	 * us an interrupt indicating the transaction completed.
+	 */
 	spin_lock(&data->wakeup_wait.lock);
 	if (mcu_wakeup_gpio_is_locked(data)) {
 		mcu_wakeup_gpio_set_value(data, 1);
@@ -568,6 +1083,7 @@ static inline int nanohub_wakeup_lock(struct nanohub_data *data, int mode)
 	return 0;
 }
 
+/* returns lock mode used to perform this lock */
 static inline int nanohub_wakeup_unlock(struct nanohub_data *data)
 {
 	int mode = atomic_read(&data->lock_mode);
@@ -591,10 +1107,10 @@ static void __nanohub_hw_reset(struct nanohub_data *data, int boot0)
 {
 	const struct nanohub_platform_data *pdata = data->pdata;
 
-	gpio_set_value(pdata->nreset_gpio, 0);
+	gpio_direction_output(pdata->nreset_gpio, 0);
 	gpio_set_value(pdata->boot0_gpio, boot0 > 0);
 	usleep_range(30, 40);
-	gpio_set_value(pdata->nreset_gpio, 1);
+	gpio_direction_input(pdata->nreset_gpio);
 	if (boot0 > 0)
 		usleep_range(70000, 75000);
 	else if (!boot0)
@@ -882,7 +1398,7 @@ static ssize_t nanohub_lock_bl(struct device *dev,
 	__nanohub_hw_reset(data, 1);
 
 	gpio_set_value(data->pdata->boot0_gpio, 0);
-	
+	/* this command reboots itself */
 	status = nanohub_bl_lock(data);
 	dev_info(dev, "%s: status=%02x\n", __func__, status);
 	msleep(350);
@@ -908,7 +1424,7 @@ static ssize_t nanohub_unlock_bl(struct device *dev,
 	__nanohub_hw_reset(data, 1);
 
 	gpio_set_value(data->pdata->boot0_gpio, 0);
-	
+	/* this command reboots itself (erasing the flash) */
 	status = nanohub_bl_unlock(data);
 	dev_info(dev, "%s: status=%02x\n", __func__, status);
 	msleep(20);
@@ -955,6 +1471,19 @@ static inline int nanohub_create_sensor(struct nanohub_data *data)
 			"sysfs_create_link failed; err=%d\n", ret);
 		goto fail_attr;
 	}
+
+	ret = device_create_file(htc_proximity_dev, &dev_attr_ps_adc);
+	if (ret) {
+		pr_err("%s, create proximty_device_create_file fail!\n", __func__);
+        goto fail_attr;
+	}
+
+	ret = device_create_file(htc_proximity_dev, &dev_attr_ps_pocket);
+	if (ret) {
+		pr_err("%s, create proximty_device_create_file fail!\n", __func__);
+		goto fail_attr;
+	}
+
 	goto done;
 
 fail_attr:
@@ -983,6 +1512,13 @@ static int nanohub_create_devices(struct nanohub_data *data)
 			       names[i], ret);
 			goto fail_dev;
 		}
+	}
+
+	htc_proximity_dev = device_create(htc_optical_sensors_class, NULL, 0, "%s", "proximity");
+	if (IS_ERR(htc_proximity_dev)) {
+		ret = PTR_ERR(htc_proximity_dev);
+		pr_err("%s: could not allocate htc_proximity_dev, ret = %d\n", __func__, ret);
+        goto fail_dev;
 	}
 
 	ret = nanohub_create_sensor(data);
@@ -1163,6 +1699,18 @@ static void nanohub_process_buffer(struct nanohub_data *data,
 	(*buf)->length = ret;
 
 	event_id = le32_to_cpu((((uint32_t *)(*buf)->buffer)[0]) & 0x7FFFFFFF);
+
+/* HTC_START */
+	if (event_id == sensorGetMyEventType(SENS_TYPE_PROX)) {
+            htc_ps_adc = ((*buf)->buffer[HTC_PROX_DATA_BUFFER_INDEX_START] + ((*buf)->buffer[HTC_PROX_DATA_BUFFER_INDEX_START + 1] << 8));
+            htc_ps_pocket_mode = (*buf)->buffer[HTC_PROX_DATA_BUFFER_INDEX_START + 2];
+	} else if (event_id == sensorGetMyEventType(SENS_TYPE_HTC_EASY_ACCESS)) {
+		pr_info("nanohub: htc_easy_access triggered\n");
+	} else if (event_id == sensorGetMyEventType(SENS_TYPE_HTC_SECOND_DISP)) {
+		pr_info("nanohub: htc_second_disp triggered\n");
+	}
+/* HTC_END */
+
 	if (ret >= sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t) &&
 	    event_id > FIRST_SENSOR_EVENTID &&
 	    event_id <= LAST_SENSOR_EVENTID) {
@@ -1171,24 +1719,35 @@ static void nanohub_process_buffer(struct nanohub_data *data,
 		if (interrupt == WAKEUP_INTERRUPT)
 			wakeup = true;
 	}
+
+#ifdef NANOHUB_CONTEXTHUB_HAL
 	if (event_id == APP_TO_HOST_EVENTID) {
 		wakeup = true;
 		io = &data->io[ID_NANOHUB_COMMS];
 	}
+#endif
 
 	nanohub_io_put_buf(io, *buf);
 
 	*buf = NULL;
+	/* (for wakeup interrupts): hold a wake lock for 250ms so the sensor hal
+	 * has time to grab its own wake lock */
 	if (wakeup)
 		wake_lock_timeout(&data->wakelock_read, msecs_to_jiffies(250));
 	release_wakeup(data);
+
+/* HTC_START */
+	if (event_id == EVT_RESET_REASON) {
+		nanohub_reset_event_handler(data);
+	}
+/* HTC_END */
 }
 
 static int nanohub_kthread(void *arg)
 {
 	struct nanohub_data *data = (struct nanohub_data *)arg;
 	struct nanohub_buf *buf = NULL;
-	int ret;
+	int ret = 0;
 	struct timespec curr_ts;
 	uint32_t clear_interrupts[8] = { 0x00000006 };
 	struct device *sensor_dev = data->io[ID_NANOHUB_SENSOR].dev;
@@ -1250,7 +1809,7 @@ static int nanohub_kthread(void *arg)
 					continue;
 				}
 			} else if (ret == 0) {
-				
+				/* queue empty, go to sleep */
 				data->err_cnt = 0;
 				data->interrupts[0] &= ~0x00000006;
 				release_wakeup(data);
@@ -1276,6 +1835,8 @@ static int nanohub_kthread(void *arg)
 				nanohub_set_state(data, ST_IDLE);
 				continue;
 			}
+			/* pending interrupt, but no room to read data -
+			 * clear interrupts */
 			if (request_wakeup(data))
 				continue;
 			nanohub_comms_tx_rx_retrans(data,
@@ -1319,7 +1880,7 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		goto free_pdata;
 	}
 
-	
+	/* optional (strongly recommended) */
 	pdata->irq2_gpio = of_get_named_gpio(dt, "sensorhub,irq2-gpio", 0);
 
 	ret = pdata->wakeup_gpio =
@@ -1338,16 +1899,16 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		goto free_pdata;
 	}
 
-	
+	/* optional (stm32f bootloader) */
 	pdata->boot0_gpio = of_get_named_gpio(dt, "sensorhub,boot0-gpio", 0);
 
-	
+	/* optional (spi) */
 	pdata->spi_cs_gpio = of_get_named_gpio(dt, "sensorhub,spi-cs-gpio", 0);
 
-	
+	/* optional (stm32f bootloader) */
 	of_property_read_u32(dt, "sensorhub,bl-addr", &pdata->bl_addr);
 
-	
+	/* optional (stm32f bootloader) */
 	tmp = of_get_property(dt, "sensorhub,num-flash-banks", NULL);
 	if (tmp) {
 		pdata->num_flash_banks = be32_to_cpup(tmp);
@@ -1358,6 +1919,8 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		if (!pdata->flash_banks)
 			goto no_mem;
 
+		/* TODO: investigate replacing with of_property_read_u32_array
+		 */
 		i = 0;
 		of_property_for_each_u32(dt, "sensorhub,flash-banks", prop, tmp,
 					 u) {
@@ -1378,7 +1941,7 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		}
 	}
 
-	
+	/* optional (stm32f bootloader) */
 	tmp = of_get_property(dt, "sensorhub,num-shared-flash-banks", NULL);
 	if (tmp) {
 		pdata->num_shared_flash_banks = be32_to_cpup(tmp);
@@ -1389,6 +1952,8 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 		if (!pdata->shared_flash_banks)
 			goto no_mem_shared;
 
+		/* TODO: investigate replacing with of_property_read_u32_array
+		 */
 		i = 0;
 		of_property_for_each_u32(dt, "sensorhub,shared-flash-banks",
 					 prop, tmp, u) {
@@ -1408,6 +1973,17 @@ static struct nanohub_platform_data *nanohub_parse_dt(struct device *dev)
 			i++;
 		}
 	}
+
+/* HTC_START */
+	ret = pdata->handshaking_gpio =
+		of_get_named_gpio(dt, "sensorhub,handshaking-gpio", 0);
+	if (ret < 0)
+		pr_warn("nanohub: missing sensorhub,handshaking-gpio in device tree\n");
+
+	ret = of_property_read_u32(dt, "sensorhub,gesture-vibrate-ms", &pdata->vibrate_ms);
+	if (ret < 0)
+		pr_err("nanohub: missing sensorhub,gesture-vibrate-ms in device tree\n");
+/* HTC_END */
 
 	return pdata;
 
@@ -1459,6 +2035,9 @@ static int nanohub_request_irqs(struct nanohub_data *data)
 		disable_irq(data->irq2);
 	}
 
+	/* if 2d request fails, hide this; it is optional IRQ,
+	 * and failure should not interrupt driver init sequence.
+	 */
 	return 0;
 }
 
@@ -1472,7 +2051,7 @@ static int nanohub_request_gpios(struct nanohub_data *data)
 		const char *label;
 		bool optional = gpio_is_optional(cfg);
 
-		ret = 0; 
+		ret = 0; /* clear errors on optional pins, if any */
 
 		if (!gpio_is_valid(gpio) && optional)
 			continue;
@@ -1515,18 +2094,23 @@ static void nanohub_release_gpios_irqs(struct nanohub_data *data)
 	if (gpio_is_valid(pdata->irq2_gpio))
 		gpio_free(pdata->irq2_gpio);
 	gpio_free(pdata->irq1_gpio);
-	gpio_set_value(pdata->nreset_gpio, 0);
+	gpio_direction_output(pdata->nreset_gpio, 0);
 	gpio_free(pdata->nreset_gpio);
 	mcu_wakeup_gpio_set_value(data, 1);
 	gpio_free(pdata->wakeup_gpio);
 	gpio_set_value(pdata->boot0_gpio, 0);
 	gpio_free(pdata->boot0_gpio);
+
+/* HTC_START */
+	if (gpio_is_valid(pdata->handshaking_gpio))
+		gpio_free(pdata->handshaking_gpio);
+/* HTC_END */
 }
 
 struct iio_dev *nanohub_probe(struct device *dev, struct iio_dev *iio_dev)
 {
 	int ret, i;
-	const struct nanohub_platform_data *pdata;
+	struct nanohub_platform_data *pdata;
 	struct nanohub_data *data;
 	struct nanohub_buf *buf;
 	bool own_iio_dev = !iio_dev;
@@ -1591,16 +2175,55 @@ struct iio_dev *nanohub_probe(struct device *dev, struct iio_dev *iio_dev)
 		goto fail_irq;
 	}
 
+	htc_optical_sensors_class = class_create(THIS_MODULE, "optical_sensors");
+	if (IS_ERR(htc_optical_sensors_class)) {
+		ret = PTR_ERR(htc_optical_sensors_class);
+		pr_err("%s: could not allocate htc_optical_sensors_class, ret = %d\n", __func__, ret);
+		goto fail_dev;
+	}
+
 	ret = nanohub_create_devices(data);
 	if (ret)
 		goto fail_dev;
+
+/* HTC_START */
+	memset(data->cfg_restore_type, 0, sizeof(data->cfg_restore_type));
+	mutex_init(&data->cfg_lock);
+	data->wq = create_singlethread_workqueue("nanohub_wq");
+	if (data->wq == NULL) {
+		pr_err("Not able to create workqueue\n");
+		ret = -ENOMEM;
+		goto fail_init_wq;
+	}
+	INIT_WORK(&data->work_restore, nanohub_restore_wq);
+/* HTC_END */
 
 	data->thread = kthread_run(nanohub_kthread, data, "nanohub");
 
 	udelay(30);
 
+/* HTC_START */
+	dev_set_drvdata(htc_sensorhub_dev, data);
+#ifdef CONFIG_VIB_TRIGGERS
+	vib_trigger_register_simple("vibrator", &data->vib_trigger);
+#endif
+#ifdef CONFIG_AK8789_HALLSENSOR
+	hallsensor_register_notifier(&hallsensor_status_handler);
+#endif
+#ifdef CONFIG_NANOHUB_HTC_LOG
+#ifdef CONFIG_FB
+	data->fb_notifier.notifier_call = fb_notifier_callback;
+	fb_register_client(&data->fb_notifier);
+#endif
+#endif
+	s_data = data;
+/* HTC_END */
+
 	return iio_dev;
 
+/* HTC_START */
+fail_init_wq:
+/* HTC_END */
 fail_dev:
 	iio_device_unregister(iio_dev);
 fail_irq:
@@ -1619,7 +2242,7 @@ int nanohub_reset(struct nanohub_data *data)
 {
 	const struct nanohub_platform_data *pdata = data->pdata;
 
-	gpio_set_value(pdata->nreset_gpio, 1);
+	gpio_direction_input(pdata->nreset_gpio);
 	usleep_range(650000, 700000);
 	enable_irq(data->irq1);
 	if (data->irq2)
@@ -1633,6 +2256,16 @@ int nanohub_reset(struct nanohub_data *data)
 int nanohub_remove(struct iio_dev *iio_dev)
 {
 	struct nanohub_data *data = iio_priv(iio_dev);
+
+/* HTC_START */
+	s_data = NULL;
+#ifdef CONFIG_AK8789_HALLSENSOR
+	hallsensor_unregister_notifier(&hallsensor_status_handler);
+#endif
+#ifdef CONFIG_VIB_TRIGGERS
+	vib_trigger_unregister_simple(data->vib_trigger);
+#endif
+/* HTC_END */
 
 	nanohub_notify_thread(data);
 	kthread_stop(data->thread);
@@ -1651,6 +2284,21 @@ int nanohub_suspend(struct iio_dev *iio_dev)
 {
 	struct nanohub_data *data = iio_priv(iio_dev);
 	int ret;
+	struct timespec ts;
+
+	pr_info("%s++\n", __func__);
+
+/* HTC_START */
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+	data->snd_cfg.cpu_suspend = NANOHUB_CPU_STATUS_SUSPEND;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_SECOND_DISP,
+		(uint8_t *)&data->snd_cfg, sizeof(struct snd_cfg_data));
+
+	data->pnt_cfg.cpu_suspend = NANOHUB_CPU_STATUS_SUSPEND;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH_POINT,
+		(uint8_t *)&data->pnt_cfg, sizeof(struct pnt_cfg_data));
+#endif
+/* HTC_END */
 
 	ret = nanohub_wakeup_lock(data, LOCK_MODE_SUSPEND_RESUME);
 	if (!ret) {
@@ -1664,7 +2312,9 @@ int nanohub_suspend(struct iio_dev *iio_dev)
 		}
 		if (cnt < max_cnt) {
 			dev_dbg(&iio_dev->dev, "%s: cnt=%d\n", __func__, cnt);
-			enable_irq_wake(data->irq1);
+			ret = enable_irq_wake(data->irq1);
+			get_monotonic_boottime(&ts);
+			pr_info("%s: ret=%d, irq1=%d, irq2=%d, time: %ld.%03ld\n", __func__, ret, nanohub_irq1_fired(data), nanohub_irq2_fired(data), ts.tv_sec, ts.tv_nsec/1000000);
 			return 0;
 		}
 		ret = -EBUSY;
@@ -1678,15 +2328,49 @@ int nanohub_suspend(struct iio_dev *iio_dev)
 			 __func__);
 	}
 
+	get_monotonic_boottime(&ts);
+	pr_info("%s--: irq1=%d, irq2=%d, time: %ld.%03ld\n", __func__, nanohub_irq1_fired(data), nanohub_irq2_fired(data), ts.tv_sec, ts.tv_nsec/1000000);
+	if(ret != 0){
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+	data->snd_cfg.cpu_suspend = NANOHUB_CPU_STATUS_RESUME;                                                                                                                                          	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_SECOND_DISP,
+	(uint8_t *)&data->snd_cfg, sizeof(struct snd_cfg_data));
+
+	data->pnt_cfg.cpu_suspend = NANOHUB_CPU_STATUS_RESUME;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH_POINT,
+	(uint8_t *)&data->pnt_cfg, sizeof(struct pnt_cfg_data));
+#endif
+	}
 	return ret;
 }
 
 int nanohub_resume(struct iio_dev *iio_dev)
 {
 	struct nanohub_data *data = iio_priv(iio_dev);
+	struct timespec ts;
+	int ret;
 
-	disable_irq_wake(data->irq1);
+	pr_info("%s++\n", __func__);
+
+	ret = disable_irq_wake(data->irq1);
+
+	get_monotonic_boottime(&ts);
+	pr_info("%s: ret=%d, irq1=%d, irq2=%d, time: %ld.%03ld\n", __func__, ret, nanohub_irq1_fired(data), nanohub_irq2_fired(data), ts.tv_sec, ts.tv_nsec/1000000);
+
 	nanohub_wakeup_unlock(data);
+
+/* HTC_START */
+#ifdef CONFIG_NANOHUB_SECOND_DISP
+	data->snd_cfg.cpu_suspend = NANOHUB_CPU_STATUS_RESUME;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_SECOND_DISP,
+		(uint8_t *)&data->snd_cfg, sizeof(struct snd_cfg_data));
+
+	data->pnt_cfg.cpu_suspend = NANOHUB_CPU_STATUS_RESUME;
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_TOUCH_POINT,
+		(uint8_t *)&data->pnt_cfg, sizeof(struct pnt_cfg_data));
+#endif
+/* HTC_END */
+
+	pr_info("%s--\n", __func__);
 
 	return 0;
 }
@@ -1694,6 +2378,29 @@ int nanohub_resume(struct iio_dev *iio_dev)
 static int __init nanohub_init(void)
 {
 	int ret = 0;
+
+/* HTC_START */
+	int i;
+
+	htc_sensorhub_class = class_create(THIS_MODULE, "htc_sensorhub");
+	if (IS_ERR(htc_sensorhub_class)) {
+		ret = PTR_ERR(htc_sensorhub_class);
+		pr_err("%s: could not allocate htc_sensorhub_class, ret = %d\n", __func__, ret);
+	}
+
+	htc_sensorhub_dev = device_create(htc_sensorhub_class, NULL, 0, "%s", "sensor_hub");
+	if (IS_ERR(htc_sensorhub_dev)) {
+		ret = PTR_ERR(htc_sensorhub_dev);
+		pr_err("%s: could not allocate htc_sensorhub_dev, ret = %d\n", __func__, ret);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(htc_sensorhub_attributes); i++) {
+		ret = device_create_file(htc_sensorhub_dev, htc_sensorhub_attributes + i);
+		if (ret) {
+			pr_err("%s: could not allocate htc_sensorhub_attributes, i=%d, ret=%d\n", __func__, i, ret);
+		}
+	}
+/* HTC_END */
 
 	sensor_class = class_create(THIS_MODULE, "nanohub");
 	if (IS_ERR(sensor_class)) {

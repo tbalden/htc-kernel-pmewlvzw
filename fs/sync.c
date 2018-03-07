@@ -21,6 +21,17 @@
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
 			SYNC_FILE_RANGE_WAIT_AFTER)
 
+static int bypass(char *path)
+{
+	int l = strlen(path);
+	if (l < 3)
+		return 0;
+	if (path[l-1] == BYPASS_RULE1 && path[l-2] == BYPASS_RULE2 && path[l-3] == BYPASS_RULE3)
+		return 1;
+	else
+		return 0;
+}
+
 /*
  * Do the filesystem syncing work. For simple filesystems
  * writeback_inodes_sb(sb) just dirties buffers with inodes so we have to
@@ -194,16 +205,31 @@ static int async_fsync(struct file *file)
 int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 {
 	int err;
+	ktime_t fsync_t, fsync_diff;
+	char pathname[256], *path;
 
 	if (!file->f_op->fsync)
 		return -EINVAL;
 
-	if (async_fsync(file))
+	path = d_path(&(file->f_path), pathname, sizeof(pathname));
+	if (IS_ERR(path))
+		path = "(unknown)";
+	fsync_t = ktime_get();
+
+	if (async_fsync(file) && !bypass(path))
 		return 0;
 
 	trace_vfs_fsync(file);
 	err = file->f_op->fsync(file, start, end, datasync);
 	trace_vfs_fsync_done(file);
+
+	fsync_diff = ktime_sub(ktime_get(), fsync_t);
+	if (ktime_to_ms(fsync_diff) >= 5000) {
+		pr_info("VFS: %s pid:%d(%s)(parent:%d/%s) takes %lld ms to fsync %s\n", __func__,
+			current->pid, current->comm, current->parent->pid, current->parent->comm,
+			ktime_to_ms(fsync_diff), path);
+	}
+
 	return err;
 }
 EXPORT_SYMBOL(vfs_fsync_range);
@@ -230,6 +256,7 @@ static int do_fsync(unsigned int fd, int datasync)
 	if (f.file) {
 		ret = vfs_fsync(f.file, datasync);
 		fdput(f);
+		inc_syscfs(current);
 	}
 	return ret;
 }

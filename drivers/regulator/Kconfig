@@ -473,6 +473,15 @@ config REGULATOR_MC13892
 	  Say y here to support the regulators found on the Freescale MC13892
 	  PMIC.
 
+config REGULATOR_ONSEMI_NCP6335D
+	tristate "OnSemi NCP6335D regulator support"
+	depends on I2C
+	help
+	 This driver supports the OnSemi NCP6335D switching voltage regulator
+	 (buck converter). The regulator is controlled using an I2C interface
+	 and supports a programmable voltage range from 0.6V to 1.4V in steps
+	 of 6.25mV.
+
 config REGULATOR_PALMAS
 	tristate "TI Palmas PMIC Regulators"
 	depends on MFD_PALMAS
@@ -500,6 +509,15 @@ config REGULATOR_PCAP
 	help
 	 This driver provides support for the voltage regulators of the
 	 PCAP2 PMIC.
+
+config REGULATOR_LM363X
+	tristate "TI LM363X voltage regulators"
+	depends on MFD_TI_LMU
+	help
+	  This driver supports LM36272/4, LM3631 and LM3632 voltage regulators
+	  for the LCD bias.
+	  One boost output voltage is configurable and always on.
+	  Other LDOs are used for the display module.
 
 config REGULATOR_PCF50633
 	tristate "NXP PCF50633 regulator driver"

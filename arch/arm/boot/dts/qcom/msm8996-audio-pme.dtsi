@@ -118,6 +118,18 @@
 			qcom,msm-mi2s-tx-lines = <2>; /* SD1 (1 << 1) */
 		};
 	};
+
+//HTC_AUD_START
+	i2c@75b5000{
+		nxp_tfa9888_amp@34 {
+			compatible = "nxp,tfa98xx";
+			reg = <0x34>;
+			reset-gpio = <&pm8994_gpios 4 0>;
+			speaker-source = <&pmi8994_gpios 5 0>;
+		};
+	};
+//HTC_AUD_END
+
 };
 
 &pm8994_mpps {

@@ -136,6 +136,7 @@ int ion_heap_allow_heap_secure(enum ion_heap_type type);
 int ion_heap_allow_handle_secure(enum ion_heap_type type);
 
 int get_secure_vmid(unsigned long);
+unsigned long get_secure_vmidflag(int);
 
 bool is_secure_vmid_valid(int vmid);
 

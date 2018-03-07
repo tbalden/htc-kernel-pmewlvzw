@@ -687,6 +687,27 @@ int get_secure_vmid(unsigned long flags)
 		return VMID_CP_APP;
 	return -EINVAL;
 }
+
+unsigned long get_secure_vmidflag(int vmid)
+{
+	if (vmid == VMID_CP_TOUCH)
+		return ION_FLAG_CP_TOUCH;
+	if (vmid == VMID_CP_BITSTREAM)
+		return ION_FLAG_CP_BITSTREAM;
+	if (vmid == VMID_CP_PIXEL)
+		return ION_FLAG_CP_PIXEL;
+	if (vmid == VMID_CP_NON_PIXEL)
+		return ION_FLAG_CP_NON_PIXEL;
+	if (vmid == VMID_CP_CAMERA)
+		return ION_FLAG_CP_CAMERA;
+	if (vmid == VMID_CP_SEC_DISPLAY)
+		return ION_FLAG_CP_SEC_DISPLAY;
+	if (vmid == VMID_CP_APP)
+		return ION_FLAG_CP_APP;
+
+	return 0;
+}
+
 /* fix up the cases where the ioctl direction bits are incorrect */
 static unsigned int msm_ion_ioctl_dir(unsigned int cmd)
 {
@@ -742,7 +763,7 @@ long msm_ion_custom_ioctl(struct ion_client *client,
 		} else {
 			handle = ion_import_dma_buf(client, data.flush_data.fd);
 			if (IS_ERR(handle)) {
-				pr_info("%s: Could not import handle: %p\n",
+				pr_info("%s: Could not import handle: %pK\n",
 					__func__, handle);
 				return -EINVAL;
 			}
@@ -755,7 +776,7 @@ long msm_ion_custom_ioctl(struct ion_client *client,
 			+ data.flush_data.length;
 
 		if (start && check_vaddr_bounds(start, end)) {
-			pr_err("%s: virtual address %p is out of bounds\n",
+			pr_err("%s: virtual address %pK is out of bounds\n",
 				__func__, data.flush_data.vaddr);
 			ret = -EINVAL;
 		} else {

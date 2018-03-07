@@ -119,6 +119,7 @@ qcom,camera@0 {
 		qcom,actuator-src = <&actuator0>;
 		//qcom,sensor-name = "imx377_htc";
 		qcom,camera-ver = <1>;
+		qcom,ois-fw = <1>;
 		qcom,ois-src = <&ois0>;
 		cam_vdig-supply = <&pm8994_l3>;//212mA
 		cam_vana-supply =<&pm8994_l10>;//91mA
@@ -169,6 +170,7 @@ qcom,camera@1{
 		qcom,mount-angle = <270>;
 		qcom,led-flash-src = <&led_flash1>;
 		qcom,actuator-src = <&actuator1>;
+		qcom,ois-fw = <2>;
 		qcom,ois-src = <&ois1>;
 		qcom,sensor-name = "s5k4e6_htc";
 		cam_dig-suplly = <&pmi8994_gpios 8 0>;

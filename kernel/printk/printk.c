@@ -1323,14 +1323,28 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 #if defined(CONFIG_HTC_DEBUG_BOOTLOADER_LOG)
 static inline int insert_to_buf_ln(char __user *buf, int buf_len, char* str)
 {
-	int len = 0;
+	int len = 0, ret_len = 0;
+	char *temp_buf;
 	len = strlen(str)+1;
+
+	temp_buf = kmalloc(len, GFP_KERNEL);
+	if (temp_buf == NULL)
+		return 0;
+
+	memcpy(temp_buf, str, len);
+	temp_buf[len-1] = '\n';
 	if (buf_len >= len) {
-		memcpy(buf, str, len);
-		buf[len-1] = '\n';
-		return len;
+		if (copy_to_user(buf, temp_buf, len)) {
+			pr_warn("insert_to_buf_ln, copy_to_user failed\n");
+		} else {
+			ret_len = len;
+		}
 	}
-	return 0;
+
+	if (temp_buf)
+		kfree(temp_buf);
+
+	return ret_len;
 }
 #endif
 

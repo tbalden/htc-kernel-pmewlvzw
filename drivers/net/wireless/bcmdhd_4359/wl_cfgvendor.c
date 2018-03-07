@@ -27,6 +27,10 @@
  * $Id: wl_cfgvendor.c 455257 2014-02-20 08:10:24Z $
  */
 
+/*
+ * New vendor interface additon to nl80211/cfg80211 to allow vendors
+ * to implement proprietary features over the cfg80211 stack.
+*/
 
 #include <typedefs.h>
 #include <linuxver.h>
@@ -49,10 +53,10 @@
 #include <dhd_cfg80211.h>
 #ifdef PNO_SUPPORT
 #include <dhd_pno.h>
-#endif 
+#endif /* PNO_SUPPORT */
 #ifdef RTT_SUPPORT
 #include <dhd_rtt.h>
-#endif 
+#endif /* RTT_SUPPORT */
 #include <proto/ethernet.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
@@ -78,6 +82,12 @@
 #include <brcm_nl80211.h>
 
 #if defined(WL_VENDOR_EXT_SUPPORT)
+/*
+ * This API is to be used for asynchronous vendor events. This
+ * shouldn't be used in response to a vendor command from its
+ * do_it handler context (instead wl_cfgvendor_send_cmd_reply should
+ * be used).
+ */
 int wl_cfgvendor_send_async_event(struct wiphy *wiphy,
 	struct net_device *dev, int event_id, const void  *data, int len)
 {
@@ -86,17 +96,17 @@ int wl_cfgvendor_send_async_event(struct wiphy *wiphy,
 
 	kflags = in_atomic() ? GFP_ATOMIC : GFP_KERNEL;
 
-	
+	/* Alloc the SKB for vendor_event */
 #if defined(CUSTOMER_HW_ONE)
 	skb = cfg80211_vendor_event_alloc(wiphy, NULL, len, event_id, kflags);
 #else
 	skb = cfg80211_vendor_event_alloc(wiphy, len, event_id, kflags);
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 	if (!skb) {
 		WL_ERR(("skb alloc failed"));
 		return -ENOMEM;
 	}
-	
+	/* Push the data to the skb */
 	nla_put_nohdr(skb, len, data);
 
 	cfg80211_vendor_event(skb, kflags);
@@ -110,14 +120,14 @@ wl_cfgvendor_send_cmd_reply(struct wiphy *wiphy,
 {
 	struct sk_buff *skb;
 
-	
+	/* Alloc the SKB for vendor_event */
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, len);
 	if (unlikely(!skb)) {
 		WL_ERR(("skb alloc failed"));
 		return -ENOMEM;
 	}
 
-	
+	/* Push the data to the skb */
 	nla_put_nohdr(skb, len, data);
 
 	return cfg80211_vendor_cmd_reply(skb);
@@ -161,7 +171,7 @@ wl_cfgvendor_get_feature_set_matrix(struct wiphy *wiphy,
 	mem_needed = VENDOR_REPLY_OVERHEAD + (ATTRIBUTE_U32_LEN * num) +
 	             ATTRIBUTE_U32_LEN;
 
-	
+	/* Alloc the SKB for vendor_event */
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, mem_needed);
 	if (unlikely(!skb)) {
 		WL_ERR(("skb alloc failed"));
@@ -229,7 +239,7 @@ wl_cfgvendor_set_nodfs_flag(struct wiphy *wiphy,
 	}
 	return err;
 }
-#endif 
+#endif /* CUSTOM_FORCE_NODFS_FLAG */
 
 #ifdef GSCAN_SUPPORT
 int
@@ -254,12 +264,12 @@ wl_cfgvendor_send_hotlist_event(struct wiphy *wiphy,
 
 		kflags = in_atomic() ? GFP_ATOMIC : GFP_KERNEL;
 
-		
+		/* Alloc the SKB for vendor_event */
 #if defined(CUSTOMER_HW_ONE)
 		skb = cfg80211_vendor_event_alloc(wiphy, NULL, malloc_len, event, kflags);
 #else
 		skb = cfg80211_vendor_event_alloc(wiphy, malloc_len, event, kflags);
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 		if (!skb) {
 			WL_ERR(("skb alloc failed"));
 			return -ENOMEM;
@@ -276,7 +286,7 @@ wl_cfgvendor_send_hotlist_event(struct wiphy *wiphy,
 
 			iter_cnt_to_send -= cnt;
 			cache->tot_consumed += cnt;
-			
+			/* Push the data to the skb */
 			nla_append(skb, cnt * sizeof(wifi_gscan_result_t), ptr);
 			if (cache->tot_consumed == cache->tot_count) {
 				cache = cache->next;
@@ -377,7 +387,7 @@ wl_cfgvendor_gscan_get_channel_list(struct wiphy *wiphy,
 	num_channels =  reply_len/ sizeof(uint32);
 	mem_needed = reply_len + VENDOR_REPLY_OVERHEAD + (ATTRIBUTE_U32_LEN * 2);
 
-	
+	/* Alloc the SKB for vendor_event */
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, mem_needed);
 	if (unlikely(!skb)) {
 		WL_ERR(("skb alloc failed"));
@@ -446,7 +456,7 @@ wl_cfgvendor_gscan_get_batch_results(struct wiphy *wiphy,
 
 	WL_TRACE(("complete %d mem_needed %d max_mem %d\n", complete, mem_needed,
 		(int)NLMSG_DEFAULT_SIZE));
-	
+	/* Alloc the SKB for vendor_event */
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, mem_needed);
 	if (unlikely(!skb)) {
 		WL_ERR(("skb alloc failed"));
@@ -466,7 +476,7 @@ wl_cfgvendor_gscan_get_batch_results(struct wiphy *wiphy,
 			break;
 		}
 		scan_hdr = nla_nest_start(skb, GSCAN_ATTRIBUTE_SCAN_RESULTS);
-		
+		/* no more room? we are done then (for now) */
 		if (scan_hdr == NULL) {
 			complete = 0;
 			break;
@@ -487,7 +497,7 @@ wl_cfgvendor_gscan_get_batch_results(struct wiphy *wiphy,
 			(num_results_iter * sizeof(wifi_gscan_result_t));
 		iter = iter->next;
 	}
-	
+	/* Returns TRUE if all result consumed */
 	complete = dhd_dev_gscan_batch_cache_cleanup(bcmcfg_to_prmry_ndev(cfg));
 	memcpy(nla_data(complete_flag), &complete, sizeof(complete));
 	dhd_dev_pno_unlock_access_batch_results(bcmcfg_to_prmry_ndev(cfg));
@@ -958,7 +968,7 @@ static int wl_cfgvendor_epno_cfg(struct wiphy *wiphy,
 		err = -EINVAL;
 	}
 exit:
-	
+	/* Flush all configs if error condition */
 	flush = (err < 0) ? TRUE: FALSE;
 	dhd_dev_pno_set_cfg_gscan(bcmcfg_to_prmry_ndev(cfg),
 	   DHD_PNO_EPNO_CFG_ID, &num_visible_ssid, flush);
@@ -1007,112 +1017,7 @@ wl_cfgvendor_set_batch_scan_cfg(struct wiphy *wiphy,
 	return err;
 }
 
-static int
-wl_cfgvendor_significant_change_cfg(struct wiphy *wiphy,
-	struct wireless_dev *wdev, const void  *data, int len)
-{
-	int err = 0;
-	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-	gscan_swc_params_t *significant_params;
-	int tmp, tmp1, tmp2, type, j = 0;
-	const struct nlattr *outer, *inner, *iter;
-	uint8 flush = 0;
-	wl_pfn_significant_bssid_t *bssid;
-	uint16 num_bssid = 0;
-	uint16 max_buf_size = sizeof(gscan_swc_params_t) +
-		sizeof(wl_pfn_significant_bssid_t) * (PFN_SWC_MAX_NUM_APS - 1);
-
-	significant_params =  (gscan_swc_params_t *) kzalloc(max_buf_size, GFP_KERNEL);
-	if (!significant_params) {
-		WL_ERR(("Cannot Malloc mem size:%d\n", len));
-		return BCME_NOMEM;
-	}
-
-	nla_for_each_attr(iter, data, len, tmp2) {
-		type = nla_type(iter);
-		switch (type) {
-			case GSCAN_ATTRIBUTE_SIGNIFICANT_CHANGE_FLUSH:
-			flush = nla_get_u8(iter);
-			break;
-			case GSCAN_ATTRIBUTE_RSSI_SAMPLE_SIZE:
-				significant_params->rssi_window = nla_get_u16(iter);
-				break;
-			case GSCAN_ATTRIBUTE_LOST_AP_SAMPLE_SIZE:
-				significant_params->lost_ap_window = nla_get_u16(iter);
-				break;
-			case GSCAN_ATTRIBUTE_MIN_BREACHING:
-				significant_params->swc_threshold = nla_get_u16(iter);
-				break;
-			case GSCAN_ATTRIBUTE_NUM_BSSID:
-				num_bssid = nla_get_u16(iter);
-				if (num_bssid > PFN_SWC_MAX_NUM_APS) {
-					WL_ERR(("ovar max SWC bssids:%d\n",
-						num_bssid));
-					err = BCME_BADARG;
-					goto exit;
-				}
-				break;
-			case GSCAN_ATTRIBUTE_SIGNIFICANT_CHANGE_BSSIDS:
-				if (num_bssid == 0) {
-					WL_ERR(("num_bssid : 0\n"));
-					err = BCME_BADARG;
-					goto exit;
-				}
-				bssid = significant_params->bssid_elem_list;
-				nla_for_each_nested(outer, iter, tmp) {
-					if (j >= num_bssid) {
-						j++;
-						break;
-					}
-					nla_for_each_nested(inner, outer, tmp1) {
-							switch (nla_type(inner)) {
-								case GSCAN_ATTRIBUTE_BSSID:
-									memcpy(&(bssid[j].macaddr),
-									       nla_data(inner),
-									       ETHER_ADDR_LEN);
-									break;
-								case GSCAN_ATTRIBUTE_RSSI_HIGH:
-									bssid[j].rssi_high_threshold
-									 = (int8) nla_get_u8(inner);
-									break;
-								case GSCAN_ATTRIBUTE_RSSI_LOW:
-									bssid[j].rssi_low_threshold
-									 = (int8) nla_get_u8(inner);
-									break;
-								default:
-									WL_ERR(("ATTR unknown %d\n",
-									          type));
-									break;
-							}
-						}
-					j++;
-				}
-				break;
-			default:
-				WL_ERR(("Unknown type %d\n", type));
-				break;
-		}
-	}
-	if (j != num_bssid) {
-		WL_ERR(("swc bssids count:%d not matched to num_bssid:%d\n",
-			j, num_bssid));
-		err = BCME_BADARG;
-		goto exit;
-	}
-	significant_params->nbssid = j;
-
-	if (dhd_dev_pno_set_cfg_gscan(bcmcfg_to_prmry_ndev(cfg),
-	              DHD_PNO_SIGNIFICANT_SCAN_CFG_ID,
-	              significant_params, flush) < 0) {
-		WL_ERR(("Could not set GSCAN significant cfg\n"));
-		err = BCME_ERROR;
-		goto exit;
-	}
-exit:
-	kfree(significant_params);
-	return err;
-}
-#endif 
+#endif /* GSCAN_SUPPORT */
 #ifdef RTT_SUPPORT
 void
 wl_cfgvendor_rtt_evt(void *ctx, void *rtt_data)
@@ -1129,7 +1034,7 @@ wl_cfgvendor_rtt_evt(void *ctx, void *rtt_data)
 	wiphy = wdev->wiphy;
 
 	WL_DBG(("In\n"));
-	
+	/* Push the data to the skb */
 	if (!rtt_data) {
 		WL_ERR(("rtt_data is NULL\n"));
 		return;
@@ -1142,7 +1047,7 @@ wl_cfgvendor_rtt_evt(void *ctx, void *rtt_data)
 			kflags);
 #else
 		skb = cfg80211_vendor_event_alloc(wiphy, 100, GOOGLE_RTT_COMPLETE_EVENT, kflags);
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 		if (!skb) {
 			WL_ERR(("skb alloc failed"));
 			return;
@@ -1153,14 +1058,14 @@ wl_cfgvendor_rtt_evt(void *ctx, void *rtt_data)
 		return;
 	}
 	list_for_each_entry(rtt_header, rtt_cache_list, list) {
-		
+		/* Alloc the SKB for vendor_event */
 #if defined(CUSTOMER_HW_ONE)
 		skb = cfg80211_vendor_event_alloc(wiphy, NULL, rtt_header->result_tot_len + 100,
 			GOOGLE_RTT_COMPLETE_EVENT, kflags);
 #else
 		skb = cfg80211_vendor_event_alloc(wiphy, rtt_header->result_tot_len + 100,
 			GOOGLE_RTT_COMPLETE_EVENT, kflags);
-#endif 
+#endif /* CUSTOMER_HW_ONE */
 		if (!skb) {
 			WL_ERR(("skb alloc failed"));
 			return;
@@ -1238,6 +1143,9 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 			}
 			break;
 		case RTT_ATTRIBUTE_TARGET_INFO:
+			/* Added this variable for safe check to avoid crash
+			 * incase the caller did not respect the order
+			 */
 			if (!rtt_param.target_info) {
 				WL_ERR(("rtt_target_info is NULL\n"));
 				err = BCME_NOMEM;
@@ -1274,7 +1182,7 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 					case RTT_ATTRIBUTE_TARGET_PERIOD:
 						rtt_target->burst_period = nla_get_u32(iter2);
 						if (rtt_target->burst_period < 32) {
-							
+							/* 100ms unit */
 							rtt_target->burst_period *= 100;
 						} else {
 							WL_ERR(("%d value must in (0-31)\n",
@@ -1324,7 +1232,7 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 							dhd_rtt_idx_to_burst_duration(
 								nla_get_u32(iter2));
 						} else if (nla_get_u32(iter2) == 15) {
-							
+							/* use default value */
 							rtt_target->burst_duration = 0;
 						} else {
 							WL_ERR(("%d value must in (2-11) or 15\n",
@@ -1341,7 +1249,7 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 						break;
 					}
 				}
-				
+				/* convert to chanspec value */
 				rtt_target->chanspec =
 					dhd_rtt_convert_to_chspec(rtt_target->channel);
 				if (rtt_target->chanspec == 0) {
@@ -1364,7 +1272,7 @@ wl_cfgvendor_rtt_set_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 		err = -EINVAL;
 	}
 exit:
-	
+	/* free the target info list */
 	if (rtt_param.target_info) {
 		kfree(rtt_param.target_info);
 		rtt_param.target_info = NULL;
@@ -1408,7 +1316,7 @@ wl_cfgvendor_rtt_cancel_config(struct wiphy *wiphy, struct wireless_dev *wdev,
 						goto exit;
 					}
 				} else {
-					
+					/* cancel the current whole RTT process */
 					goto cancel;
 				}
 				break;
@@ -1474,7 +1382,7 @@ exit:
 	return err;
 }
 
-#endif 
+#endif /* RTT_SUPPORT */
 
 #ifdef GSCAN_SUPPORT
 static int wl_cfgvendor_enable_lazy_roam(struct wiphy *wiphy,
@@ -1545,6 +1453,7 @@ static int wl_cfgvendor_set_lazy_roam_cfg(struct wiphy *wiphy,
 	return err;
 }
 
+/* small helper function */
 static wl_bssid_pref_cfg_t *
 create_bssid_pref_cfg(uint32 num)
 {
@@ -1570,7 +1479,7 @@ wl_cfgvendor_set_bssid_pref(struct wiphy *wiphy,
 	const struct nlattr *outer, *inner, *iter;
 	uint32 flush = 0, i = 0, num = 0;
 
-	
+	/* Assumption: NUM attribute must come first */
 	nla_for_each_attr(iter, data, len, tmp2) {
 		type = nla_type(iter);
 		switch (type) {
@@ -1607,7 +1516,7 @@ wl_cfgvendor_set_bssid_pref(struct wiphy *wiphy,
 							case GSCAN_ATTRIBUTE_BSSID_PREF:
 								memcpy(&(bssids[i].bssid),
 								  nla_data(inner), ETHER_ADDR_LEN);
-								
+								/* not used for now */
 								bssids[i].flags = 0;
 								break;
 							case GSCAN_ATTRIBUTE_RSSI_MODIFIER:
@@ -1626,7 +1535,7 @@ wl_cfgvendor_set_bssid_pref(struct wiphy *wiphy,
 	}
 
 	if (!bssid_pref) {
-		
+		/* What if only flush is desired? */
 		if (flush) {
 			if ((bssid_pref = create_bssid_pref_cfg(0)) == NULL) {
 				WL_ERR(("%s: Can't malloc memory\n", __FUNCTION__));
@@ -1658,7 +1567,7 @@ wl_cfgvendor_set_bssid_blacklist(struct wiphy *wiphy,
 	const struct nlattr *iter;
 	uint32 mem_needed = 0, flush = 0, i = 0, num = 0;
 
-	
+	/* Assumption: NUM attribute must come first */
 	nla_for_each_attr(iter, data, len, tmp) {
 		type = nla_type(iter);
 		switch (type) {
@@ -1722,7 +1631,7 @@ wl_cfgvendor_set_ssid_whitelist(struct wiphy *wiphy,
 	const struct nlattr *inner, *iter;
 	uint32 flush = 0, i = 0, num = 0;
 
-	
+	/* Assumption: NUM attribute must come first */
 	nla_for_each_attr(iter, data, len, tmp2) {
 		type = nla_type(iter);
 		switch (type) {
@@ -1788,7 +1697,7 @@ exit:
 	kfree(ssid_whitelist);
 	return err;
 }
-#endif 
+#endif /* GSCAN_SUPPORT */
 
 static int wl_cfgvendor_set_rssi_monitor(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void  *data, int len)
@@ -1823,7 +1732,7 @@ static int wl_cfgvendor_set_rssi_monitor(struct wiphy *wiphy,
 static int wl_cfgvendor_start_mkeep_alive(struct wiphy *wiphy, struct wireless_dev *wdev,
 	const void *data, int len)
 {
-	
+	/* max size of IP packet for keep alive */
 	const int MKEEP_ALIVE_IP_PKT_MAX = 256;
 
 	int ret = BCME_OK, rem, type;
@@ -1919,7 +1828,7 @@ static int wl_cfgvendor_stop_mkeep_alive(struct wiphy *wiphy, struct wireless_de
 
 	return ret;
 }
-#endif 
+#endif /* defined(KEEP_ALIVE) */
 
 static int
 wl_cfgvendor_priv_string_handler(struct wiphy *wiphy,
@@ -2100,7 +2009,7 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 		return err;
 	}
 
-	
+	/* Translate traditional (ver <= 10) counters struct to new xtlv type struct */
 	err = wl_cntbuf_to_xtlv_format(NULL, iovar_buf, WL_CNTBUF_MAX_SIZE, 0);
 	if (err != BCME_OK) {
 		WL_ERR(("%s wl_cntbuf_to_xtlv_format ERR %d\n",
@@ -2166,7 +2075,7 @@ static int wl_cfgvendor_lstats_get_info(struct wiphy *wiphy,
 
 	return err;
 }
-#endif 
+#endif /* LINKSTAT_SUPPORT */
 
 static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 	{
@@ -2237,14 +2146,6 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 	{
 		{
 			.vendor_id = OUI_GOOGLE,
-			.subcmd = GSCAN_SUBCMD_SET_SIGNIFICANT_CHANGE_CONFIG
-		},
-		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
-		.doit = wl_cfgvendor_significant_change_cfg
-	},
-	{
-		{
-			.vendor_id = OUI_GOOGLE,
 			.subcmd = GSCAN_SUBCMD_GET_SCAN_RESULTS
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
@@ -2266,7 +2167,7 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = wl_cfgvendor_gscan_get_channel_list
 	},
-#endif 
+#endif /* GSCAN_SUPPORT */
 #ifdef RTT_SUPPORT
 	{
 		{
@@ -2292,7 +2193,7 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = wl_cfgvendor_rtt_get_capability
 	},
-#endif 
+#endif /* RTT_SUPPORT */
 #ifdef KEEP_ALIVE
 	{
 		{
@@ -2310,7 +2211,7 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = wl_cfgvendor_stop_mkeep_alive
 	},
-#endif 
+#endif /* KEEP_ALIVE */
 	{
 		{
 			.vendor_id = OUI_GOOGLE,
@@ -2345,7 +2246,7 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.doit = wl_cfgvendor_set_nodfs_flag
 
 	},
-#endif 
+#endif /* CUSTOM_FORCE_NODFS_FLAG */
 #ifdef LINKSTAT_SUPPORT
 	{
 		{
@@ -2355,7 +2256,7 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = wl_cfgvendor_lstats_get_info
 	},
-#endif 
+#endif /* LINKSTAT_SUPPORT */
 #ifdef GSCAN_SUPPORT
 	{
 		{
@@ -2410,7 +2311,7 @@ static const struct wiphy_vendor_command wl_vendor_cmds [] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = wl_cfgvendor_set_bssid_blacklist
 	},
-#endif 
+#endif /* GSCAN_SUPPORT */
 	{
 		{
 			.vendor_id = OUI_GOOGLE,
@@ -2429,20 +2330,20 @@ static const struct  nl80211_vendor_cmd_info wl_vendor_events [] = {
 		{ OUI_GOOGLE, GOOGLE_GSCAN_GEOFENCE_FOUND_EVENT },
 		{ OUI_GOOGLE, GOOGLE_GSCAN_BATCH_SCAN_EVENT },
 		{ OUI_GOOGLE, GOOGLE_SCAN_FULL_RESULTS_EVENT },
-#endif 
+#endif /* GSCAN_SUPPORT */
 #ifdef RTT_SUPPORT
 		{ OUI_GOOGLE, GOOGLE_RTT_COMPLETE_EVENT },
-#endif 
+#endif /* RTT_SUPPORT */
 #ifdef GSCAN_SUPPORT
 		{ OUI_GOOGLE, GOOGLE_SCAN_COMPLETE_EVENT },
 		{ OUI_GOOGLE, GOOGLE_GSCAN_GEOFENCE_LOST_EVENT },
 		{ OUI_GOOGLE, GOOGLE_SCAN_EPNO_EVENT },
-#endif 
+#endif /* GSCAN_SUPPORT */
 		{ OUI_GOOGLE, GOOGLE_DEBUG_RING_EVENT },
 		{ OUI_GOOGLE, GOOGLE_FW_DUMP_EVENT },
 #ifdef GSCAN_SUPPORT
 		{ OUI_GOOGLE, GOOGLE_PNO_HOTSPOT_FOUND_EVENT },
-#endif 
+#endif /* GSCAN_SUPPORT */
 		{ OUI_GOOGLE, GOOGLE_RSSI_MONITOR_EVENT },
 #ifdef KEEP_ALIVE
 		{ OUI_GOOGLE, GOOGLE_MKEEP_ALIVE_EVENT },
@@ -2485,4 +2386,4 @@ int wl_cfgvendor_detach(struct wiphy *wiphy)
 
 	return 0;
 }
-#endif 
+#endif /* defined(WL_VENDOR_EXT_SUPPORT) */

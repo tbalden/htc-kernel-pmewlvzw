@@ -163,6 +163,7 @@ static bool get_dload_mode(void)
 	return dload_mode_enabled;
 }
 
+#if 0
 static void enable_emergency_dload_mode(void)
 {
 	int ret;
@@ -187,6 +188,7 @@ static void enable_emergency_dload_mode(void)
 	if (ret)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
+#endif
 
 static int dload_set(const char *val, struct kernel_param *kp)
 {
@@ -411,8 +413,10 @@ static void msm_restart_prepare(char mode, const char *cmd)
 			else
 #endif
 				set_restart_to_oem(code, NULL);
+#if 0
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+#endif
 		} else if (!strncmp(cmd, "download", 8 )) {
 			set_restart_action(0x6f656d00 | 0xe0, NULL);
 		} else if (!strncmp(cmd, "ftm", 3)) {

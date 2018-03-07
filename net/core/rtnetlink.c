@@ -54,13 +54,15 @@
 #include <net/rtnetlink.h>
 #include <net/net_namespace.h>
 
-#if 1 // NW
-void net_dbg_log_event_oneline(int idx, const char * event, ...);
-int net_dbg_get_free_log_event_oneline(void);
-static int netd_rtnl_lock_idx = -1;
+#if CONFIG_HTC_NET_DEBUG && CONFIG_HTC_NETWORK_MODIFY
+#include <net/htc_net_debug.h>
+
+#define THRESHOLD_TIME_MS 500
+
 static int rtnl_lock_idx = -1;
 static int rtnl_unlock_idx = -1;
-#endif
+static ktime_t time_start, time_end;
+#endif /* CONFIG_HTC_NET_DEBUG && CONFIG_HTC_NETWORK_MODIFY */
 
 struct rtnl_link {
 	rtnl_doit_func		doit;
@@ -72,46 +74,48 @@ static DEFINE_MUTEX(rtnl_mutex);
 
 void rtnl_lock(void)
 {
-#if 1 // NW
-	if (current->real_parent)
-	{
-		if (strcmp(current->comm, "netd") == 0 ||
-			strcmp(current->real_parent->comm, "netd") == 0)
-		{
-			net_dbg_log_event_oneline(netd_rtnl_lock_idx, "netd pre-rtnl_lock by [%d,%s], parent=[%d,%s]", current->pid, current->comm, current->real_parent->pid, current->real_parent->comm);
-		}
-	}
-	else
-	{
-		if (strcmp(current->comm, "netd") == 0) {
-			net_dbg_log_event_oneline(netd_rtnl_lock_idx, "netd pre-rtnl_lock by [%d,%s]", current->pid, current->comm);
-		}
-	}
-#endif
-
 	mutex_lock(&rtnl_mutex);
 
-#if 1 // NW
+#if CONFIG_HTC_NET_DEBUG && CONFIG_HTC_NETWORK_MODIFY
+	time_start = ktime_get();
+
        if (current->real_parent) {
 		net_dbg_log_event_oneline(rtnl_lock_idx, "rtnl_lock by [%d,%s], parent=[%d,%s]", current->pid, current->comm, current->real_parent->pid, current->real_parent->comm);
        } else {
 		net_dbg_log_event_oneline(rtnl_lock_idx, "rtnl_lock by [%d,%s]", current->pid, current->comm);
        }
-#endif
-
+#endif /* CONFIG_HTC_NET_DEBUG && CONFIG_HTC_NETWORK_MODIFY */
 }
 EXPORT_SYMBOL(rtnl_lock);
 
 void __rtnl_unlock(void)
 {
 	mutex_unlock(&rtnl_mutex);
-#if 1 // NW
+
+#if CONFIG_HTC_NET_DEBUG && CONFIG_HTC_NETWORK_MODIFY
+	time_end = ktime_get();
+	do{
+		u32 time_elapsed_ms;
+		time_elapsed_ms = ktime_to_ms(ktime_sub(time_end, time_start));
+		if(time_elapsed_ms >= THRESHOLD_TIME_MS)
+		{
+			pr_info("[NET] __rtnl_unlock by [%d,%s], parent=[%d,%s], start,end,hold time=[%lld,%lld,%d](ms)\n",
+				current->pid,
+				current->comm,
+				current->real_parent->pid,
+				current->real_parent->comm,
+				ktime_to_ms(time_start),
+				ktime_to_ms(time_end),
+				time_elapsed_ms);
+		}
+	} while(0);
+
        if (current->real_parent) {
 		net_dbg_log_event_oneline(rtnl_unlock_idx, "__rtnl_unlock  by [%d,%s], parent=[%d,%s]", current->pid, current->comm, current->real_parent->pid, current->real_parent->comm);
        } else {
 		net_dbg_log_event_oneline(rtnl_unlock_idx, "__rtnl_unlock by [%d,%s]", current->pid, current->comm);
        }
-#endif
+#endif /* CONFIG_HTC_NET_DEBUG && CONFIG_HTC_NETWORK_MODIFY */
 }
 
 void rtnl_unlock(void)
@@ -1060,14 +1064,8 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 		goto nla_put_failure;
 
 	if (1) {
-		struct rtnl_link_ifmap map = {
-			.mem_start   = dev->mem_start,
-			.mem_end     = dev->mem_end,
-			.base_addr   = dev->base_addr,
-			.irq         = dev->irq,
-			.dma         = dev->dma,
-			.port        = dev->if_port,
-		};
+		struct rtnl_link_ifmap map;
+
 		memset(&map, 0, sizeof(map));
 		map.mem_start   = dev->mem_start;
 		map.mem_end     = dev->mem_end;
@@ -1601,7 +1599,8 @@ static int do_setlink(const struct sk_buff *skb,
 		struct sockaddr *sa;
 		int len;
 
-		len = sizeof(sa_family_t) + dev->addr_len;
+		len = sizeof(sa_family_t) + max_t(size_t, dev->addr_len,
+						  sizeof(*sa));
 		sa = kmalloc(len, GFP_KERNEL);
 		if (!sa) {
 			err = -ENOMEM;
@@ -3153,8 +3152,7 @@ void __init rtnetlink_init(void)
 	rtnl_register(PF_BRIDGE, RTM_DELLINK, rtnl_bridge_dellink, NULL, NULL);
 	rtnl_register(PF_BRIDGE, RTM_SETLINK, rtnl_bridge_setlink, NULL, NULL);
 
-#if 1 // NW
-	netd_rtnl_lock_idx = net_dbg_get_free_log_event_oneline();
+#if CONFIG_HTC_NET_DEBUG && CONFIG_HTC_NETWORK_MODIFY
 	rtnl_lock_idx = net_dbg_get_free_log_event_oneline();
 	rtnl_unlock_idx = net_dbg_get_free_log_event_oneline();
 #endif

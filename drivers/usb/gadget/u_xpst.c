@@ -216,6 +216,14 @@ int checkcmd_modem_epst(unsigned char *buf)
 	}
 	if (*buf == EPST_PREFIX)
 		return DM7KONLY;
+	else if (*buf == 0x13 && *(buf + 1) == EPST_PREFIX) {
+		DIAG_INFO("c8 cmd, modem not registered, force to pass\n");
+		return DM7KONLY;
+	}
+	else if (*buf == 0x13 && *(buf + 1) == 0xc && _context.diag2arm9_opened) {
+		DIAG_INFO("0c cmd, modem not registered, force to pass\n");
+		return DM7KONLY;
+	}
 	else
 		return NO_PST;
 #else
@@ -673,6 +681,7 @@ static int check_modem_task_ready(int channel)
 			DIAG_INFO("%s:modem status=smd not ready\n", __func__);
 			return -EAGAIN;
 		}
+		DIAG_INFO("%s: send status cmd to smd directly\n", __func__);
 		diagfwd_write(PERIPHERAL_MODEM, TYPE_CMD, phone_status, sizeof(phone_status));
 		break;
 	default:
@@ -832,7 +841,6 @@ static int diag2arm9_open(struct inode *ip, struct file *fp)
 	ctxt->read_arm9_buf = 0;
 	ctxt->read_arm9_req = 0;
 	ctxt->diag2arm9_opened = true;
-	DM_enable = true; /*++ 2015/10/26, USB Team, PCN00032 ++*/
 /*++ 2015/10/26, USB Team, PCN00031 ++*/
 	for (i = 0; i < NUM_PERIPHERALS; i++) {
 		diagfwd_open(i, TYPE_DATA);

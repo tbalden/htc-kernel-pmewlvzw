@@ -95,6 +95,13 @@ static int GYRO_Cali_init (struct msm_sensor_ctrl_t *s_ctrl)
     pr_info("[OIS_Cali]%s:E\n", __func__);
 
     g_GYRO_info = kzalloc(sizeof(struct GYRO_gpio_info), GFP_ATOMIC);
+
+    /* fix klocwork issue, allocate buffer but no check null */
+    if (g_GYRO_info == NULL) {
+        pr_info("[OIS_Cali] allocate g_GYRO_info buffer fail");
+        return -1;
+    }
+
     g_GYRO_info->flash_rw = of_get_named_gpio((&s_ctrl->pdev->dev)->of_node,"flash_rw",0);
     pr_info("[OIS_Cali]flash_rw %d\n", g_GYRO_info->flash_rw);
 	if (g_GYRO_info->flash_rw < 0) {
@@ -152,7 +159,10 @@ unsigned char htc_GyroReCalib(struct msm_sensor_ctrl_t *s_ctrl, int cam_id)
 /*HTC_END*/
     WitTim(100);
 
-    GYRO_Cali_init(s_ctrl);
+        rc = GYRO_Cali_init(s_ctrl);
+        // fix klocwork issue, allocate buffer fail
+        if (rc != 0)
+            return -1;
 
 	rc = RamWrite32A( CMD_CALIBRATION , 0x00000000 ) ;
 
@@ -897,7 +907,10 @@ int htc_checkFWUpdate(struct msm_sensor_ctrl_t *s_ctrl)
     RamRead32A(0x8000,&UlFWDat );
     pr_info("[OIS_Cali]%s CAM:%d FW Ver = %x\n", __func__,g_s_ctrl->id, UlFWDat);
 
-    GYRO_Cali_init(s_ctrl);
+    rc = GYRO_Cali_init(s_ctrl);
+    // fix klocwork issue, allocate buffer fail
+    if (rc != 0)
+        return -1;
 
     if((g_s_ctrl->id == 0)&&((UlFWDat&0xF) >= (BASEVWNUM_M&0xF))&&((VERNUM_M&0xF)>(UlFWDat&0xF))&&((UlFWDat&0xF)!=(VERNUM_M&0xF)))
     {

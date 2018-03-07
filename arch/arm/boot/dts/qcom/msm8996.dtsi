@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,7 +21,7 @@
 	interrupt-parent = <&intc>;
 
 	chosen {
-		bootargs = "sched_enable_hmp=1 sched_enable_power_aware=1 androidboot.rpmdevice=290000.qcom,rpm-stats-ver";
+		bootargs = "sched_enable_hmp=1 sched_enable_power_aware=1 app_setting.use_32bit_app_setting=1 androidboot.rpmdevice=290000.qcom,rpm-stats-ver";
 	};
 
 	aliases {
@@ -41,6 +41,10 @@
 		i2c12 = &i2c_12;
 		spi0 = &spi_0;
 		spi2 = &spi_2;
+		mhi_rmnet0 = &mhi_rmnet_0;
+		mhi_rmnet1 = &mhi_rmnet_1;
+		mhi_uci0 = &mhi_uci_0;
+		mhi0 = &mhi_0;
 	};
 
 	psci {
@@ -155,6 +159,34 @@
 
 	soc: soc { };
 
+	firmware: firmware {
+		android {
+			compatible = "android,firmware";
+			fstab {
+				compatible = "android,fstab";
+/* HTC: 8996 projects (N, N->O) does NOT has vendor partition.
+				vendor {
+					compatible = "android,vendor";
+					dev = "/dev/block/platform/soc/7464900.sdhci/by-name/vendor";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,discard";
+					fsmgr_flags = "wait";
+					status = "ok";
+				 };
+*/
+				 system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/soc/7464900.sdhci/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,discard";
+					fsmgr_flags = "wait,verify";
+					status = "ok";
+				};
+
+			};
+		};
+	};
+
 	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -227,6 +259,7 @@
 
 #include "msm8996-ion.dtsi"
 #include "msm8996-mdss.dtsi"
+#include "msm8996-sde.dtsi"
 #include "msm8996-mdss-pll.dtsi"
 #include "msm8996-smp2p.dtsi"
 #include "msm8996-ipcrouter.dtsi"
@@ -240,16 +273,6 @@
 	#size-cells = <1>;
 	ranges = <0 0 0 0xffffffff>;
 	compatible = "simple-bus";
-
-	cpu_fuse@70134 {
-		compatible = "qcom,cpucx-8996";
-		reg = <0x70134 0x4>;
-	};
-
-	cpu_fuse@70148 {
-		compatible = "qcom,cpumx-8996";
-		reg = <0x70148 0x4>;
-	};
 
 	apc_apm: apm@099e0000 {
 		compatible = "qcom,msm-apm";
@@ -1380,7 +1403,7 @@
 
 		iommus = <&anoc0_smmu>;
 
-		qcom,ep-wakeirq;
+		qcom,boot-option = <0x1>;
 
 		linux,pci-domain = <0>;
 
@@ -1532,7 +1555,7 @@
 
 		iommus = <&anoc0_smmu>;
 
-		qcom,ep-wakeirq;
+		qcom,boot-option = <0x1>;
 
 		qcom,ep-latency = <10>;
 
@@ -1569,6 +1592,7 @@
 
 		max-clock-frequency-hz = <0>, <0>, <1010526>, <0>, <0>, <0>, <0>,
 					 <0>, <0>, <0>, <0>, <0>, <0>, <0>;
+		status = "disabled";
 	};
 
 	pcie2: qcom,pcie@00610000 {
@@ -1683,9 +1707,10 @@
 
 		iommus = <&anoc0_smmu>;
 
-		qcom,ep-wakeirq;
+		qcom,boot-option = <0x1>;
 
 		qcom,ep-latency = <10>;
+		qcom,wr-halt-size = <0xa>;
 
 		linux,pci-domain = <2>;
 
@@ -1725,8 +1750,57 @@
 					 <0>, <0>, <0>, <0>, <0>, <0>, <0>;
 	};
 
-	mhi: qcom,mhi {
+	mhi_0: mhi: qcom,mhi@0 {
 		compatible = "qcom,mhi";
+		qcom,mhi-address-window = <0x0 0x80000000 0x1 0xffffffff>;
+		qcom,pci-dev_id = <0x0302>;
+		qcom,pci-domain = <2>;
+		qcom,pci-bus = <1>;
+		qcom,pci-slot = <0>;
+	};
+
+	mhi_rmnet_0: qcom,mhi-rmnet@0 {
+		compatible = "qcom,mhi-rmnet";
+		cell-index = <0>;
+		qcom,mhi = <&mhi_0>;
+		qcom,mhi-rx-channel = <101>;
+		qcom,mhi-tx-channel = <100>;
+		qcom,mhi-mru = <8000>;
+		status = "disabled";
+	};
+
+	mhi_rmnet_1: qcom,mhi-rmnet@1 {
+		compatible = "qcom,mhi-rmnet";
+		cell-index = <1>;
+		qcom,mhi = <&mhi_0>;
+		qcom,mhi-rx-channel = <102>;
+		qcom,mhi-mru = <0x4000>;
+		status = "disabled";
+	};
+
+	mhi_uci_0: qcom,mhi-uci@0 {
+		compatible = "qcom,mhi-uci";
+		qcom,mhi-uci-channels = <0 0xffff>,
+					<1 0x1000>,
+					<2 0xffff>,
+					<3 0xffff>,
+					<10 0xffff>,
+					<11 0x1000>,
+					<14 0xffff>,
+					<15 0x1000>,
+					<16 0xffff>,
+					<17 0x1000>,
+					<18 0xffff>,
+					<19 0x1000>,
+					<22 0xffff>,
+					<23 0x1000>,
+					<24 0xffff>,
+					<25 0x1000>,
+					<32 0xffff>,
+					<33 0x1000>;
+		qcom,mhi-uci-ctrlchan = <18>;
+		qcom,mhi = <&mhi_0>;
+		status = "disabled";
 	};
 
         qcom,ipc-spinlock@740000 {
@@ -1941,10 +2015,11 @@
 		vbus_dwc3-supply = <&smbcharger_charger_otg>;
 		qcom,usb-dbm = <&dbm_1p5>;
 		qcom,msm-bus,name = "usb3";
-		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,num-cases = <3>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 					<61 512 0 0>,
+					<61 512 240000 800000>,
 					<61 512 240000 800000>;
 
 		qcom,dwc-usb3-msm-tx-fifo-size = <21288>;
@@ -1972,6 +2047,7 @@
 			snps,nominal-elastic-buffer;
 			snps,is-utmi-l1-suspend;
 			snps,hird-threshold = /bits/ 8 <0x0>;
+			qcom,usb-core-id = <0>;
 		};
 
 		qcom,usbbam@6b04000 {
@@ -2052,10 +2128,11 @@
 		interrupt-names = "hs_phy_irq", "pwr_event_irq";
 
 		qcom,msm-bus,name = "usb-hs";
-		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,num-cases = <3>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 					<87 512 0 0>,
+					<87 512 60000 960000>,
 					<87 512 60000 960000>;
 
 		clocks = <&clock_gcc clk_gcc_usb20_master_clk>,
@@ -2078,6 +2155,7 @@
 			snps,nominal-elastic-buffer;
 			snps,is-utmi-l1-suspend;
 			snps,hird-threshold = /bits/ 8 <0x0>;
+			qcom,usb-core-id = <1>;
 		};
 	};
 
@@ -2090,16 +2168,22 @@
 		htc,android-usb-nluns = <1>; /*++ 2015/10/27 USB Team, PCN00001 ++*/
 		qcom,android-usb-cdrom;	/*++ 2015/10/27 USB Team, PCN00001 ++*/
 		qcom,pm-qos-latency = <41 91 801>;
+		qcom,usb-core-id = <0>;
+	};
+
+	android_usb1: android_usb1 {
+		compatible = "qcom,android-usb";
+		qcom,pm-qos-latency = <41 91 801>;
+		qcom,usb-core-id = <1>;
+		status = "disabled";
 	};
 
 	qusb_phy0: qusb@7411000 {
 		compatible = "qcom,qusb2phy";
 		reg = <0x07411000 0x180>,
-			<0x06af8800 0x400>,
 			<0x0007024c 0x4>,
 			<0x00388018 0x4>;
 		reg-names = "qusb_phy_base",
-			"qscratch_base",
 			"tune2_efuse_addr",
 			"ref_clk_addr";
 		vdd-supply = <&pm8994_s2_corner>;
@@ -2132,11 +2216,9 @@
 	qusb_phy1: qusb@7412000 {
 		compatible = "qcom,qusb2phy";
 		reg = <0x07412000 0x180>,
-			<0x076f8800 0x400>,
 			<0x0007024c 0x4>,
 			<0x00388014 0x4>;
 		reg-names = "qusb_phy_base",
-			"qscratch_base",
 			"tune2_efuse_addr",
 			"ref_clk_addr";
 		vdd-supply = <&pm8994_s2_corner>;
@@ -2172,7 +2254,7 @@
 		reg-names = "qmp_phy_base",
 			    "vls_clamp_reg";
 		vdd-supply = <&pm8994_l28>;
-		vdda18-supply = <&pm8994_l12>;
+		core-supply = <&pm8994_l12>;
 		qcom,vdd-voltage-level = <0 925000 925000>;
 		qcom,vbus-valid-override;
 
@@ -2279,7 +2361,8 @@
 
 	qcom,cnss {
 		compatible = "qcom,cnss";
-		wlan-en-gpio = <&pm8994_gpios 8 0>;
+		wlan-bootstrap-gpio = <&tlmm 46 0>;
+		vdd-wlan-en-supply = <&wlan_en_vreg>;
 		vdd-wlan-supply = <&rome_vreg>;
 		vdd-wlan-io-supply = <&pm8994_s4>;
 		vdd-wlan-xtal-supply = <&pm8994_l30>;
@@ -2599,6 +2682,11 @@
 		qcom,support-fde;
 		qcom,no-clock-support;
 		qcom,appsbl-qseecom-support;
+		/* Remove this flag from common dtsi.
+		 * To keep the key length on 16-byte for qseecom_create_key()
+		 * on N to O(MR) projects.
+		 */
+		/* qcom,fde-key-size; */
 		qcom,msm-bus,name = "qseecom-noc";
 		qcom,msm-bus,num-cases = <4>;
 		qcom,msm-bus,num-paths = <1>;
@@ -2946,8 +3034,8 @@
 	qcom,msm-core@70000 {
 		compatible = "qcom,apss-core-ea";
 		reg = <0x70000 0x1000>;
-		qcom,low-hyst-temp = <10>;
-		qcom,high-hyst-temp = <5>;
+		qcom,low-hyst-temp = <100>;
+		qcom,high-hyst-temp = <100>;
 		qcom,polling-interval = <50>;
 
 		ea0: ea0 {
@@ -3009,13 +3097,6 @@
 			qcom,dump-node = <&L1_TLB_101>;
 			qcom,dump-id = <0x23>;
 		};
-	};
-	htc_pnpmgr{
-		compatible = "htc,perf_table";
-		htc,cluster-map = <0x0c>, <0x03>;
-		htc,perf_table = <1036800>, <1036800>, <1036800>, <1036800>, <1036800>,
-			<1036800>, <1036800>, <1036800>, <1036800>, <1036800>;
-
 	};
 
 	qcom_tzlog: tz-log@66bf720 {
@@ -3101,26 +3182,6 @@
 		asoc-codec = <&stub_codec>;
 		asoc-codec-names = "msm-stub-codec.1";
 	};
-
-//HTC_AUD_START
-/*
-	i2c@75b5000 {
-		richteck_rt5503_amp@52 {
-			compatible = "richtek,rt5503";
-			reg = <0x52>;
-		};
-
-	};
-*/
-	i2c@75b5000{
-		nxp_tfa9888_amp@34 {
-			compatible = "nxp,tfa98xx";
-			reg = <0x34>;
-			reset-gpio = <&pm8994_gpios 4 0>;
-			speaker-source = <&pm8994_gpios 5 0>;
-		};
-	};
-//HTC_AUD_END
 
 	qcom,msm-adsp-loader {
 		status = "ok";
@@ -3399,6 +3460,57 @@
 //		};
 //	};
 //HTC_AUD_END
+
+	qcom,msm-dai-tdm-sec-tx {
+		compatible = "qcom,msm-dai-tdm";
+		qcom,msm-cpudai-tdm-group-id = <37137>;
+		qcom,msm-cpudai-tdm-group-num-ports = <4>;
+		qcom,msm-cpudai-tdm-group-port-id = <36881 36883 36885 36887>;
+		qcom,msm-cpudai-tdm-clk-rate = <0>;
+		dai_sec_tdm_tx_0: qcom,msm-dai-q6-tdm-sec-tx-0 {
+			compatible = "qcom,msm-dai-q6-tdm";
+			qcom,msm-cpudai-tdm-dev-id = <36881>;
+			qcom,msm-cpudai-tdm-sync-mode = <1>;
+			qcom,msm-cpudai-tdm-sync-src = <0>;
+			qcom,msm-cpudai-tdm-data-out = <0>;
+			qcom,msm-cpudai-tdm-invert-sync = <0>;
+			qcom,msm-cpudai-tdm-data-delay = <0>;
+			qcom,msm-cpudai-tdm-data-align = <0>;
+		};
+
+		dai_sec_tdm_tx_1: qcom,msm-dai-q6-tdm-sec-tx-1 {
+			compatible = "qcom,msm-dai-q6-tdm";
+			qcom,msm-cpudai-tdm-dev-id = <36883>;
+			qcom,msm-cpudai-tdm-sync-mode = <1>;
+			qcom,msm-cpudai-tdm-sync-src = <0>;
+			qcom,msm-cpudai-tdm-data-out = <0>;
+			qcom,msm-cpudai-tdm-invert-sync = <0>;
+			qcom,msm-cpudai-tdm-data-delay = <0>;
+			qcom,msm-cpudai-tdm-data-align = <0>;
+		};
+
+		dai_sec_tdm_tx_2: qcom,msm-dai-q6-tdm-sec-tx-2 {
+			compatible = "qcom,msm-dai-q6-tdm";
+			qcom,msm-cpudai-tdm-dev-id = <36885>;
+			qcom,msm-cpudai-tdm-sync-mode = <1>;
+			qcom,msm-cpudai-tdm-sync-src = <0>;
+			qcom,msm-cpudai-tdm-data-out = <0>;
+			qcom,msm-cpudai-tdm-invert-sync = <0>;
+			qcom,msm-cpudai-tdm-data-delay = <0>;
+			qcom,msm-cpudai-tdm-data-align = <0>;
+		};
+
+		dai_sec_tdm_tx_3: qcom,msm-dai-q6-tdm-sec-tx-3 {
+			compatible = "qcom,msm-dai-q6-tdm";
+			qcom,msm-cpudai-tdm-dev-id = <36887>;
+			qcom,msm-cpudai-tdm-sync-mode = <1>;
+			qcom,msm-cpudai-tdm-sync-src = <0>;
+			qcom,msm-cpudai-tdm-data-out = <0>;
+			qcom,msm-cpudai-tdm-invert-sync = <0>;
+			qcom,msm-cpudai-tdm-data-delay = <0>;
+			qcom,msm-cpudai-tdm-data-align = <0>;
+		};
+	};
 
 	qcom,msm-dai-tdm-tert-rx {
 		compatible = "qcom,msm-dai-tdm";
@@ -3681,6 +3793,11 @@
 
 	qcom,msm-adsprpc-mem {
 		compatible = "qcom,msm-adsprpc-mem-region";
+		memory-region = <&adsp_mem>;
+	};
+
+	qcom,msm-mdsprpc-mem {
+		compatible = "qcom,msm-mdsprpc-mem-region";
 		memory-region = <&adsp_mem>;
 	};
 
@@ -3972,6 +4089,14 @@
 		compatible = "qcom,msm-power";
 		clock-names = "gpu_clk";
 		clocks = <&clock_gpu clk_gpu_gx_gfx3d_clk>;
+	};
+
+	pps {
+		compatible = "pps-gpio";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_pps>;
+		gpios = <&tlmm 128 0>;
+		status = "okay";
 	};
 };
 

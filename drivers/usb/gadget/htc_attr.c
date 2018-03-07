@@ -353,7 +353,7 @@ static ssize_t show_speed(struct device *dev,
 }
 /*-- 2015/11/25, USB Team, PCN00042 --*/
 /*++ 2015/12/22, USB Team, PCN00050 ++*/
-int usb_lock_speed = 1;
+int usb_lock_speed = 0;
 static ssize_t show_lock_speed(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -375,12 +375,15 @@ static ssize_t store_lock_speed(struct device *dev,
 	/* 0: USB3.0  1: USB2.0  2: USB3.0+reset */
 	sscanf(buf, "%d ", &usb_lock_speed);
 	USB_INFO("usb_lock_speed: enable %d\n", usb_lock_speed);
+#if defined(CONFIG_ANALOGIX_OHIO) || defined(CONFIG_ANALOGIX_7688)
 	if (usb_lock_speed == 1)
 		ufp_switch_usb_speed(0);
 	else
 		ufp_switch_usb_speed(1);
+#endif
 	if (and_dev->connected && usb_lock_speed == 2)
 		usb_get_dwc_property(PROPERTY_RESTART_USB);
+
 	return count;
 }
 /*-- 2015/12/22, USB Team, PCN00050 --*/
@@ -397,6 +400,21 @@ static ssize_t store_lock_host_speed(struct device *dev,
 }
 /*-- 2015/12/22, USB Team, PCN00050 --*/
 
+#if defined(CONFIG_ANALOGIX_7688)
+extern int anx7688_get_prop(u8 prop);
+static ssize_t show_pd_cap(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int pd_cap;
+	pd_cap = anx7688_get_prop(ANX_PD_CAP);
+	if (pd_cap < 0)
+		pd_cap = 0;
+	USB_INFO("%s : show pd capability = %d\n", __func__, pd_cap);
+	return snprintf(buf, PAGE_SIZE, "%d\n", pd_cap);
+}
+#endif
+
+#ifdef CONFIG_ANALOGIX_OHIO
 /*++ 2016/01/26, USB Team, PCN00060 ++*/
 extern ssize_t dump_all_register(char *buf);
 static ssize_t show_typec_dump_reg(struct device *dev,
@@ -476,7 +494,7 @@ static ssize_t show_typec_cable_info(struct device *dev,
 	USB_INFO("%s : show typec cable info = %s\n", __func__, typec_cable_info[val]);
 	return snprintf(buf, PAGE_SIZE, "%s\n", typec_cable_info[val]);
 }
-
+#endif
 static DEVICE_ATTR(dummy_usb_serial_number, 0664, iSerial_show, store_dummy_usb_serial_number); /*++ 2015/07/07 USB Team, PCN00010 ++*/
 static DEVICE_ATTR(usb_ac_cable_status, 0444, show_usb_ac_cable_status, NULL); /*++ 2015/10/12, USB Team, PCN00021 ++*/
 static DEVICE_ATTR(ats, 0664, show_ats, store_ats); /*++ 2015/10/16, USB Team, PCN00023 ++*/
@@ -487,13 +505,17 @@ static DEVICE_ATTR(usb_modem_enable, S_IWUSR|S_IWGRP,NULL, store_usb_modem_enabl
 static DEVICE_ATTR(speed, 0444, show_speed, NULL); /*++ 2015/11/25, USB Team, PCN00042 ++*/
 static DEVICE_ATTR(lock_speed, 0664, show_lock_speed, store_lock_speed); /*++ 2015/12/22, USB Team, PCN00050 ++*/
 static DEVICE_ATTR(lock_host_speed, S_IWUSR, NULL, store_lock_host_speed); /*++ 2015/12/22, USB Team, PCN00050 ++*/
+#if defined(CONFIG_ANALOGIX_7688)
+static DEVICE_ATTR(pd_cap, 0444, show_pd_cap, NULL);
+#endif
+#ifdef CONFIG_ANALOGIX_OHIO
 static DEVICE_ATTR(typec_dump_reg, 0440, show_typec_dump_reg, NULL); /*++ 2016/01/26, USB Team, PCN00060 ++*/
 static DEVICE_ATTR(pd_cap, 0444, show_pd_cap, NULL); /*++ 2016/04/12, USB Team, PCN00062 ++*/
 static DEVICE_ATTR(typec_fw_version, 0444, show_typec_fw_version, NULL);
 static DEVICE_ATTR(typec_chip_version, 0444, show_typec_chip_version, NULL);
 static DEVICE_ATTR(typec_fw_update_info, 0444, show_typec_fw_update_info, NULL);
 static DEVICE_ATTR(typec_cable_info, 0444, show_typec_cable_info, NULL);
-
+#endif
 
 static __maybe_unused struct attribute *android_htc_usb_attributes[] = {
 	&dev_attr_dummy_usb_serial_number.attr, /*++ 2015/07/07 USB Team, PCN00010 ++*/
@@ -506,12 +528,17 @@ static __maybe_unused struct attribute *android_htc_usb_attributes[] = {
 	&dev_attr_speed.attr, /*++ 2015/11/25, USB Team, PCN00042 ++*/
 	&dev_attr_lock_speed.attr, /*++ 2015/12/22, USB Team, PCN00050 ++*/
 	&dev_attr_lock_host_speed.attr, /*++ 2015/12/22, USB Team, PCN00050 ++*/
+#if defined(CONFIG_ANALOGIX_7688)
+	&dev_attr_pd_cap.attr,
+#endif
+#ifdef CONFIG_ANALOGIX_OHIO
 	&dev_attr_typec_dump_reg.attr, /*++ 2016/01/26, USB Team, PCN00060 ++*/
 	&dev_attr_pd_cap.attr, /*++ 2016/04/12, USB Team, PCN00062 ++*/
 	&dev_attr_typec_fw_version.attr,
 	&dev_attr_typec_chip_version.attr,
 	&dev_attr_typec_fw_update_info.attr,
 	&dev_attr_typec_cable_info.attr,
+#endif
 	NULL
 };
 
