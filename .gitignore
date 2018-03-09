@@ -37,6 +37,7 @@ modules.builtin
 # Top-level generic files
 #
 /out
+/out_ocn
 /tags
 /TAGS
 /linux
