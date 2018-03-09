@@ -516,7 +516,7 @@ static int anx7688_cc_change(u8 cc_status)
 			break;
 	}
 
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	if (notify_batt && data->batt_psy && data->batt_psy->set_property) {
 		ret = data->batt_psy->set_property(
 			data->batt_psy, POWER_SUPPLY_PROP_TYPEC_SINK_CURRENT,
@@ -805,6 +805,10 @@ static unsigned char confirmed_cable_det(void *data)
 }
 #endif
 
+#if 1
+extern void register_charging(int on);
+#endif
+
 static irqreturn_t anx7688_cbl_det_isr(int irq, void *data)
 {
 	struct anx7688_data *platform = data;
@@ -823,6 +827,10 @@ static irqreturn_t anx7688_cbl_det_isr(int irq, void *data)
 #ifdef OCM_DEBUG
 	pr_info_ratelimited("%s: cable plug pin status %d\n",
 						__func__, cable_connected);
+#endif
+
+#if 1
+	register_charging(cable_connected);
 #endif
 
 	if (cable_connected == DONGLE_CABLE_INSERT) {
@@ -856,7 +864,7 @@ static irqreturn_t anx7688_cbl_det_isr(int irq, void *data)
 			anx7688_platform_vconn_ctl(0);
 		platform->curr_cc = 0x00;
 		batt_prop.intval = utccNone;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 		if (platform->batt_psy && platform->batt_psy->set_property) {
 			platform->batt_psy->set_property(
 			platform->batt_psy, POWER_SUPPLY_PROP_TYPEC_SINK_CURRENT,

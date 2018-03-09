@@ -1,5 +1,8 @@
 menu "Device Drivers"
 
+config UULTRA
+	bool "Device is UULTRA"
+
 source "drivers/base/Kconfig"
 
 source "drivers/bus/Kconfig"

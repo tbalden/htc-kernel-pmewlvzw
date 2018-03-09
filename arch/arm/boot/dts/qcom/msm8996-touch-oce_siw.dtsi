@@ -1,0 +1,152 @@
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	aliases {
+		/delete-property/ i2c12;
+		spi12 = &spi_12;
+	};
+};
+
+&ts_intr_active
+{
+	mux {
+		pins = "gpio125";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio125";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+};
+&ts_intr_suspend
+{
+	mux {
+		pins = "gpio125";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio125";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+};
+
+&ts_rst_active
+{
+	mux {
+		pins = "gpio89";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio89";
+		drive-strength = <2>;
+		bias-disable; /* No PULL */
+		output-high;
+	};
+};
+&ts_rst_suspend
+{
+	mux {
+		pins = "gpio89";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio89";
+		drive-strength = <2>;
+		input-enable;
+		bias-pull-down;
+	};
+};
+
+&spi_12 {
+	/delete-property/ qcom,use-pinctrl;
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
+};
+
+&spi_12_active {
+	mux {
+		function = "blsp_spi12";
+	};
+
+	config {
+		drive-strength = <8>;
+		bias-disable;
+	};
+};
+&spi_12_sleep {
+	mux {
+		function = "gpio";
+	};
+
+	config {
+		drive-strength = <8>;
+		bias-pull-down;
+	};
+};
+
+&spi_12 {	// indicates parent device: SPI_12 master block
+	status = "okay";
+	sw49407@0 {
+		status = "okay";
+	//	#address-cells = <1>;
+	//	#size-cells = <0>;
+		compatible = "siw,sw49407";
+		reg = <0>;			//chip select indicator : spi->chip_select
+		spi-max-frequency = <4800000>;	// 4.8MHz
+
+		interrupt-parent = <&tlmm>;	// interrupt source : GPIO group 'tlmm'
+		interrupts = <125 0x02>;	// index 125 in tlmm external interrupts
+		irqflags = <0x2002>;		// IRQF_ONESHOT(0x2000) | IRQF_TRIGGER_FALLING(0x2)
+
+		chip_flags = <0x200>;
+		reset-gpio = <&tlmm 89 GPIO_ACTIVE_LOW>;	// index  89 in tlmm, tp reset pin
+		irq-gpio = <&tlmm 125 GPIO_ACTIVE_LOW>;		// index 125 in tlmm, tp irq pin
+		switch-gpio = <&tlmm 11 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "touch_pin_active", "touch_pin_sleep";
+		pinctrl-0 = <&ts_rst_active &ts_intr_active &spi_12_active>;
+		pinctrl-1 = <&ts_rst_suspend &ts_intr_suspend &spi_12_sleep>;
+
+		// Caps
+		max_x = <1440>;
+		max_y = <2720>;				// 2560 + 160(top-side 2nd scr)
+		max_pressure = <0xff>;
+		max_width = <15>;
+		max_orientation = <1>;
+		max_id = <10>;
+
+		// role
+		hw_reset_delay = <210>;
+		sw_reset_delay = <90>;
+		use_lpwg = <1>;
+		use_lpwg_test = <1>;
+
+		// feature
+		//support_cover;
+		support_glove;
+
+		// engineer id
+		eng_id_mask = <0x01>;
+
+		// firmware
+		use_firmware = <1>;
+		use_fw_upgrade = <1>;
+		fw_image = "siw.img", "siw_a.img", "siw_1.img";
+	//	panel_spec = "siw/sw49407/ph1_limit.txt";
+	//	panel_spec_mfts = "siw/sw49407/ph1_limit_mfts.txt";
+
+		//absoulte path
+		font_image = "siw.bin", "siw_1.bin";
+
+	//	prd_in_file = "/sdcard/siw/sw49407_test_spec_V0.1.txt";
+	//	prd_in_file_m = "/sdcard/siw/sw49407_test_spec_mfts_V0.1.txt";
+	//	prd_out_file = "/sdcard/siw/touch_self_test.txt";
+	};
+};

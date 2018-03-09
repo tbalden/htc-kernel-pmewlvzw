@@ -295,7 +295,7 @@ struct dwc3_msm {
 	enum dwc3_pd_power_role power_role;
 	enum dwc3_pd_data_role data_role;
 #endif
-#if defined(CONFIG_MACH_DUMMY)
+#if defined(CONFIG_MACH_OCE)
 	struct delayed_work		otg_tps_work;
 #endif
 	bool xo_vote_for_charger;
@@ -325,8 +325,7 @@ static struct dwc3_msm *context = NULL; /* 2015/10/12, USB Team, PCN00021 */
 /*++ 2015/10/13, USB Team, PCN00022 ++*/
 static int htc_id_backup;
 static int htc_vbus_backup;
-/*-- 2015/10/13, USB Team, PCN00022 --*/
-#if defined(CONFIG_MACH_DUMMY)
+#if defined(CONFIG_MACH_OCE)
 static void dwc3_otg_tps_work(struct work_struct *w);
 #endif
 
@@ -3221,7 +3220,7 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 #if defined(CONFIG_ANALOGIX_OHIO) || defined(CONFIG_ANALOGIX_7688)
 	INIT_DELAYED_WORK(&mdwc->vbus_notify_work, dwc3_notify_vbus_work);
 #endif
-#if defined(CONFIG_MACH_DUMMY)
+#if defined(CONFIG_MACH_OCE)
 	INIT_DELAYED_WORK(&mdwc->otg_tps_work, dwc3_otg_tps_work);
 #endif
 	INIT_DELAYED_WORK(&mdwc->sm_work, dwc3_msm_otg_sm_work);
@@ -3702,7 +3701,7 @@ static int dwc3_msm_remove(struct platform_device *pdev)
 
 #define VBUS_REG_CHECK_DELAY	(msecs_to_jiffies(1000))
 
-#if defined(CONFIG_MACH_DUMMY)
+#if defined(CONFIG_MACH_OCE)
 #define tps_max_retry	10
 bool tps_switch = 0;	/* 0: switch to default; 1: switch to TPS*/
 bool tps_status = 0;
@@ -3866,7 +3865,7 @@ int dwc3_pd_vbus_ctrl(int on)
 	else { // on == 0   or   on == -1
 		dev_dbg(dwc->dev, "%s: turn off regulator\n", __func__);
 
-#if defined(CONFIG_MACH_DUMMY)
+#if defined(CONFIG_MACH_OCE)
 		if (tps_status) {
 			tps_switch = 0;
 			schedule_delayed_work(&mdwc->otg_tps_work, 0);

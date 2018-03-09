@@ -1066,7 +1066,7 @@ void update_htc_chg_src(void)
 	htc_batt_info.rep.chg_src = chg_src;
 }
 
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 enum {
 	SURF_HEALTH_GOOD = 0,
 	SURF_HEALTH_WARM,
@@ -1636,7 +1636,7 @@ static void cable_impedance_worker(struct work_struct *work)
 		return;
 	}
 
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	R_HW_MB_Impedance = 127;
 #endif
 
@@ -1794,7 +1794,7 @@ static int fb_notifier_callback(struct notifier_block *self,
                         case FB_BLANK_NORMAL:
                                 htc_batt_info.state |= STATE_SCREEN_OFF;
                                 BATT_LOG("%s-> display is Off", __func__);
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 				htc_batt_info.last_scr_off_time = ktime_to_timespec(ktime_get());
 #endif
                                 htc_batt_schedule_batt_info_update();
@@ -1821,7 +1821,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 #define BI_BATT_CHGE_UPDATE_TIME_THRES		1800	//30mins
 #define BI_BATT_CHGE_CHECK_TIME_THRES		36000	//10HR
 #define OHIO_DATA_PD_STATUS                     8
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 extern int anx7688_get_prop(int data_member);
 #else
 extern int ohio_get_data_value(int data_member);
@@ -1869,7 +1869,7 @@ static void batt_worker(struct work_struct *work)
 	static bool batt_chgr_start_flag = false;
 	bool batchg_disable = false;
 	int qc3_default_current = 0;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	static int s_sdp_hvdcp_count = 0;
 	int pmic_chg_type = 0;
 #endif
@@ -1979,7 +1979,7 @@ static void batt_worker(struct work_struct *work)
 	   batt id, batt temp, batt eoc, full_level
 	   if charging source exist, determine charging_enable */
 	if ((int)htc_batt_info.rep.charging_source > POWER_SUPPLY_TYPE_BATTERY) {
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 		/* When HVDCP is recognized, PMIC charging type should NOT be SDP */
 		pmic_chg_type = get_property(htc_batt_info.batt_psy, POWER_SUPPLY_PROP_PMIC_CHARGE_TYPE);
 
@@ -2000,7 +2000,7 @@ static void batt_worker(struct work_struct *work)
 #endif
 
 #if defined(CONFIG_ANALOGIX_OHIO) || defined(CONFIG_ANALOGIX_7688)
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 		if (anx7688_get_prop(OHIO_DATA_PD_STATUS) != 1) {
 #else
 		if (ohio_get_data_value(OHIO_DATA_PD_STATUS) != 1) {
@@ -2169,7 +2169,7 @@ static void batt_worker(struct work_struct *work)
 		if (ibat_new <= 0) {
 			BATT_EMBEDDED("set ibat(%d) invalid, disable charging", ibat_new);
 			set_batt_psy_property(POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED, 0);
-#ifdef  CONFIG_MACH_DUMMY
+#ifdef  CONFIG_MACH_OCE
 		} else if ((htc_batt_info.state & STATE_SCREEN_OFF) &&
 				((xtime.tv_sec - htc_batt_info.last_scr_off_time.tv_sec) >= 0) &&
 				((xtime.tv_sec - htc_batt_info.last_scr_off_time.tv_sec) <= 120)) {
@@ -2202,7 +2202,7 @@ static void batt_worker(struct work_struct *work)
 	} else {
 		/* TODO: check if we need to enable batfet while unplugged */
 		if (htc_batt_info.prev.charging_source != htc_batt_info.rep.charging_source || s_first) {
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 			s_sdp_hvdcp_count = 0;
 #endif
 			g_BI_data_ready &= ~HTC_BATT_CHG_BI_BIT_CHGR;
@@ -2325,7 +2325,7 @@ static void batt_worker(struct work_struct *work)
 	}
 #endif //CONFIG_HTC_BATT_PCN0020
 
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	htc_batt_info.rep.tps_otg_enable =
 		get_property(htc_batt_info.batt_psy, POWER_SUPPLY_PROP_TPS_OTG_ENABLE);
 #endif
@@ -2366,8 +2366,8 @@ static void batt_worker(struct work_struct *work)
 		"htc_ext=0x%02X,"
 #ifdef CONFIG_HTC_BATT_PCN0008
 		"level_accu=%d,"
-#endif //CONFIG_HTC_BATT_PCN0008
-#ifdef CONFIG_MACH_DUMMY
+#endif 
+#ifdef CONFIG_MACH_OCE
 		"tps_otg_enable=%d,"
 #endif
 		"surf_temp=%d,"
@@ -2411,7 +2411,7 @@ static void batt_worker(struct work_struct *work)
 		g_total_level_raw,
 #endif //CONFIG_HTC_BATT_PCN0008
 #ifdef CONFIG_HTC_BATT_PCN0016
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 		htc_batt_info.rep.tps_otg_enable,
 #endif
 		get_property(htc_batt_info.batt_psy,POWER_SUPPLY_PROP_SURFACE_TEMP),
@@ -2957,7 +2957,7 @@ int htc_battery_charger_switch_internal(int enable)
 #endif //CONFIG_FPC_HTC_DISABLE_CHARGING //HTC_BATT_WA_PCN0004
 
 #ifdef CONFIG_HTC_BATT_PCN0020
-#if defined(CONFIG_MACH_DUMMY) && defined(CONFIG_HTC_BATT_WA_PCN0022)
+#if defined(CONFIG_MACH_OCE) && defined(CONFIG_HTC_BATT_WA_PCN0022)
 #define PD_MAX_VBUS 9000
 #define PD_LIMIT_VBUS_MV 5000
 #define MESG_MAX_LENGTH 300
@@ -3072,7 +3072,7 @@ int htc_get_surface_temp(void) {
 	return (int)temp;
 };
 
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 bool htc_battery_is_pd_detected(void)
 {
 	return g_is_pd_charger;
@@ -3101,7 +3101,7 @@ bool htc_battery_get_discharging_reason(void)
 	return g_chg_dis_reason;
 }
 
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 static ssize_t htc_battery_set_tps_otg_enable(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
@@ -3746,8 +3746,8 @@ static ssize_t htc_battery_state(struct device *dev,
 static struct device_attribute htc_battery_attrs[] = {
 #ifdef CONFIG_HTC_BATT_PCN0009
 	__ATTR(batt_attr_text, S_IRUGO, htc_battery_show_batt_attr, NULL),
-#endif //CONFIG_HTC_BATT_PCN0009
-#ifdef CONFIG_MACH_DUMMY
+#endif 
+#ifdef CONFIG_MACH_OCE
 	__ATTR(tps_otg_enable, S_IWUSR | S_IWGRP, NULL, htc_battery_set_tps_otg_enable),
 #endif
 	__ATTR(set_fg_reset, S_IWUSR | S_IWGRP, NULL, set_fg_reset),
@@ -4147,7 +4147,7 @@ static int __init htc_battery_init(void)
 	htc_batt_info.rep.over_vchg = 0;
 	htc_batt_info.rep.is_full = false;
 	htc_batt_info.rep.health = POWER_SUPPLY_HEALTH_UNKNOWN;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	htc_batt_info.rep.tps_otg_enable = 0;
 #endif
 	htc_batt_info.smooth_chg_full_delay_min = 3;
@@ -4166,7 +4166,7 @@ static int __init htc_battery_init(void)
 #endif //CONFIG_HTC_BATT_PCN0002
 	htc_batt_info.vbus = 0;
 	htc_batt_info.current_limit_reason = 0;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	htc_batt_info.last_scr_off_time = CURRENT_TIME;
 #endif
 

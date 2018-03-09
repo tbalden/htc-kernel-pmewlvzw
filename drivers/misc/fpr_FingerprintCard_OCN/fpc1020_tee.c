@@ -454,15 +454,24 @@ error:
 	return rc;
 }
 #endif
-
+#if 1
+extern void register_fp_wake(void);
+extern void register_fp_irq(void);
+#endif
 static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
 {
 	struct fpc1020_data *fpc1020 = handle;
 	dev_dbg(fpc1020->dev, "%s\n", __func__);
 
+#if 1
+	register_fp_irq();
+#endif
 	if (fpc1020->wakeup_enabled) {
 		wake_lock_timeout(&fpc1020->ttw_wl,
 					msecs_to_jiffies(FPC_TTW_HOLD_TIME));
+#if 1
+		register_fp_wake();
+#endif
 	}
 
 	sysfs_notify(&fpc1020->dev->kobj, NULL, dev_attr_irq.attr.name);

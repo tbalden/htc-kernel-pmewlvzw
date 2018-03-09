@@ -1,0 +1,4 @@
+TOOL=/home/android/10/toolchain/aarch64-linux-android-4.9
+mkdir -p out_ocn
+make ARCH=arm64 CROSS_COMPILE=$TOOL/bin/aarch64-linux-android- O=out_ocn oce_defconfig
+make ARCH=arm64 CROSS_COMPILE=$TOOL/bin/aarch64-linux-android- O=out_ocn -j16

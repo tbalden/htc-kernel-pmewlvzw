@@ -79,7 +79,7 @@ tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec); \
 #define POWER_MONITOR_BATT_TEMP	330
 #endif //CONFIG_HTC_BATT_PCN0006
 
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 #define DISPLAY_FLICKER_WA_ENABLE_LEVEL 75
 #endif
 
@@ -143,7 +143,7 @@ struct battery_info_reply {
 	u32 overload;
 	u32 over_vchg;
 	u32 health;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	u32 tps_otg_enable;
 #endif
 	bool is_full;
@@ -222,7 +222,7 @@ struct htc_battery_info {
 	struct notifier_block fb_notif;
 	struct workqueue_struct *batt_fb_wq;
 	struct delayed_work work_fb;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 	struct timespec last_scr_off_time;
 #endif
 #endif
@@ -357,7 +357,7 @@ bool htc_battery_get_pd_type(int *curr);
 #endif //CONFIG_HTC_BATT_PCN0020
 bool htc_battery_get_discharging_reason(void);
 int htc_get_surface_temp(void);
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_OCE
 bool htc_battery_is_pd_detected(void);
 int htc_battery_get_pd_current(void);
 int htc_battery_get_pd_vbus(int *vbus);
