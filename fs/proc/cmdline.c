@@ -12,8 +12,7 @@ static bool done = false;
 static DEFINE_SPINLOCK(show_lock);
 
 static const char *replace =      "androidboot.verifiedbootstate=";
-static const char *replace_with =      "androidboot.verifiedbootstate=";
-//static char *replace_with =       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
+static char *replace_with =       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa=";
 
 static bool magisk = true;
 
