@@ -379,7 +379,7 @@ static struct alarm double_double_vol_rtc;
 static int aosp_mode = 0;
 // wake_by_user: used for AmbientDisplay detection:
 // this if 1, then device is waken by user. Otherwise no Input device was triggered, so we can deduce that it's an AmibentDisplay wake
-// and therefore if this is 0, Flashlight notification can be triggered, and haptic_blinking also can be stored, so that BLN can be
+// and therefore if this is 0, Flashlight notification can be triggered, and bln_on_screenoff also can be stored, so that BLN can be
 // triggered later when screen is self BLANKing / screen off....
 static int wake_by_user = 1;
 
@@ -406,11 +406,11 @@ static int bln_number = BUTTON_BLINK_NUMBER_DEFAULT; // infinite = 0
 static int screen_on_early = 1;
 static int screen_on = 1;
 static int blinking = 0;
-// haptic_blinking : this is used to follow register_haptic based notif events... when
+// bln_on_screenoff : this is used to follow register_haptic based notif events... when
 // ...AmbientDisplay wakes device (BLN is not possible), but after screen off, BLN is triggered based on this
 // ... in the fb notifier BLANK event part. register_haptic sets it 1, register_input sets it 0 because that will be a user wake...
 // ... also wake_by_user in UNBLANK notification will set it 0:
-static int haptic_blinking = 0; 
+static int bln_on_screenoff = 0; 
 struct qpnp_led_data *buttonled;
 static int charging = 0; // information from OHIO usb driver
 static int charge_level = 0; // information from HTC battery driver
@@ -452,6 +452,9 @@ extern void flash_blink(bool haptic);
 extern void flash_stop_blink(void);
 extern void set_suspend_booster(int value);
 extern void set_vibrate(int value);
+extern void kernel_ambient_display(void);
+extern int is_kernel_ambient_display(void);
+extern void stop_kernel_ambient_display(bool interrupt_ongoing);
 
 int input_is_charging(void) {
 	return !!charging;
@@ -644,8 +647,8 @@ static int qpnp_mpp_blink(struct qpnp_led_data *led, int blink_brightness, int c
 
 	} else {
 		// lights down
-		pr_info("%s haptic_blinking %d\n", __func__, haptic_blinking);
-		haptic_blinking = 0;
+		pr_info("%s bln_on_screenoff %d\n", __func__, bln_on_screenoff);
+		bln_on_screenoff = 0;
 		blinking = 0;
 		if (cancel_alarm) {
 			alarm_cancel(&blinkstopfunc_rtc);
@@ -704,12 +707,35 @@ static int qpnp_buttonled_blink(int on)
 	return qpnp_buttonled_blink_with_alarm(on>0?10:0, 1);
 }
 
+static unsigned long last_input_event = 0;
+void register_input_event(const char * caller) {
+//	pr_info("%s self wake: blocking event - wake_by_user\n",__func__);
+	wake_by_user = 1;
+	last_input_event = jiffies;
+	if (screen_on_early) {
+		// user must have exited Ambient display by pressing power/touchscreen etc, stop flash blinking!
+		flash_stop_blink();
+		// user is inputing phone, no haptic blinking should trigger BLN when screen off
+		bln_on_screenoff = 0;
+	}
+	smart_set_last_user_activity_time();
+}
+EXPORT_SYMBOL(register_input_event);
+
 // register charging: this symbol function will register charging events from anywhere in kernel calls
 // e.g. from USB ohio driver
 void register_charging(int on)
 {
+	bool input_event = false;
 	LED_INFO("%s %d\n",__func__,on);
+	if (on!=charging) {
+		input_event = true;
+	}
 	charging = on>0?1:0;
+	if (input_event) {
+		register_input_event(__func__);
+		stop_kernel_ambient_display(true);
+	}
 }
 EXPORT_SYMBOL(register_charging);
 
@@ -829,24 +855,12 @@ static unsigned int MAX_DIFF_LONG_VIB = 310;
 #define FINGERPRINT_VIB_TIME_EXCEPTION 40
 #define FINGERPRINT_VIB_TIME_EXCEPTION_AOSP 30
 #define DOUBLETAP_VIB_TIME_EXCEPTION 25
+#define ALARM_VIB_TIME_EXCEPTION 500
+#define CALL_VIB_TIME_EXCEPTION 1000
 
 // callback to register fingerprint vibration
 extern int register_fp_vibration(void);
 
-static unsigned long last_input_event = 0;
-void register_input_event(void) {
-//	pr_info("%s self wake: blocking event - wake_by_user\n",__func__);
-	wake_by_user = 1;
-	last_input_event = jiffies;
-	if (screen_on_early) {
-		// user must have exited Ambient display by pressing power/touchscreen etc, stop flash blinking!
-		flash_stop_blink();
-		// user is inputing phone, no haptic blinking should trigger BLN when screen off
-		haptic_blinking = 0;
-	}
-	smart_set_last_user_activity_time();
-}
-EXPORT_SYMBOL(register_input_event);
 
 static int last_notification_number = 0;
 // register sys uci listener
@@ -856,7 +870,8 @@ void uci_sys_listener(void) {
             int ringing = uci_get_sys_property_int_mm("ringing", 0, 0, 1);
             pr_info("%s uci sys ringing %d\n",__func__,ringing);
             if (ringing) {
-                  register_input_event();
+        		register_input_event(__func__);
+			stop_kernel_ambient_display(true);
             }
       }
       {
@@ -864,15 +879,16 @@ void uci_sys_listener(void) {
             if (notifications != -EINVAL) {
             if (notifications>last_notification_number) {
                         if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
-                                pr_info("%s haptic_blinking %d\n", __func__, haptic_blinking);
+                                pr_info("%s bln_on_screenoff %d\n", __func__, bln_on_screenoff);
                                 // store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
-                                haptic_blinking = 1;
+                                bln_on_screenoff = 1;
                                 qpnp_buttonled_blink(1);
                         }
                         // call flash blink for flashlight notif if lights_down mode (>1) is not active... and not screen on or wake not by user (ambient)
                         if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
                                 flash_blink(false);
                         }
+			kernel_ambient_display();
             }
             last_notification_number = notifications;
             }
@@ -893,8 +909,13 @@ int register_haptic(int value)
 //	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
 	if (value==DOUBLETAP_VIB_TIME_EXCEPTION || value == FINGERPRINT_VIB_TIME_EXCEPTION || value == FINGERPRINT_VIB_TIME_EXCEPTION_AOSP) {
 		int vib_strength = register_fp_vibration();
-		register_input_event(); // to cancel flashing if fingerprint wake which otherwise is not a filtered input even, only vibration...
+		register_input_event(__func__); // to cancel flashing if fingerprint wake which otherwise is not a filtered input even, only vibration...
 		if (vib_strength > 0 && vib_strength<=FINGERPRINT_VIB_TIME_EXCEPTION*2) return vib_strength/2; else return vib_strength>0?FINGERPRINT_VIB_TIME_EXCEPTION:0;
+	}
+	if (value == CALL_VIB_TIME_EXCEPTION || value == ALARM_VIB_TIME_EXCEPTION) {
+		register_input_event(__func__);
+		stop_kernel_ambient_display(true);
+		return value;
 	}
 
 	if (screen_on && wake_by_user) return value;
@@ -931,15 +952,17 @@ int register_haptic(int value)
 
 	if (vib_notif_pattern_detected) {
 		if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
-			pr_info("%s haptic_blinking %d\n", __func__, haptic_blinking);
+			pr_info("%s bln_on_screenoff %d\n", __func__, bln_on_screenoff);
 			// store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
-			haptic_blinking = 1;
-			qpnp_buttonled_blink(1);
+			bln_on_screenoff = 1;
+			pr_info("%s kad bln_on_screenoff %d\n", __func__, bln_on_screenoff);
+			if (!is_kernel_ambient_display() && !screen_on) qpnp_buttonled_blink(1);
 		}
 		// call flash blink for flashlight notif if lights_down mode (>1) is not active...
 		if (lights_down_divider==1) {
 			flash_blink(true);
 		}
+		kernel_ambient_display();
 	}
 
 	last_value = value;
@@ -972,6 +995,7 @@ static enum alarmtimer_restart double_double_vol_rtc_callback(struct alarm *al, 
 	double_double_vol_check_running = 0;
 	if (lights_down_divider==1 && !get_vib_notification_reminder()) {lights_down_divider = 16; set_vibrate(451);} else {lights_down_divider = 1;set_vibrate(101);}
 	set_vib_notification_reminder(0);
+	stop_kernel_ambient_display(true);
 	return ALARMTIMER_NORESTART;
 }
 
@@ -999,6 +1023,7 @@ void register_double_volume_key_press(int long_press) {
 		set_vibrate(231);
 		alarm_cancel(&vibrate_rtc); // stop pending alarm...
 		alarm_start_relative(&vibrate_rtc, wakeup_time); // start new...
+		stop_kernel_ambient_display(true);
 	} else {
 		set_suspend_booster(0);
 		if (!double_double_vol_check_running) {
@@ -1022,6 +1047,7 @@ void register_double_volume_key_press(int long_press) {
 			lights_down_divider = 1;set_vibrate(110);
 			alarm_cancel(&vibrate_rtc); // stop pending alarm...
 			alarm_start_relative(&vibrate_rtc, wakeup_time); // start new...vibrate a second one...
+			stop_kernel_ambient_display(true);
 		}
 	}
 }
@@ -2123,7 +2149,7 @@ static ssize_t blink_store(struct device *dev,
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	if (get_bln_switch() || blinking==0) {
 		if ( (blinking && smart_get_button_dimming()==1) || !blinking || charging) {
-			qpnp_buttonled_blink(blinking);
+			if (!is_kernel_ambient_display()||!blinking) qpnp_buttonled_blink(blinking);
 		}
 	}
 	if (!blinking) {
@@ -2131,6 +2157,7 @@ static ssize_t blink_store(struct device *dev,
 	} else if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
+	kernel_ambient_display();
 #endif
 	switch (led->id) {
 	case QPNP_ID_LED_MPP:
@@ -3144,12 +3171,13 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 	led->rgb_cfg->pwm_cfg->blinking = true;
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
-		qpnp_buttonled_blink(1);
+		if (!is_kernel_ambient_display()) qpnp_buttonled_blink(1);
 	}
 	// call flash blink for flashlight notif if lights_down mode (>1) is not active...
 	if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
+	kernel_ambient_display();
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
@@ -3236,12 +3264,13 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 	led->rgb_cfg->pwm_cfg->blinking = true;
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	if ( get_bln_switch() && (((!charging && smart_get_button_dimming()==1) || charging)) ) { // do not trigger blink if not on charger and lights down mode
-		qpnp_buttonled_blink(1);
+		if (!is_kernel_ambient_display()) qpnp_buttonled_blink(1);
 	}
 	// call flash blink for flashlight notif if lights_down mode (>1) is not active...
 	if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
+	kernel_ambient_display();
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
@@ -4141,13 +4170,14 @@ static ssize_t pm8xxx_led_blink_store(struct device *dev,
 	LED_INFO("%s: blink: %d\n", __func__, val);
 #ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
 	if (val==0 || (bln_switch && (charging || (!charging && smart_get_button_dimming()==1)))) {
-		qpnp_buttonled_blink(val);
+		if (!is_kernel_ambient_display() || !val) qpnp_buttonled_blink(val);
 	}
 	if (val==0) {
 		flash_stop_blink();
 	} else if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
+	kernel_ambient_display();
 #endif
 	switch(led->id) {
 		case QPNP_ID_LED_MPP:
@@ -4546,7 +4576,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 				screen_on = 0;
 				screen_on_early = 0;
 				LED_ERR("%s off\n", __func__);
-				if (haptic_blinking) {
+				if (bln_on_screenoff) {
 					qpnp_buttonled_blink(1);
 				} 
 			}
@@ -4570,7 +4600,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 					flash_stop_blink();
 					alarm_cancel(&blinkstopfunc_rtc);
 					// user is inputing/waking phone, no haptic blinking should trigger BLN when screen off
-					haptic_blinking = 0;
+					bln_on_screenoff = 0;
 				}
 			}
 		}
@@ -4613,7 +4643,8 @@ static int fb_notifier_callback(struct notifier_block *self,
 			flash_stop_blink();
 			alarm_cancel(&blinkstopfunc_rtc);
 			// user is inputing/waking phone, no haptic blinking should trigger BLN when screen off
-			haptic_blinking = 0;
+			bln_on_screenoff = 0;
+			stop_kernel_ambient_display(false);
 		}
 #endif
 #endif
@@ -4629,17 +4660,17 @@ static int fb_notifier_callback(struct notifier_block *self,
 		screen_on = 0;
 		screen_on_early = 0;
 		LED_ERR("%s off\n", __func__);
-	    if (haptic_blinking) {
-		qpnp_buttonled_blink(1);
-	    } 
-	    else
+		if (bln_on_screenoff) {
+			qpnp_buttonled_blink(1);
+		} 
+		else
 #else
 		if (screen_on) {
 			// screen off
 			screen_on = 0;
 			screen_on_early = 0;
 			LED_ERR("%s blank event off\n", __func__);
-			if (haptic_blinking) {
+			if (bln_on_screenoff) {
 				qpnp_buttonled_blink(1);
 			} 
 		}

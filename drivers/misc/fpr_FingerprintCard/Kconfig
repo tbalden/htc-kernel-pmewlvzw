@@ -23,4 +23,8 @@ config FPC_HTC_ADD_INPUT_DEVICE
        depends on FPR_FPC
        default y
 
+config FPF_KAD
+       default y
+       tristate "kernel ambient display enabled"
+
 endmenu
