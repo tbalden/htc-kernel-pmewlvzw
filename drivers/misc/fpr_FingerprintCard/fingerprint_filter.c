@@ -2351,7 +2351,7 @@ int get_block_power_key_in_pocket(void) {
 	return proximity && uci_get_user_property_int_mm("block_power_key_in_pocket", block_power_key_in_pocket, 0, 1);
 }
 
-#define LOG_INPUT_EVENTS
+//#define LOG_INPUT_EVENTS
 
 static bool ts_input_filter(struct input_handle *handle,
                                     unsigned int type, unsigned int code,
@@ -2879,6 +2879,7 @@ static DEVICE_ATTR(phone_ring_in_silent_mode, (S_IWUSR|S_IRUGO),
 	phone_ring_in_silent_mode_show, phone_ring_in_silent_mode_dump);
 
 // ------------------- squeeze
+#ifdef CONFIG_FPF_SQUEEZE
 static ssize_t squeeze_sleep_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -3098,6 +3099,7 @@ static ssize_t squeeze_swipe_vibration_dump(struct device *dev,
 
 static DEVICE_ATTR(squeeze_swipe_vibration, (S_IWUSR|S_IRUGO),
 	squeeze_swipe_vibration_show, squeeze_swipe_vibration_dump);
+#endif
 
 // -------------------- notification booster
 static ssize_t notification_booster_show(struct device *dev,
@@ -3942,6 +3944,7 @@ static int __init fpf_init(void)
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for fpf\n", __func__);
 
+#ifdef CONFIG_FPF_SQUEEZE
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_squeeze_wake.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for swake\n", __func__);
@@ -3969,6 +3972,7 @@ static int __init fpf_init(void)
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_squeeze_swipe_vibration.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for sswipevibr\n", __func__);
+#endif
 
 	rc = sysfs_create_file(fpf_kobj, &dev_attr_kad_on.attr);
 	if (rc)
