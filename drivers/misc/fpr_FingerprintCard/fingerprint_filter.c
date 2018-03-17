@@ -376,22 +376,22 @@ static int get_kad_start_delay_halfseconds(void) {
 
 static int smart_get_kad_halfseconds(void) {
 	int level = smart_get_notification_level(NOTIF_KAD);
-	int ret = uci_get_user_property_int_mm("kad_halfseconds", kad_halfseconds, 0, 1);
+	int ret = uci_get_user_property_int_mm("kad_halfseconds", kad_halfseconds, 5, 20);
 	if (level != NOTIF_DEFAULT) {
-		ret = max(5,uci_get_user_property_int_mm("kad_halfseconds", kad_halfseconds, 0, 1)/2);
+		ret = max(5,uci_get_user_property_int_mm("kad_halfseconds", kad_halfseconds, 5, 20)/2);
 	}
 	pr_info("%s smart_notif =========== level: %d  kad halfsec %d \n",__func__, level, ret);
 	return ret;
 }
 static int smart_get_kad_repeat_times(void) {
 	int level = smart_get_notification_level(NOTIF_KAD);
-	if (level == NOTIF_DEFAULT) return uci_get_user_property_int_mm("kad_repeat_times", kad_repeat_times, 0, 1);
-	return max(1,uci_get_user_property_int_mm("kad_repeat_times", kad_repeat_times, 0, 1)/2);
+	if (level == NOTIF_DEFAULT) return uci_get_user_property_int_mm("kad_repeat_times", kad_repeat_times, 1, 10);
+	return max(1,uci_get_user_property_int_mm("kad_repeat_times", kad_repeat_times, 1, 10)/2);
 }
 static int smart_get_kad_repeat_period_sec(void) {
 	int level = smart_get_notification_level(NOTIF_KAD);
-	if (level == NOTIF_DEFAULT) return uci_get_user_property_int_mm("kad_repeat_period_sec", kad_repeat_period_sec, 0, 1);
-	return uci_get_user_property_int_mm("kad_repeat_period_sec", kad_repeat_period_sec, 0, 1)*2;
+	if (level == NOTIF_DEFAULT) return uci_get_user_property_int_mm("kad_repeat_period_sec", kad_repeat_period_sec, 4, 20);
+	return uci_get_user_property_int_mm("kad_repeat_period_sec", kad_repeat_period_sec, 4, 20)*2;
 }
 
 
@@ -1513,9 +1513,9 @@ static enum alarmtimer_restart ts_poke_rtc_callback(struct alarm *al, ktime_t no
 	schedule_work(&ts_poke_emulate_work);
 	return ALARMTIMER_NORESTART;
 }
-
+//#define CONFIG_FPF_POKE
 static void ts_poke(void) {
-#if 1
+#ifndef CONFIG_FPF_POKE
 	return;
 #else
 	ktime_t wakeup_time;
@@ -1835,7 +1835,7 @@ static void squeeze_longcount_trigger(void) {
 
 // last time when screen was switched off by KAD ending uninterrupted
 unsigned long last_kad_screen_off_time = 0;
-#define KAD_SCREEN_OFF_NEAR_TIME_MAX 290
+#define KAD_SCREEN_OFF_NEAR_TIME_MAX 320
 bool is_near_kad_screen_off_time(void) {
 	unsigned int diff = jiffies - last_kad_screen_off_time;
 	pr_info("%s difference since last kad_screen_off %u < %d\n",__func__,diff, KAD_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL);
@@ -2205,7 +2205,9 @@ static void kernel_ambient_display_internal(bool led_intercepted) {
 
 	if (!should_kad_start()) return;
 	pr_info("%s kad -- ||||||| +++++++++++++ KAD +++++++++++++ ////// screen_on %d kad_running %d \n",__func__,screen_on, kad_running);
-	kad_repeat_counter = 0;
+	if (!led_intercepted || !is_near_kad_screen_off_time()) {
+		kad_repeat_counter = 0;
+	}
 	//do_kernel_ambient_display();
 	if (!screen_on && !kad_running && (!led_intercepted || !is_near_kad_screen_off_time())) // not screen on, not already running, and not too much close to previous KAD stop (LED rom store call can false positive trigger KAD if set only to LED when screen is off!)
 	{
@@ -3864,6 +3866,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 		screen_on = 0;
 		screen_off_early = 1;
 		//screen_on_full = 0;
+		last_kad_screen_off_time = jiffies;
 		pr_info("fpf kad screen off -early\n");
             break;
         }
@@ -3889,6 +3892,7 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_NORMAL:
 		screen_on = 0;
 		screen_on_full = 0;
+		last_kad_screen_off_time = jiffies;
 		last_screen_event_timestamp = jiffies;
 		last_screen_off_seconds = get_global_seconds();
 		last_screen_lock_check_was_false = 0;
