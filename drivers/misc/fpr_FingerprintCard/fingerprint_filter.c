@@ -17,7 +17,7 @@
 
 #define DRIVER_AUTHOR "illes pal <illespal@gmail.com>"
 #define DRIVER_DESCRIPTION "fingerprint_filter driver"
-#define DRIVER_VERSION "1.0"
+#define DRIVER_VERSION "3.0"
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESCRIPTION);
@@ -709,7 +709,7 @@ static void fpf_input_event(struct input_handle *handle, unsigned int type,
 }
 
 static int fpf_input_dev_filter(struct input_dev *dev) {
-	if (strstr(dev->name, "fpc1020")) {
+	if (strstr(dev->name, "uinput-fpc") || strstr(dev->name, "fpc1020")) {
 		return 0;
 	} else {
 		return 1;
@@ -2203,7 +2203,6 @@ static enum alarmtimer_restart kad_repeat_rtc_callback(struct alarm *al, ktime_t
 // this method is to initialize peek screen on aka "in-kernel AmbientDisplay" feature
 static void kernel_ambient_display_internal(bool led_intercepted) {
 
-	pr_info("%s kad -- ||||||| +++++++++++++ KAD +++++++++++++ ////// screen_on %d kad_running %d \n",__func__,screen_on, kad_running);
 	if (!should_kad_start()) return;
 	pr_info("%s kad -- ||||||| +++++++++++++ KAD +++++++++++++ ////// screen_on %d kad_running %d \n",__func__,screen_on, kad_running);
 	kad_repeat_counter = 0;
@@ -2618,10 +2617,12 @@ static void ts_input_event(struct input_handle *handle, unsigned int type,
 
 static int ts_input_dev_filter(struct input_dev *dev) {
 	if (
-               strstr(dev->name, "synaptics_dsx") ||
-               strstr(dev->name, "max1187x_touchscreen_0") ||
-               strstr(dev->name, "cyttsp") ||
-               strstr(dev->name, "gpio")
+		strstr(dev->name, "himax-touchscreen") ||
+		strstr(dev->name, "synaptics_dsx") ||
+		strstr(dev->name, "max1187x_touchscreen_0") ||
+		strstr(dev->name, "nvt_touchscreen") ||
+		strstr(dev->name, "cyttsp") ||
+		strstr(dev->name, "gpio")
 	    ) {
 		// storing static ts_device for using outside this handle context as well
 
@@ -2901,6 +2902,7 @@ static DEVICE_ATTR(phone_ring_in_silent_mode, (S_IWUSR|S_IRUGO),
 	phone_ring_in_silent_mode_show, phone_ring_in_silent_mode_dump);
 
 // ------------------- squeeze
+//#define CONFIG_FPF_SQUEEZE
 #ifdef CONFIG_FPF_SQUEEZE
 static ssize_t squeeze_sleep_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
