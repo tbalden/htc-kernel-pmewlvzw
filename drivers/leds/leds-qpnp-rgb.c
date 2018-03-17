@@ -472,6 +472,7 @@ extern void flash_stop_blink(void);
 extern void set_suspend_booster(int value);
 extern void set_vibrate(int value);
 extern void kernel_ambient_display(void);
+extern void kernel_ambient_display_led_based(void);
 extern int is_kernel_ambient_display(void);
 extern void stop_kernel_ambient_display(bool interrupt_ongoing);
 
@@ -904,7 +905,10 @@ static int led_multicolor_charge_notification(void) {
 		int tmp = green_coeff;
 		green_coeff = red_coeff;
 		red_coeff = tmp;
-        }
+		green_coeff /= 14;
+        } else {
+		red_coeff /= 14;
+	}
 
 
 	last_rgb_notification_charge_level = charge_level;
@@ -2426,7 +2430,7 @@ static ssize_t blink_store(struct device *dev,
 	} else if (lights_down_divider==1 && (!screen_on || !wake_by_user)) {
 		flash_blink(false);
 	}
-	kernel_ambient_display();
+	kernel_ambient_display_led_based();
 #endif
 	switch (led->id) {
 	case QPNP_ID_LED_MPP:
@@ -3453,7 +3457,7 @@ static int led_multicolor_short_blink(struct qpnp_led_data *led, int pwm_coeffic
 		charging_notification_occured_for_rgb = 1;
 		rgb_blink_on_charge_async(); // call charging level based speedy pulse blink
 	}
-	kernel_ambient_display();
+	kernel_ambient_display_led_based();
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
@@ -3553,7 +3557,7 @@ static int led_multicolor_long_blink(struct qpnp_led_data *led, int pwm_coeffici
 		charging_notification_occured_for_rgb = 1;
 		rgb_blink_on_charge_async(); // call charging level based speedy pulse blink
 	}
-	kernel_ambient_display();
+	kernel_ambient_display_led_based();
 #endif
 	qpnp_dump_regs(led, rgb_pwm_debug_regs, ARRAY_SIZE(rgb_pwm_debug_regs));
 	return rc;
@@ -4467,7 +4471,7 @@ static ssize_t pm8xxx_led_blink_store(struct device *dev,
 		charging_notification_occured_for_rgb = 1;
 		rgb_blink_on_charge_async(); // call charging level based speedy pulse blink
 	}
-	kernel_ambient_display();
+	kernel_ambient_display_led_based();
 #endif
 	switch(led->id) {
 		case QPNP_ID_LED_MPP:

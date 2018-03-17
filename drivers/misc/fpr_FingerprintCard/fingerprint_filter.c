@@ -141,6 +141,7 @@ static int smart_hibernate_pulse_light = NOTIF_DIM;
 */
 static int kad_should_start_on_uci_sys_change = 0;
 void kernel_ambient_display(void);
+void kernel_ambient_display_led_based(void);
 
 static int smart_silent_mode_stop = 1;
 static int smart_silent_mode_hibernate = 1;
@@ -1832,6 +1833,18 @@ static void squeeze_longcount_trigger(void) {
 	schedule_work(&squeeze_longcount_work);
 }
 
+// last time when screen was switched off by KAD ending uninterrupted
+unsigned long last_kad_screen_off_time = 0;
+#define KAD_SCREEN_OFF_NEAR_TIME_MAX 290
+bool is_near_kad_screen_off_time(void) {
+	unsigned int diff = jiffies - last_kad_screen_off_time;
+	pr_info("%s difference since last kad_screen_off %u < %d\n",__func__,diff, KAD_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL);
+	if (diff < KAD_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL) {
+		return true;
+	}
+	return false;
+}
+
 // through this peekmode wait (while kad is on) can be interrupted for earlier kad ending and powerdown
 static int interrupt_kad_peekmode_wait = 0;
 static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
@@ -1860,6 +1873,7 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 	}
 	// screen still on and sqeueeze peek wait was not interrupted...
 	if (screen_on && squeeze_peek_wait) {
+		last_kad_screen_off_time = jiffies;
 		fpf_pwrtrigger(0,__func__);
 		if (kad_running && !kad_running_for_kcal_only && !interrupt_kad_peekmode_wait) { // not interrupted, and kad mode peek.. see if re-schedule is needed...
 			kad_repeat_counter++;
@@ -2187,14 +2201,14 @@ static enum alarmtimer_restart kad_repeat_rtc_callback(struct alarm *al, ktime_t
 
 // KAD KernelAmbientDisplay in-kernel...
 // this method is to initialize peek screen on aka "in-kernel AmbientDisplay" feature
-void kernel_ambient_display(void) {
+static void kernel_ambient_display_internal(bool led_intercepted) {
 
 	pr_info("%s kad -- ||||||| +++++++++++++ KAD +++++++++++++ ////// screen_on %d kad_running %d \n",__func__,screen_on, kad_running);
 	if (!should_kad_start()) return;
 	pr_info("%s kad -- ||||||| +++++++++++++ KAD +++++++++++++ ////// screen_on %d kad_running %d \n",__func__,screen_on, kad_running);
 	kad_repeat_counter = 0;
 	//do_kernel_ambient_display();
-	if (!screen_on && !kad_running)
+	if (!screen_on && !kad_running && (!led_intercepted || !is_near_kad_screen_off_time())) // not screen on, not already running, and not too much close to previous KAD stop (LED rom store call can false positive trigger KAD if set only to LED when screen is off!)
 	{
 		// alarm timer
 		// ...to wait a bit with starting the first instance, because of phone calls/alarms can turn screen on in the meantime
@@ -2206,7 +2220,15 @@ void kernel_ambient_display(void) {
 		alarm_start_relative(&kad_repeat_rtc, wakeup_time); // start new...
 	}
 }
+void kernel_ambient_display(void) {
+	kernel_ambient_display_internal(false);
+}
 EXPORT_SYMBOL(kernel_ambient_display);
+void kernel_ambient_display_led_based(void) {
+	kernel_ambient_display_internal(true);
+}
+EXPORT_SYMBOL(kernel_ambient_display_led_based);
+
 void stop_kernel_ambient_display(bool interrupt_ongoing) {
 	if (init_done) {
 		alarm_cancel(&kad_repeat_rtc);
