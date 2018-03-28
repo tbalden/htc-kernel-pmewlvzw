@@ -611,6 +611,7 @@ static int mdss_mdp_kcal_update_queue(struct device *dev)
 	return 0;
 }
 
+static bool kad_override_active = false;
 #ifdef CONFIG_UCI
 static int first_parse = 1;
 static int last_enable_state = 0;
@@ -618,7 +619,7 @@ static void uci_user_listener(void);
 
 #define CONFIG_UPDATE_ON_UNBLANK
 static void kcal_uci_set(struct work_struct * kcal_uci_set_work) {
-	if (last_enable_state == 1) {
+	if (last_enable_state == 1 && !kad_override_active) {
 #ifdef CONFIG_UPDATE_ON_UNBLANK
 		last_enable_state = 0; // simply set to last enable false and ...
 		uci_user_listener(); // ... call listener as if config changed, it will set stuff...
@@ -628,6 +629,8 @@ static void kcal_uci_set(struct work_struct * kcal_uci_set_work) {
 DECLARE_DELAYED_WORK(kcal_uci_set_work, kcal_uci_set);
 
 #endif
+
+// stores whether currently KAD set greyscale override is active or not. If it's active, async screen on delayed Kcal set should be skipped.
 
 #if defined(CONFIG_FB) && !defined(CONFIG_MMI_PANEL_NOTIFICATIONS)
 #ifdef CONFIG_UULTRA
@@ -653,7 +656,7 @@ static int fb_notifier_callback(struct notifier_block *nb,
                                 // screen on
                                 screen_on = 1;
 #ifdef CONFIG_UCI
-				if (last_enable_state == 1) {
+				if (last_enable_state == 1 && !kad_override_active) {
 					// on some devices like u ultra, on screen on we need to set the kcal again if it's enabled
 					// because of probably another screen off blank/unblank or framework sets over the kcal values.
 					lut_data->queue_changes = false; // dequeue
@@ -682,7 +685,7 @@ static int fb_notifier_callback(struct notifier_block *nb,
 		if (*blank == FB_BLANK_UNBLANK)
 #ifdef CONFIG_UCI
 		{
-			if (last_enable_state == 1) {
+			if (last_enable_state == 1 && !kad_override_active) {
 				// on some devices like u ultra, on screen on we need to set the kcal again if it's enabled
 				// because of probably another screen off blank/unblank or framework sets over the kcal values.
 				lut_data->queue_changes = false; // dequeue
@@ -742,6 +745,7 @@ int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int
 		else
 			lut_data->queue_changes = true;
 	}
+	kad_override_active = true;
 	mutex_unlock(&kcal_int_lock);
 	return 1;
 }
@@ -802,6 +806,7 @@ int kcal_internal_restore(void)
 				lut_data->queue_changes = true;
 		}
 	}
+	kad_override_active = false;
 	mutex_unlock(&kcal_int_lock);
 	return 1;
 }
