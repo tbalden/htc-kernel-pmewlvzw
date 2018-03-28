@@ -1358,6 +1358,20 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 	if(virtual_key_led_ignore_flag)
 		return 0;
 
+	// TODO - brightness
+	if (get_bln_light_level()==21) {
+		led->cdev.brightness = 0;
+	}
+	else
+	if (get_bln_light_level()==1) {
+		led->cdev.brightness *= 3;
+		led->cdev.brightness /= 2;
+	}
+	else {
+		led->cdev.brightness *= 2;
+		led->cdev.brightness /= max(2,get_bln_light_level()/3);
+	}
+
 	if(use_color_table && led->cdev.brightness < table_level_num){
 		if(use_current_table) {
 			if(led->current_setting != current_table[led->cdev.brightness] && led->cdev.brightness != 0) {
