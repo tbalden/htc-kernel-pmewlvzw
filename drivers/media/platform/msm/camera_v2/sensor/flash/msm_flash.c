@@ -303,17 +303,35 @@ static int uci_get_flash_only_face_down(void) {
 static bool face_down = false;
 static bool proximity = false;
 static bool silent = false;
+static bool ringing = false;
+
+void flash_blink(bool haptic);
+void flash_stop_blink(void);
 
 // register sys uci listener
 void flash_uci_sys_listener(void) {
 	pr_info("%s uci sys parse happened...\n",__func__);
 	{
+		bool ringing_new = !!uci_get_sys_property_int_mm("ringing", 0, 0, 1);
 		face_down = !!uci_get_sys_property_int_mm("face_down", 0, 0, 1);
 		proximity = !!uci_get_sys_property_int_mm("proximity", 0, 0, 1);
 		silent = !!uci_get_sys_property_int_mm("silent", 0, 0, 1);
+
+		if (uci_get_user_property_int_mm("flash_blink_ringing", 0, 0, 1)) {
+			if (ringing_new && !ringing) {
+				flash_blink(true);
+			}
+		}
+		if (!ringing_new && ringing) {
+			ringing = false;
+			flash_stop_blink();
+		}
+		ringing = ringing_new;
+
 		pr_info("%s uci sys face_down %d\n",__func__,face_down);
 		pr_info("%s uci sys proximity %d\n",__func__,proximity);
 		pr_info("%s uci sys silent %d\n",__func__,silent);
+		pr_info("%s uci sys ringing %d\n",__func__,ringing);
 	}
 }
 
@@ -512,6 +530,8 @@ void do_flash_blink(void) {
 		bright = 1;
 	}
 
+	if (uci_get_flash_blink_bright() && ringing) bright = 1;
+
 	htc_flash_main(0,0);
 
 	if (uci_get_flash_blink_wait_inc() && !dim) {
@@ -522,6 +542,7 @@ void do_flash_blink(void) {
 	}
 
 	limit -= dim * 2;
+
 
 	if ((uci_get_flash_only_face_down() && face_down) || !uci_get_flash_only_face_down()) {
 		flash_next = 1; // should flash next time, alarm wait normal... if no flashing is being done, vibrating reminder wait period should be waited instead!
@@ -543,6 +564,7 @@ void do_flash_blink(void) {
 		pr_info("%s skipping flashing because of not face down\n",__func__);
 	}
 
+	if (!ringing) {
 	if (smart_get_vib_notification_reminder() && current_blink_num % vib_slowness == (vib_slowness - 1)) {
 		{
 			ktime_t curr_time = { .tv64 = 0 };
@@ -552,6 +574,7 @@ void do_flash_blink(void) {
 		// call vibration from a real time alarm thread, otherwise it can get stuck vibrating
 		alarm_cancel(&vib_rtc); // stop pending alarm...
 		alarm_start_relative(&vib_rtc, wakeup_time_vib); // start new...
+	}
 	}
 
 	mutex_lock(&flash_blink_lock);
@@ -716,6 +739,7 @@ static enum alarmtimer_restart flash_blink_do_blink_rtc_callback(struct alarm *a
 void flash_stop_blink(void) {
 //	pr_info("%s flash_blink\n",__func__);
 	if (!init_done) return;
+	if (ringing) return; // screen on/user input shouldn't stop ringing triggered flashing!
 	queue_work(flash_stop_blink_workqueue, &flash_stop_blink_work);
 }
 EXPORT_SYMBOL(flash_stop_blink);
