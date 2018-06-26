@@ -1,0 +1,89 @@
+/*rogram is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&pm8994_mpps {
+	mpp@a200 { /* MPP 3 */
+		qcom,master-en = <0>;	/* Disabe MPP	*/
+		status = "okay";	/* Show status	*/
+	};
+	mpp@a300 { /* MPP 4 */
+		qcom,master-en = <0>;	/* Disabe MPP	*/
+		status = "okay";	/* Show status	*/
+	};
+	mpp@a400 { /* MPP 5 */
+		qcom,master-en = <0>;	/* Disabe MPP	*/
+		status = "okay";	/* Show status	*/
+	};
+	mpp@a700 { /* MPP 8 */
+		qcom,master-en = <0>;   /* Disable MPP	*/
+		status = "okay";	/* Show status	*/
+	};
+};
+
+&pm8994_gpios {
+	gpio@c900 { /* GPIO 10 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@ca00 { /* GPIO 11 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@d500 { /* GPIO 22 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+};
+
+&pmi8994_mpps {
+	mpp@a100 { /* MPP 2 */
+		qcom,master-en = <0>;	/* Disable MPP	*/
+		status = "okay";	/* Show status	*/
+	};
+	mpp@a300 { /* MPP 4 */
+		qcom,master-en = <0>;	/* Disable MPP	*/
+		status = "okay";	/* Show status	*/
+	};
+};
+
+&pmi8994_gpios {
+	gpio@c000 { /* GPIO 1 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@c100 { /* GPIO 2 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@c200 { /* GPIO 3 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@c300 { /* GPIO 4 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@c400 { /* GPIO 5 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@c500 { /* GPIO 6 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@c600 { /* GPIO 7 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+	gpio@c700 { /* GPIO 8 */
+		qcom,master-en = <0>;	/* Disable GPIO	*/
+		status = "okay";	/* Show status	*/
+	};
+};

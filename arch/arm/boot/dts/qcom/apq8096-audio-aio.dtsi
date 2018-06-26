@@ -1,0 +1,47 @@
+/* 8996 Aio Audio Config */
+
+&pm8994_l17 {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	qcom,init-voltage = <3300000>;
+	regulator-boot-on;
+	regulator-always-on;
+	status = "okay";
+};
+
+&soc {
+	sound-9335 {
+		qcom,audio-routing =
+			"AIF4 VI", "MCLK",
+			"RX_BIAS", "MCLK",
+/* HTC_AUD_START */
+			"AMIC1", "MIC BIAS1",
+			"MIC BIAS1", "Handset Mic",
+			"AMIC2", "MIC BIAS2",
+			"MIC BIAS2", "Headset Mic",
+			"AMIC3", "MIC BIAS3",
+			"ANCLeft Headset Mic", "MCLK",
+			"AMIC4", "MIC BIAS4",
+			"ANCRight Headset Mic", "MCLK",
+			"MIC BIAS3", "Handset Mic",
+			"MIC BIAS4", "Handset Mic";
+/* HTC_AUD_END */
+
+		qcom,msm-mbhc-hphl-swh = <1>; /* HTC_AUD: 1 for NO, 0 for NC */
+		qcom,msm-mbhc-gnd-swh = <1>; /* HTC_AUD: 1 for NO, 0 for NC */
+
+		ftm-btpcm-clock	= <&tlmm 65 0>;
+		ftm-btpcm-sync	= <&tlmm 66 0>;
+		ftm-btpcm-dout	= <&tlmm 67 0>;
+		ftm-btpcm-din	= <&tlmm 68 0>;
+		htc-tfa9888 = <0>;
+//		mbhc-swap-detect = <0>;
+
+		htc,adapter_35mm_threshold = <330 800>;
+		htc,adapter_25mm_threshold = <1250 2850>;
+
+		htc,headset_adc_channel = <19>;
+
+	};
+
+};

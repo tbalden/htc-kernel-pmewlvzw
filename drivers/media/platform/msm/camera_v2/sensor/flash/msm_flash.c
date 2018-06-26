@@ -20,6 +20,7 @@
 #include "msm_cci.h"
 //HTC_START, porting flashlight control
 #include <linux/htc_flashlight.h>
+//HTC_END
 
 #ifndef CONFIG_LEDS_QPNP_BUTTON_BLINK
 #define CONFIG_LEDS_QPNP_BUTTON_BLINK

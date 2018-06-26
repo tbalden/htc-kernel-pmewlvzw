@@ -729,6 +729,9 @@ static void anx7688_work_func(struct work_struct *work)
 					msecs_to_jiffies(workqueu_timer));
 #endif
 	anx7688_enable_cbl_det();
+
+	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0)
+	    try_sink();
 }
 #endif
 

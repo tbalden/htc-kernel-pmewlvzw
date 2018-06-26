@@ -11702,6 +11702,8 @@ static void dhd_hang_process(void *dhd_info, void *event_info, u8 event)
 			if (!dhdp->dongle_trap_occured) {
 				dhd_net_if_lock(dev);
 				dhdp->dongle_reset = TRUE;
+				smp_mb();
+				dhd_wakeup_ioctl_event(dhdp, IOCTL_RETURN_ON_TRAP);
 				if (g_wifi_on) {
 					DHD_ERROR(("%s: stop clock\n", __FUNCTION__));
 					dhd_bus_stop_clock(dhdp);

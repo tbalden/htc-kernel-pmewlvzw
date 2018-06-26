@@ -443,7 +443,8 @@ static int get_lock(struct mutex *m, unsigned long time_out_jiff)
 		 * has been acquired successfully, and 0 on contention. */
 		if (mutex_trylock(m) == 1)
 			return 0;
-		msleep(200);
+		D("%s[%d]: get lock sleep\n", __func__, __LINE__);
+		msleep(10);
 	}
 
 	E("%s[%d]: get lock timed out\n", __func__, __LINE__);

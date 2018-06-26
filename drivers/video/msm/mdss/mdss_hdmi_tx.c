@@ -3463,6 +3463,8 @@ static int hdmi_tx_start_hdcp(struct hdmi_tx_ctrl *hdmi_ctrl)
 		!hdmi_tx_is_hdcp_enabled(hdmi_ctrl))
 		return 0;
 
+	pm_stay_awake(&hdmi_ctrl->pdev->dev);
+
 	if (hdmi_tx_is_encryption_set(hdmi_ctrl))
 		hdmi_tx_config_avmute(hdmi_ctrl, true);
 
@@ -3513,6 +3515,7 @@ static int hdmi_tx_hdcp_off(struct hdmi_tx_ctrl *hdmi_ctrl)
 		DEV_ERR("%s: Failed to disable ddc power\n",
 			__func__);
 
+	pm_relax(&hdmi_ctrl->pdev->dev);
 	return rc;
 }
 
@@ -3824,6 +3827,8 @@ static int hdmi_tx_evt_handle_panel_off(struct hdmi_tx_ctrl *hdmi_ctrl)
 	} else {
 		DEV_DBG("%s: hdmi_ctrl is already powered off\n", __func__);
 	}
+	/* Ensure wakeup_source release after hdmi panel off */
+	pm_relax(&hdmi_ctrl->pdev->dev);
 
 	hdmi_ctrl->timing_gen_on = false;
 end:
@@ -4622,6 +4627,8 @@ static int hdmi_tx_probe(struct platform_device *pdev)
 		}
 	}
 
+	device_init_wakeup(&hdmi_ctrl->pdev->dev, true);
+
 	return rc;
 
 failed_reg_panel:
@@ -4643,6 +4650,8 @@ static int hdmi_tx_remove(struct platform_device *pdev)
 		DEV_ERR("%s: no driver data\n", __func__);
 		return -ENODEV;
 	}
+
+	device_wakeup_disable(&hdmi_ctrl->pdev->dev);
 
 	hdmi_tx_sysfs_remove(hdmi_ctrl);
 	hdmi_tx_dev_deinit(hdmi_ctrl);

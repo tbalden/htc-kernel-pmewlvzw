@@ -309,7 +309,7 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
  * brightness_to_bl = true, The val was brigthness and return bl level.
  * brightness_to_bl = false, The val was bl and return brightness level.
  */
-int mdss_backlight_trans(int val, struct htc_backlight1_table *table, int brightness_to_bl)
+int mdss_backlight_trans(struct msm_fb_data_type *mfd, int val, struct htc_backlight1_table *table, int brightness_to_bl)
 {
 	unsigned int result;
 	int index = 0, size = 0;
@@ -320,6 +320,7 @@ int mdss_backlight_trans(int val, struct htc_backlight1_table *table, int bright
 	if(!table || !table->size || !table->brt_data || !table->bl_data)
 		return -ENOENT;
 
+	mutex_lock(&mfd->bl_lock);
 	size = table->size;
 	if (brightness_to_bl) {
 		val_table = table->brt_data;
@@ -356,6 +357,7 @@ int mdss_backlight_trans(int val, struct htc_backlight1_table *table, int bright
 			}
 		}
 	}
+	mutex_unlock(&mfd->bl_lock);
 
 	pr_info("mode=%d, apply_cali=%d, %d => %d\n", brightness_to_bl, table->apply_cali, val, result);
 	return result;
@@ -377,7 +379,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
-	bl_lvl = mdss_backlight_trans(value, &mfd->panel_info->brt_bl_table[0], true);
+	bl_lvl = mdss_backlight_trans(mfd, value, &mfd->panel_info->brt_bl_table[0], true);
 
 #if 1
 	last_brightness = value;
@@ -436,7 +438,7 @@ static void mdss_fb_set_bl_brightness_hybrid(struct led_classdev *led_cdev,
 	sub_only = !strcmp(led_cdev->name, "sub-backlight");
 
 	if (!sub_only) {
-		bl_lvl = mdss_backlight_trans(value, &mfd->panel_info->brt_bl_table[0], true);
+		bl_lvl = mdss_backlight_trans(mfd, value, &mfd->panel_info->brt_bl_table[0], true);
 
 #ifdef CONFIG_BACKLIGHT_DIMMER
 		last_brightness = value;
@@ -452,6 +454,7 @@ static void mdss_fb_set_bl_brightness_hybrid(struct led_classdev *led_cdev,
 		}
 #endif
 		
+		/* Change to burst backlight, only for main */
 		if (htc_is_burst_bl_on(mfd, value)) {
 			bl_lvl = mfd->panel_info->burst_bl_value;
 			pr_info("Change to burst bl =%d\n", bl_lvl);
@@ -469,7 +472,7 @@ static void mdss_fb_set_bl_brightness_hybrid(struct led_classdev *led_cdev,
 		mfd->bl2_min = (bl_lvl * 32 + 86) / 87; /* Magic! */
 
 		if (mfd->bl_sync) {
-			sub_bl_lvl = mdss_backlight_trans(value, &mfd->panel_info->brt_bl_table[1], true);
+			sub_bl_lvl = mdss_backlight_trans(mfd, value, &mfd->panel_info->brt_bl_table[1], true);
 #ifdef CONFIG_BACKLIGHT_DIMMER
 #ifdef CONFIG_UCI
 			if (backlight_dimmer||backlight_dimmer_uci)
@@ -489,7 +492,7 @@ static void mdss_fb_set_bl_brightness_hybrid(struct led_classdev *led_cdev,
 
 		mfd->last_bri1 = value;  /* Keep for calibration */
 	} else {
-		sub_bl_lvl = mdss_backlight_trans(value, &mfd->panel_info->brt_bl_table[1], true);
+		sub_bl_lvl = mdss_backlight_trans(mfd, value, &mfd->panel_info->brt_bl_table[1], true);
 		if (sub_bl_lvl < 0)
 			sub_bl_lvl = 0;
 	}

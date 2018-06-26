@@ -185,7 +185,18 @@ static void fpf_pwrtrigger(int vibration, const char caller[]);
 
 // register input event alarm timer
 extern void register_input_event(void);
-void stop_kernel_ambient_display(bool interrupt_ongoing);
+
+void stop_kernel_ambient_display(bool interrupt_ongoing) { }
+EXPORT_SYMBOL(stop_kernel_ambient_display);
+
+void kernel_ambient_display(void) { }
+EXPORT_SYMBOL(kernel_ambient_display);
+
+void kernel_ambient_display_led_based(void) { }
+EXPORT_SYMBOL(kernel_ambient_display_led_based);
+
+int is_kernel_ambient_display(void) { return 0; }
+EXPORT_SYMBOL(is_kernel_ambient_display);
 
 int stored_lock_state = 0;
 // register sys uci listener

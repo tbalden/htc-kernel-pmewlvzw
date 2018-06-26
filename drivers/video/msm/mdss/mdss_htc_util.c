@@ -790,23 +790,19 @@ void htc_update_bl_cali_data(struct msm_fb_data_type *mfd)
 
 	brt_bl_table->apply_cali = htc_attr_status[BL_CALI_ENABLE_INDEX].cur_value;
 
-	/* free the old calibrated data first, then restore raw bl data again */
-	kfree(brt_bl_table->bl_data);
-	brt_bl_table->bl_data = kzalloc(size * sizeof(u16), GFP_KERNEL);
-	if (!brt_bl_table->bl_data) {
-		pr_err("unable to allocate memory for bl_data\n");
+	/* Not define brt table */
+	if(!size || size < 2 || !brt_bl_table->brt_data || !brt_bl_table->bl_data) {
+		pr_err("No bl_data\n");
 		return;
 	}
-	memcpy(brt_bl_table->bl_data, brt_bl_table->bl_data_raw, size * sizeof(u16));
+
+	mutex_lock(&mfd->bl_lock);
+	memcpy(brt_bl_table->bl_data, brt_bl_table->bl_data_raw, size * sizeof(brt_bl_table->bl_data[0]));
 
 	/* Calibrate brightness here */
 	if (brt_bl_table->apply_cali) {
 		u16 *bl_data_raw;
 		u16 tmp_cali_value = 0;
-
-		/* Not define brt table */
-		if(!size || size < 2 || !brt_bl_table->brt_data || !brt_bl_table->bl_data)
-			return;
 
 		if (pdata->panel_info.cali_data_format == PANEL_CALIB_REV_1) {
 			bl_data_raw = brt_bl_table->bl_data_raw;
@@ -818,10 +814,11 @@ void htc_update_bl_cali_data(struct msm_fb_data_type *mfd)
 			brt_bl_table->bl_data[size - 1] = VALID_CALI_BKLT(tmp_cali_value, bl_data_raw[size - 2], panel_info->bl_max);
 		}
 	}
+	mutex_unlock(&mfd->bl_lock);
 
 	if (mfd->bl_level && mfd->last_bri1) {
 		/* always calibrates based on last time brightness value rather than calibrated brightness */
-		bl_lvl = mdss_backlight_trans(mfd->last_bri1, &mfd->panel_info->brt_bl_table[0], true);
+		bl_lvl = mdss_backlight_trans(mfd, mfd->last_bri1, &mfd->panel_info->brt_bl_table[0], true);
 
 		/* Update the brightness when bl_cali be set */
 		if (bl_lvl) {
@@ -832,6 +829,7 @@ void htc_update_bl_cali_data(struct msm_fb_data_type *mfd)
 
 	pr_info("%s bl_cali=%d, unset_bl_level=%d \n", __func__, gain->BKL,  mfd->unset_bl_level);
 }
+
 void htc_update_rgb_cali_data(struct msm_fb_data_type *mfd, struct mdp_pcc_cfg_data *config)
 {
 	struct mdss_panel_data *pdata;

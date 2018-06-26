@@ -312,7 +312,7 @@ bool
 dhd_query_bus_erros(dhd_pub_t *dhdp)
 {
         bool ret = FALSE;
-
+        smp_mb();
         if (dhdp->dongle_reset) {
                 DHD_ERROR(("%s: Dongle Reset occurred, cannot proceed\n",
                         __FUNCTION__));

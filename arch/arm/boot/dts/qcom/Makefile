@@ -111,6 +111,12 @@ dtb-$(CONFIG_ARCH_MSM8996) += \
 	msm8996-v3-htc_pmewhl-xd.dtb \
 	msm8996-v3-htc_pmewhl-pvt.dtb \
 	msm8996-v3-htc_pmeuhljapan-pvt.dtb \
+	msm8996pro-v1.1-htc_oce-xa.dtb \
+	msm8996pro-v1.1-htc_oce-xb.dtb \
+	msm8996pro-v1.1-htc_oce-xc.dtb \
+	msm8996pro-v1.1-htc_oce-xd.dtb \
+	msm8996pro-v1.1-htc_oce-pvt.dtb \
+	apq8096pro-v1.1-htc_aioevm-xa.dtb \
 
 dtb-$(CONFIG_ARCH_MDM9640) += mdm9640-sim.dtb \
 	mdm9640-rumi.dtb \

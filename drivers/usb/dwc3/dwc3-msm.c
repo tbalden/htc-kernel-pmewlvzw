@@ -325,6 +325,7 @@ static struct dwc3_msm *context = NULL; /* 2015/10/12, USB Team, PCN00021 */
 /*++ 2015/10/13, USB Team, PCN00022 ++*/
 static int htc_id_backup;
 static int htc_vbus_backup;
+/*-- 2015/10/13, USB Team, PCN00022 --*/
 #if defined(CONFIG_MACH_OCE)
 static void dwc3_otg_tps_work(struct work_struct *w);
 #endif

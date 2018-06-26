@@ -4752,6 +4752,17 @@ dhd_msgbuf_wait_ioctl_cmplt(dhd_pub_t *dhd, uint32 len, void *buf)
 			dhd_prot_process_ctrlbuf(dhd);
 
 			timeleft = dhd_os_ioctl_resp_wait(dhd, (uint *)&prot->ioctl_received);
+
+			if (dhd_query_bus_erros(dhd)) {
+				ret = -EIO;
+				goto out;
+			}
+
+			if(dhd->bus->islinkdown) {
+				DHD_ERROR(("%s: PCIe link was down\n", __FUNCTION__));
+				ret = -EIO;
+				goto out;
+			}
 			/* Enable Back Interrupts using IntMask */
 			dhdpcie_bus_intr_enable(dhd->bus);
 		}

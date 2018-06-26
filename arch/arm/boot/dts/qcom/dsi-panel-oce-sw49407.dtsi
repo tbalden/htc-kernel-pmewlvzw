@@ -157,8 +157,6 @@
 		htc,panel-calibration-data-format = <1>;
 
 		htc,panel-supply-entries-stage2 = <&dsi_panel_pwr_supply_sw49407_2>;
-		htc,burst-on-level = <13>;
-		htc,burst-off-level = <12>;
 		htc,burst-bl-value = <1781>;
 
 		htc,panel-aod-config = <&sw49407_aod_config>;
@@ -326,8 +324,6 @@
 		htc,panel-calibration-data-format = <1>;
 
 		htc,panel-supply-entries-stage2 = <&dsi_panel_pwr_supply_sw49407_2>;
-		htc,burst-on-level = <13>;
-		htc,burst-off-level = <12>;
 		htc,burst-bl-value = <1781>;
 
 		htc,panel-aod-config = <&sw49407_aod_config>;

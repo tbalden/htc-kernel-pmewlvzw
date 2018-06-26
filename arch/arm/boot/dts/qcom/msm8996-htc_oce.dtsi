@@ -22,6 +22,7 @@
 #include "msm8996-cap-oce.dtsi"
 #include "msm8996-hall-sensor-oce.dtsi"
 #include "msm8996-htc_oce-usb.dtsi" /* HTC USB */
+#include "msm8996-ufs-system.dtsi"
 
 /*msm8996-mtp.dtsi ++*/
 / {
