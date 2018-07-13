@@ -5114,9 +5114,11 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				LED_INFO("button-backlight not use power source 0x%04x\n", led->base);
 				goto fail_id_check;
 			}
-#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
-			buttonled = led;
+		}
 #endif
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+		if(strcmp(led->cdev.name, "button-backlight") == 0) {
+			buttonled = led;
 		}
 #endif
 		if(strcmp(led->cdev.name, "indicator") == 0){

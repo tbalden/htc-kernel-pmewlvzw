@@ -2732,7 +2732,10 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 
 /* HTC_AUD_START - HTC Effect {HPKB:2082}*/
 #ifndef CONFIG_NO_USE_HTC_EFFECT
+#ifndef CONFIG_UULTRA
+// HTC 10 call place
         htc_effect_by_adm_open(port_id, topology);
+#endif
 #endif
 /* HTC_AUD_END */
 
@@ -3108,6 +3111,19 @@ int adm_matrix_map(int path, struct route_payload payload_map, int perf_mode,
 							      [copp_idx]));
 		}
 	}
+
+/* HTC_AUD_START - HTC Effect {HPKB:2082}*/
+#ifndef CONFIG_NO_USE_HTC_EFFECT
+#ifdef CONFIG_UULTRA
+// HTC U Ultra call place
+	for (i = 0; i < payload_map.num_copps; i++) {
+		port_idx = afe_get_port_index(payload_map.port_id[i]);
+		copp_idx = payload_map.copp_idx[i];
+		htc_effect_by_adm_open(payload_map.port_id[i], atomic_read(&this_adm.copp.topology[port_idx][copp_idx]));
+	}
+#endif
+#endif
+/* HTC_AUD_END */
 
 fail_cmd:
 	kfree(matrix_map);
