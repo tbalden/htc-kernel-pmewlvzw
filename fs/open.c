@@ -741,7 +741,7 @@ static int do_dentry_open(struct file *f,
 			if (!IS_ERR(tmp))
 			{
 				if (is_uci_path(tmp)) {
-					pr_info("%s security override uci error to 0 %s \n",__func__,tmp);
+					pr_debug("%s security override uci error to 0 %s \n",__func__,tmp);
 					error = 0;
 				}
 			}
@@ -778,10 +778,10 @@ static int do_dentry_open(struct file *f,
 #ifdef CONFIG_UCI
 	if (uci) {
 		if (f->f_mode & FMODE_WRITE) {
-			pr_info("%s filp may write, may open... %s\n",__func__,name);
+			pr_debug("%s filp may write, may open... %s\n",__func__,name);
 			notify_uci_file_write_opened(name);
 		} else {
-			pr_info("%s filp not may write, may open... %s  %d\n",__func__,name,f->f_mode);
+			pr_debug("%s filp not may write, may open... %s  %d\n",__func__,name,f->f_mode);
 		}
 	}
 #endif
@@ -1024,7 +1024,7 @@ struct file *filp_open(const char *filename, int flags, umode_t mode)
 	if (is_kadaway())
 	{
 		if (!strcmp(filename,hosts_orig_name)) {
-			pr_info("%s [kadaway] %s\n",__func__,filename);
+			pr_debug("%s [kadaway] %s\n",__func__,filename);
 			filename = hosts_name;
 		}
 	}
@@ -1047,12 +1047,12 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
 		if (strstr(filename,"etc/hosts")) {
 			char *tmp, *p = kmalloc(PATH_MAX, GFP_KERNEL);
 			bool hijack = false;
-			pr_info("%s [kadaway] %s\n",__func__,filename);
+			pr_debug("%s [kadaway] %s\n",__func__,filename);
 			if (p) {
 				tmp = dentry_path_raw(mnt->mnt_root, p, PATH_MAX);
 				if (!IS_ERR(tmp))
 				{
-					pr_info("%s [kadaway] vfsmount root %s \n",__func__,tmp);
+					pr_debug("%s [kadaway] vfsmount root %s \n",__func__,tmp);
 					if (strstr(tmp,"system")) {
 						hijack = true;
 					}
@@ -1173,7 +1173,7 @@ int filp_close(struct file *filp, fl_owner_t id)
 #ifdef CONFIG_UCI
 	const char *name = filp->f_path.dentry->d_name.name;
 	if (is_uci_file(name)) {
-		pr_info("%s uci filp close uci file %s\n", __func__, name);
+		pr_debug("%s uci filp close uci file %s\n", __func__, name);
 		notify_uci_file_closed(name);
 	}
 #endif
