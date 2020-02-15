@@ -40,53 +40,36 @@ MODULE_LICENSE("GPL");
 #endif
 
 // file operations
-int uci_fwrite(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
-    mm_segment_t oldfs;
+int uci_fwrite(struct file* file, loff_t pos, unsigned char* data, unsigned int size) {
     int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_write(file, data, size, &offset);
-
-    set_fs(oldfs);
+    ret = kernel_write(file, data, size, &pos);
     return ret;
 }
 
 int uci_read(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
-    mm_segment_t oldfs;
     int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_read(file, data, size, &offset);
-
-    set_fs(oldfs);
+    ret = kernel_read(file, data, size, &offset);
     return ret;
 }
 
 void uci_fclose(struct file* file) {
-    filp_close(file, NULL);
+    fput(file);
 }
 
 struct file* uci_fopen(const char* path, int flags, int rights) {
     struct file* filp = NULL;
-    mm_segment_t oldfs;
     int err = 0;
 
-    oldfs = get_fs();
-    set_fs(get_ds());
     filp = filp_open(path, flags, rights);
-    set_fs(oldfs);
+
     if(IS_ERR(filp)) {
         err = PTR_ERR(filp);
-    pr_err("[uci]File Open Error:%s %d\n",path, err);
+	pr_err("[uci]File Open Error:%s %d\n",path, err);
         return NULL;
     }
     if(!filp->f_op){
-    pr_err("[uci]File Operation Method Error!!\n");
-    return NULL;
+        pr_err("[uci]File Operation Method Error!!\n");
+        return NULL;
     }
 
     return filp;
