@@ -42,13 +42,13 @@ MODULE_LICENSE("GPL");
 // file operations
 int uci_fwrite(struct file* file, loff_t pos, unsigned char* data, unsigned int size) {
     int ret;
-    ret = kernel_write(file, data, size, &pos);
+    ret = kernel_write(file, data, size, pos);
     return ret;
 }
 
 int uci_read(struct file* file, unsigned long long offset, unsigned char* data, unsigned int size) {
     int ret;
-    ret = kernel_read(file, data, size, &offset);
+    ret = kernel_read(file, offset, data, size);
     return ret;
 }
 
